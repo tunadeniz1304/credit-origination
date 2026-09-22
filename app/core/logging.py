@@ -10,8 +10,10 @@ import logging
 import os
 from logging.handlers import RotatingFileHandler
 
-_LOG_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
-_LOG_FILE = os.path.join(_LOG_DIR, "credit_agent.log")
+from app.core.config import PROJECT_ROOT
+
+_LOG_DIR = PROJECT_ROOT / "logs"
+_LOG_FILE = _LOG_DIR / "credit_agent.log"
 _FORMAT = "%(asctime)s | %(levelname)-7s | %(name)-24s | %(message)s"
 _DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
 _MAX_BYTES = 1_000_000

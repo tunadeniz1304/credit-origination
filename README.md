@@ -1,68 +1,120 @@
-# Akıllı Kredi Operasyon Ajanı (Smart Credit Operations Agent)
+# Akıllı Kredi Operasyon Ajanı
 
-A modular, logging-enabled Python pipeline that automates a bank's credit application
-process end-to-end through three cooperating agents:
+Enterprise-scale **Smart Credit Operations Agent**: an async-queue-based credit
+application processing platform. A FastAPI backend accepts applications and
+enqueues them for background processing; agents then validate documents
+(RAG-powered), collect financial data from external providers (circuit
+breaker + retry), and run a prompt-chained credit decision engine that emits a
+BDDK-style **Kredi Tahsis Raporu** (credit allocation report) as both JSON and
+PDF.
 
-1. **Belge Kontrol Ajanı** (Document Control Agent) — compares submitted documents
-   against the required policy document list, flags missing ones, and drafts a
-   Turkish request template to send to the applicant.
-2. **API Entegrasyon Ajanı** (API Integration Agent) — simulates external API calls
-   (KKB credit bureau, e-Devlet employment records) and aggregates the applicant's
-   financial data.
-3. **Kredi Komitesi Ajanı** (Credit Committee Agent) — analyzes the aggregated data
-   against committee thresholds and autonomously prepares a structured
-   approve/reject rationale report for the human credit committee.
+> Turkish-facing outputs: missing-document request drafts and the credit
+> committee report are produced in Turkish. Code, comments and docs are in English.
 
-## Project Structure
+## Architecture
 
 ```
-Anil2/
-├── README.md
-├── requirements.txt            # stdlib-only runtime; pytest for tests
-├── config/
-│   └── config.json             # document policy, mock API, committee thresholds
-├── src/
-│   ├── __init__.py
-│   ├── logger.py               # console + file logging setup
-│   ├── models.py               # domain dataclasses
-│   ├── integrations/
-│   │   └── mock_providers.py   # KKB + e-Devlet mock clients
-│   ├── agents/
-│   │   ├── base.py
-│   │   ├── document_agent.py
-│   │   ├── api_agent.py
-│   │   └── committee_agent.py
-│   └── main.py                 # end-to-end pipeline runner
-└── tests/
-    └── test_flow.py
+                        ┌──────────────────────────────────────────────┐
+                        │                 FastAPI (app/)               │
+                        │  POST /api/v1/applications → enqueue task    │
+                        │  GET  /api/v1/applications/{id} → store/Redis│
+                        └──────────────────────┬───────────────────────┘
+                                               │ TaskDispatcher
+                        ┌──────────────────────┴───────────────────────┐
+                        │         celery | inline (no broker)          │
+                        └──────────────────────┬───────────────────────┘
+                                               ▼
+        ┌──────────────────────────┬──────────────────────────┬──────────────────────────┐
+        │  Document / RAG agent    │   Integration agent      │   Decision engine        │
+        │  LangChain loaders       │   KKB (mock) client      │   LLM prompt chain       │
+        │  chunk + retrieve        │   e-Devlet(mock) client  │   deterministic factors  │
+        │  missing-doc draft (TR)  │   CircuitBreaker+Tenacity│   Kredi Tahsis Raporu    │
+        └──────────────────────────┴──────────────────────────┴──────┬───────────────────┘
+                                                                     ▼
+                                           data/reports/*.{json,pdf}   data/results/*
 ```
 
-## Requirements
+- `app/models/` — Pydantic domain models (single source of truth).
+- `app/core/` — settings, business rules, logging, worker-agnostic `TaskDispatcher`.
+- `app/agents/` — RAG document agent, `LLMProvider` abstraction, decision chain.
+- `app/integrations/` — external API clients with circuit breaker + retry.
+- `app/api/` — FastAPI router.
+- `app/worker/` — Celery app and task registration (plus inline equivalents).
+- `app/services/` — pipeline orchestration and result/store helpers.
+- `config/config.json` — business rules (committee thresholds, mandatory documents).
 
-- Python 3.10+ (stdlib only for the runtime; no third-party packages needed).
-- `pytest` (>=8,<9) for the test flow: `pip install -r requirements.txt`.
+### Queue modes
 
-## Usage
+`TASK_QUEUE_BACKEND` (or `.env`) selects the execution backend:
 
-Run the full demo pipeline (three scenarios: complete application, missing
-documents, high-risk applicant):
+| Value      | Behaviour                                                        |
+|------------|------------------------------------------------------------------|
+| `auto`     | Ping `REDIS_URL`; Celery if reachable, else inline (default)     |
+| `celery`   | Enqueue on the Redis broker (used in Docker compose)             |
+| `inline`   | Run the identical task body synchronously — no broker required   |
+
+Each domain task is implemented once and registered both as a Celery task and
+as an inline callable, so local development and the test suite run the exact
+same code a worker would run.
+
+### LLM provider
+
+`app/agents/llm.py` exposes `LLMProvider.complete(system, user)`:
+
+- `OpenAIProvider` — `openai` SDK, active when `OPENAI_API_KEY` is set.
+- `AnthropicProvider` — `anthropic` SDK, active when `ANTHROPIC_API_KEY` is set.
+- `MockLLMProvider` — deterministic, offline-safe fallback (default).
+
+### Deterministic external integrations
+
+KKB and e-Devlet values derive from a stable SHA-256 digest of the identity
+number (never Python's salted `hash()`), so results are reproducible across
+processes. Verified demo identity vectors:
+
+| Identity       | KKB score | Total debt | Outcome                 |
+|----------------|-----------|------------|-------------------------|
+| `12345678901`  | 1450      | 134 070    | passes `min_kbb_score`  |
+| `34567890123`  | 619       | 176 116    | fails `min_kbb_score`   |
+
+## Quickstart (local, no Docker)
 
 ```bash
-python -m src.main
+python -m venv .venv && .venv/Scripts/activate
+pip install -r requirements.txt
+cp .env.example .env            # TASK_QUEUE_BACKEND=inline by default
+uvicorn app.main:app --reload
 ```
 
-Run the test flow:
+Smoke:
 
 ```bash
-python -m pytest -v
+curl http://127.0.0.1:8000/health
+curl -X POST http://127.0.0.1:8000/api/v1/ping      # {"backend":"inline", ...}
 ```
 
-Logs are written to `logs/` (console + rotating file handler).
+## Tests
 
-## Configuration
+```bash
+python -m pytest -q
+```
 
-All policies live in `config/config.json`:
+Unit tests exercise the pipeline through the inline dispatcher and mocked
+HTTP (respx) — no Redis or live network required.
 
-- `document_policy.required_documents` — the mandatory document list;
-- `api.kkb` / `api.edevlet` — mock API endpoints, timeouts, simulated latency;
-- `committee` — credit committee thresholds (KBB score, debt/income, term, ...).
+## Docker
+
+```bash
+docker compose up --build
+```
+
+Runs three services: `api` (FastAPI + gunicorn), `worker` (Celery on the Redis
+broker), and `redis`. `TASK_QUEUE_BACKEND=celery` is forced via environment.
+
+## API
+
+| Method | Path                                    | Purpose                             |
+|--------|-----------------------------------------|-------------------------------------|
+| GET    | `/health`                               | Liveness + queue backend            |
+| POST   | `/api/v1/ping`                          | Queue round-trip smoke test         |
+| POST   | `/api/v1/applications`                  | Submit an application               |
+| GET    | `/api/v1/applications/{id}`             | Poll status + generated report      |

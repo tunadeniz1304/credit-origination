@@ -25,6 +25,9 @@ htmlcov/
 logs/
 *.log
 
+# Generated artifacts (reports, results, uploads)
+data/
+
 # IDE / OS
 .idea/
 .vscode/
