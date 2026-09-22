@@ -1,0 +1,3 @@
+# Runtime: stdlib only (json, dataclasses, logging, random).
+# Dev / test dependencies below.
+pytest>=8.0,<9.0

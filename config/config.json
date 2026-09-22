@@ -1,0 +1,33 @@
+{
+  "application": {
+    "default_currency": "TRY",
+    "pipeline_run_delay_seconds": 0
+  },
+  "document_policy": {
+    "required_documents": [
+      { "code": "IDENTITY", "description": "Kimlik Belgesi (Kimlik Kartı / Pasaport)" },
+      { "code": "INCOME", "description": "Gelir Belgesi (Maaş Bordrosu)" },
+      { "code": "EMPLOYMENT", "description": "Çalışma / İşyeri Belgesi" },
+      { "code": "ADDRESS", "description": "İkametgah Belgesi" },
+      { "code": "BANK_STATEMENT", "description": "Son 3 Ay Banka Hesap Ekstresi" }
+    ]
+  },
+  "api": {
+    "kkb": {
+      "base_url": "https://api.mock.kkb.com.tr/v1",
+      "timeout_seconds": 5,
+      "latency_ms": [20, 120]
+    },
+    "edevlet": {
+      "base_url": "https://api.mock.edevlet.gov.tr/v1",
+      "timeout_seconds": 5,
+      "latency_ms": [20, 120]
+    }
+  },
+  "committee": {
+    "min_kbb_score": 1100,
+    "max_debt_to_income_ratio": 0.5,
+    "max_loan_to_income_multiplier": 6,
+    "max_term_months": 60
+  }
+}
