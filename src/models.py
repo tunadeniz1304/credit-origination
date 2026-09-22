@@ -80,3 +80,34 @@ class AggregatedFinancialData:
     employer: str
     employment_years: int
     employment_verified: bool
+
+
+@dataclass(frozen=True)
+class CommitteeFactor:
+    """One threshold check evaluated by the credit committee."""
+
+    name: str  # Turkish factor name
+    value: float  # observed value
+    threshold: float  # allowed bound
+    operator: str  # "<=" or ">="
+    passed: bool
+    unit: str = ""  # displayed unit: "", " puan", "x", " ay"
+
+    @property
+    def summary(self) -> str:
+        return (
+            f"{self.name}: {self.value:,.2f}{self.unit} "
+            f"(izin verilen {self.operator} {self.threshold:g}{self.unit})"
+        )
+
+
+@dataclass
+class CommitteeDecision:
+    """Structured committee verdict + Turkish rationale report."""
+
+    status: ApplicationStatus
+    approved: bool
+    factors: list[CommitteeFactor]
+    rationale: str  # Turkish committee report
+    suggested_amount: float
+    suggested_term_months: int
