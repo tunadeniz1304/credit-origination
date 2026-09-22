@@ -14,6 +14,7 @@ from app.models.domain import (
     LoanApplication,
     PipelineResult,
 )
+from app.models.rag import DocumentChunk, RAGAnalysis
 
 __all__ = [
     "AggregatedFinancialData",
@@ -24,8 +25,10 @@ __all__ = [
     "CommitteeFactor",
     "DocumentCheckResult",
     "DocumentRequirement",
+    "DocumentChunk",
     "EmploymentRecord",
     "KBBReport",
     "LoanApplication",
     "PipelineResult",
+    "RAGAnalysis",
 ]

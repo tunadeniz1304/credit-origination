@@ -46,6 +46,11 @@ class Settings(BaseSettings):
     edevlet_base_url: str = "http://mock-edevlet:8002/api/v1"
     api_timeout_seconds: float = 5.0
     api_latency_range_ms: tuple[int, int] = (20, 120)
+    # When true, external clients run over an in-process mock HTTP transport
+    # (deterministic payloads, zero network); when false they hit the base URLs.
+    mock_external: bool = True
+    circuit_failure_threshold: int = 3
+    circuit_reset_timeout_seconds: float = 30.0
 
     # Artifact directories (relative to project root).
     report_output_dir: str = "data/reports"
