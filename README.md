@@ -40,7 +40,7 @@ PDF.
 - `app/integrations/` — external API clients with circuit breaker + retry.
 - `app/api/` — FastAPI router.
 - `app/worker/` — Celery app and task registration (plus inline equivalents).
-- `app/services/` — pipeline orchestration and result/store helpers.
+- `app/engine/` — pipeline orchestration, persistence store and BDDK report generation.
 - `config/config.json` — business rules (committee thresholds, mandatory documents).
 
 ### Queue modes
@@ -90,6 +90,16 @@ Smoke:
 ```bash
 curl http://127.0.0.1:8000/health
 curl -X POST http://127.0.0.1:8000/api/v1/ping      # {"backend":"inline", ...}
+
+# Submit an application (returns an APP-* id; inline mode finalises inline).
+curl -X POST http://127.0.0.1:8000/api/v1/applications \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Ali Yılmaz","identity_no":"12345678901","monthly_income":300000,
+       "requested_amount":100000,"requested_term_months":36,
+       "submitted_documents":["IDENTITY","INCOME","EMPLOYMENT","ADDRESS","BANK_STATEMENT"]}'
+
+# Poll the result; approved applications expose data/reports/{id}_report.{json,pdf}.
+curl http://127.0.0.1:8000/api/v1/applications/APP-XXXXXXXXXXXXXXXX
 ```
 
 ## Tests
@@ -107,8 +117,10 @@ HTTP (respx) — no Redis or live network required.
 docker compose up --build
 ```
 
-Runs three services: `api` (FastAPI + gunicorn), `worker` (Celery on the Redis
-broker), and `redis`. `TASK_QUEUE_BACKEND=celery` is forced via environment.
+Runs three services: `app` (FastAPI + uvicorn on port 8000), `worker`
+(Celery on the Redis broker; command overridden to start the worker), and
+`redis`. `TASK_QUEUE_BACKEND=celery` is forced via environment and both app
+and worker wait for a healthy Redis before starting.
 
 ## API
 
