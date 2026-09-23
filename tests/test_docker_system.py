@@ -58,6 +58,16 @@ def test_dockerfile_installs_pinned_requirements():
     assert "pip install --no-cache-dir -r requirements.txt" in dockerfile
 
 
+def test_app_and_worker_share_persistent_data_volume():
+    compose = _compose()
+    services = compose["services"]
+    # Worker-written reports/results must be visible to the API: both mount
+    # the same named volume at /app/data.
+    for name in ("app", "worker"):
+        assert "appdata:/app/data" in services[name]["volumes"]
+    assert "appdata" in compose.get("volumes", {})
+
+
 def test_celery_app_entrypoint_autodiscovers_tasks():
     """The worker entrypoint must register app.tasks.process_application."""
     from app.worker.celery_app import celery_app
