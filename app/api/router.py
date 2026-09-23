@@ -54,6 +54,14 @@ def submit_application(payload: ApplicationSubmit) -> dict:
     settings = get_settings()
     application_id = generate_application_id()
     persist_application(application_id, application, settings)
+    from app.engine.audit import (
+        ACTION_QUEUED,
+        ACTION_SUBMITTED,
+        append_audit,
+        load_audit,
+    )
+
+    append_audit(application_id, ACTION_SUBMITTED, "application accepted", settings)
 
     record = ApplicationRecord(
         application_id=application_id,
@@ -75,6 +83,12 @@ def submit_application(payload: ApplicationSubmit) -> dict:
         )
         return get_record(application_id).to_dict()
 
+    append_audit(
+        application_id,
+        ACTION_QUEUED,
+        f"enqueued on backend={receipt.backend}",
+        settings,
+    )
     if receipt.backend == "celery":
         update_record_status(application_id, status=ApplicationStatus.PROCESSING)
 
@@ -171,6 +185,11 @@ async def upload_document(
     updated = append_submitted_document(application_id, normalized, settings)
     if updated is None:
         raise HTTPException(status_code=404, detail="application not found")
+    from app.engine.audit import ACTION_DOCUMENT_DELIVERED, append_audit
+
+    append_audit(
+        application_id, ACTION_DOCUMENT_DELIVERED, f"{normalized} received", settings
+    )
 
     check = DocumentControlAgent().check(updated)
     return {
@@ -195,6 +214,9 @@ def reprocess_application(application_id: str) -> dict:
     receipt = TaskDispatcher().enqueue(
         "app.tasks.process_application", application_id=application_id
     )
+    from app.engine.audit import ACTION_REPROCESSED, append_audit
+
+    append_audit(application_id, ACTION_REPROCESSED, "application re-enqueued", settings)
     if receipt.backend == "celery":
         update_record_status(application_id, status=ApplicationStatus.PROCESSING)
     record = get_record(application_id)
@@ -203,6 +225,21 @@ def reprocess_application(application_id: str) -> dict:
         record.queue_backend = receipt.backend
         store_record(record)
     return record.to_dict() if record else receipt.model_dump(mode="json")
+
+
+@router.get("/api/v1/applications/{application_id}/audit", tags=["applications"])
+def application_audit(application_id: str) -> dict:
+    """Return the append-only audit trail for an application."""
+    from app.engine.audit import load_audit
+
+    settings = get_settings()
+    if get_record(application_id) is None and load_result(application_id, settings) is None:
+        raise HTTPException(status_code=404, detail="application not found")
+    entries = load_audit(application_id, settings)
+    return {
+        "application_id": application_id,
+        "entries": [entry.model_dump(mode="json") for entry in entries],
+    }
 
 
 @router.get("/api/v1/metrics", tags=["system"])

@@ -44,10 +44,18 @@ def process_application(application_id: str) -> dict[str, Any]:
     """
     settings = get_settings()
     from app.core.task_dispatcher import run_coroutine_safe
+    from app.engine.audit import (
+        ACTION_APPROVED,
+        ACTION_FAILED,
+        ACTION_PROCESSING,
+        ACTION_REJECTED,
+        append_audit,
+    )
 
     application = load_application(application_id, settings)
     if application is None:
         persist_error(application_id, "application record not found", settings)
+        append_audit(application_id, ACTION_FAILED, "application record missing", settings)
         update_record_status(application_id, status=ApplicationStatus.FAILED)
         return {
             "application_id": application_id,
@@ -55,6 +63,7 @@ def process_application(application_id: str) -> dict[str, Any]:
             "error": "application record not found",
         }
     update_record_status(application_id, status=ApplicationStatus.PROCESSING)
+    append_audit(application_id, ACTION_PROCESSING, "worker started pipeline", settings)
     try:
         result = run_coroutine_safe(
             ApplicationPipeline(settings).run(
@@ -63,9 +72,14 @@ def process_application(application_id: str) -> dict[str, Any]:
         )
         persist_result(application_id, result, settings)
         update_record_status(application_id, status=result.status, result=result)
+        action = (
+            ACTION_APPROVED if result.status == ApplicationStatus.APPROVED else ACTION_REJECTED
+        )
+        append_audit(application_id, action, f"committee verdict: {result.status.value}", settings)
         return result.model_dump(mode="json")
     except Exception as exc:  # noqa: BLE001 - record failure, never crash the caller
         persist_error(application_id, str(exc), settings)
+        append_audit(application_id, ACTION_FAILED, str(exc), settings)
         update_record_status(
             application_id, status=ApplicationStatus.FAILED, error=str(exc)
         )

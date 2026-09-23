@@ -246,3 +246,15 @@ def test_offer_endpoint_returns_priced_terms():
     assert client.get(
         f"/api/v1/applications/{rejected['application_id']}/offer"
     ).status_code == 409
+
+
+def test_audit_endpoint_returns_lifecycle_events():
+    submitted = client.post("/api/v1/applications", json=_payload())
+    application_id = submitted.json()["application_id"]
+    body = client.get(f"/api/v1/applications/{application_id}/audit").json()
+    actions = [entry["action"] for entry in body["entries"]]
+    assert "APPLICATION_SUBMITTED" in actions
+    assert "APPLICATION_QUEUED" in actions
+    # inline backend finalises synchronously, so the verdict is recorded.
+    assert "APPLICATION_APPROVED" in actions
+    assert len(body["entries"]) >= 3
