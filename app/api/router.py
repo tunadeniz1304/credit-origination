@@ -70,6 +70,13 @@ def submit_application(payload: ApplicationSubmit) -> dict:
     )
     store_record(record)
 
+    append_audit(
+        application_id,
+        ACTION_QUEUED,
+        f"queued on backend={settings.task_queue_backend}",
+        settings,
+    )
+
     try:
         receipt = TaskDispatcher().enqueue(
             "app.tasks.process_application", application_id=application_id
@@ -83,12 +90,6 @@ def submit_application(payload: ApplicationSubmit) -> dict:
         )
         return get_record(application_id).to_dict()
 
-    append_audit(
-        application_id,
-        ACTION_QUEUED,
-        f"enqueued on backend={receipt.backend}",
-        settings,
-    )
     if receipt.backend == "celery":
         update_record_status(application_id, status=ApplicationStatus.PROCESSING)
 

@@ -124,9 +124,20 @@ and worker wait for a healthy Redis before starting.
 
 ## API
 
-| Method | Path                                    | Purpose                             |
-|--------|-----------------------------------------|-------------------------------------|
-| GET    | `/health`                               | Liveness + queue backend            |
-| POST   | `/api/v1/ping`                          | Queue round-trip smoke test         |
-| POST   | `/api/v1/applications`                  | Submit an application               |
-| GET    | `/api/v1/applications/{id}`             | Poll status + generated report      |
+| Method | Path                                    | Purpose                                   |
+|--------|-----------------------------------------|-------------------------------------------|
+| GET    | `/`                                     | Operations dashboard (static web UI)      |
+| GET    | `/health`                               | Liveness + queue backend                  |
+| POST   | `/api/v1/ping`                          | Queue round-trip smoke test               |
+| POST   | `/api/v1/applications`                  | Submit an application                     |
+| GET    | `/api/v1/applications`                  | List applications (newest first)          |
+| GET    | `/api/v1/applications/{id}`             | Poll status + generated report            |
+| POST   | `/api/v1/applications/{id}/documents`   | Deliver a missing document (multipart)    |
+| GET    | `/api/v1/applications/{id}/documents`   | Document-control snapshot                 |
+| POST   | `/api/v1/applications/{id}/reprocess`   | Re-enqueue after document delivery        |
+| GET    | `/api/v1/applications/{id}/schedule`    | Amortization (repayment) plan             |
+| GET    | `/api/v1/applications/{id}/scorecard`   | Composite BDDK-style risk score + grade   |
+| GET    | `/api/v1/applications/{id}/offer`       | Priced loan offer terms (approved only)   |
+| GET    | `/api/v1/applications/{id}/report`      | Download JSON/PDF report file             |
+| GET    | `/api/v1/applications/{id}/audit`       | Append-only lifecycle audit trail         |
+| GET    | `/api/v1/metrics`                       | Status distribution + suggested-volume    |
