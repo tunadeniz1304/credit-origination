@@ -109,6 +109,12 @@ async function showDetail(id) {
       + "<a href=\"" + rec.result.report_json_path + "\" target=\"_blank\">JSON</a>";
     const sc = await api("GET", API + "/applications/" + id + "/scorecard");
     html += "<p>Kompozit Risk: <b>" + sc.grade + "</b> (" + sc.total_score + "/100)</p>";
+    html += "<table><thead><tr><th>Kriter</th><th>Agirlik</th><th>Skor</th><th>Katki</th></tr></thead><tbody>";
+    for (const r of sc.rows) {
+      html += "<tr><td>" + r.name + "</td><td>% " + Math.round(r.weight * 100)
+        + "</td><td>" + r.score + "</td><td>" + Math.round(r.contribution) + "</td></tr>";
+    }
+    html += "</tbody></table>";
     const au = await api("GET", API + "/applications/" + id + "/audit");
     html += "<p>Denetim kaydı: " + au.entries.length + " olay</p>";
     if (rec.status === "APPROVED") {
