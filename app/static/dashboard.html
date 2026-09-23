@@ -40,6 +40,7 @@ hr{border:0;border-top:1px solid #e6ebf1;margin:14px 0}
 
   <div class="card">
     <h2>Başvurular</h2>
+    <div id="stats" style="color:#54657a;font-size:13px;margin-bottom:10px"></div>
     <table>
       <thead><tr><th>ID</th><th>İsim</th><th>Durum</th><th>Önerilen Tutar</th><th></th></tr></thead>
       <tbody id="rows"></tbody>
@@ -79,6 +80,10 @@ async function submitApp() {
 async function loadAll() {
   const list = await api("GET", API + "/applications");
   rows.innerHTML = "";
+  const m = await api("GET", API + "/metrics");
+  const n = await api("GET", API + "/notifications");
+  stats.textContent = "Toplam: " + m.total_applications + " | Onaylı: " + m.approved_count
+    + " | Bekleyen bildirim: " + n.pending;
   for (const rec of list.applications) {
     const amount = rec.result && rec.result.decision
       ? rec.result.decision.suggested_amount.toLocaleString("tr-TR") : "-";
