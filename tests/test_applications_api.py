@@ -87,6 +87,15 @@ def test_submit_invalid_payload_returns_422():
     assert response.status_code == 422
 
 
+def test_submit_rejects_malformed_identity_and_unsupported_currency():
+    malformed_tc = client.post("/api/v1/applications", json=_payload(identity_no="12345"))
+    assert malformed_tc.status_code == 422
+    bad_currency = client.post("/api/v1/applications", json=_payload(currency="USD"))
+    assert bad_currency.status_code == 422
+    empty_name = client.post("/api/v1/applications", json=_payload(name="   "))
+    assert empty_name.status_code == 422
+
+
 def test_get_missing_application_returns_404():
     assert client.get("/api/v1/applications/APP-NOPE").status_code == 404
 

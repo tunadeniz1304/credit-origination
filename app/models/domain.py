@@ -37,7 +37,7 @@ class Applicant(BaseModel):
     """Natural person applying for credit."""
 
     name: str
-    identity_no: str
+    identity_no: str = Field(pattern=r"^\d{11}$")
     monthly_income: float = Field(gt=0)
     submitted_documents: list[str] = Field(default_factory=list)
 

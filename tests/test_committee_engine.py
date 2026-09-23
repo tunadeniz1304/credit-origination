@@ -150,3 +150,11 @@ def test_pipeline_runs_end_to_end_and_writes_reports(tmp_path):
     assert result.report_json_path and result.report_pdf_path
     assert Path(result.report_json_path).is_file()
     assert Path(result.report_pdf_path).is_file()
+
+
+def test_applicant_rejects_malformed_tc_kimlik():
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Applicant(name="X", identity_no="12", monthly_income=1000.0)
