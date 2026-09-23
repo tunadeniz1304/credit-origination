@@ -1,6 +1,16 @@
 """Application API tests: submit, fetch, validation (inline backend)."""
 from __future__ import annotations
 
+import os
+import tempfile
+
+# Isolate every API test in a fresh temp artifact dir (outbox, results,
+# reports, uploads) so the suite is hermetic across runs.
+_TMP_HOME = tempfile.mkdtemp(prefix="creditagent-tests-")
+os.environ["REPORT_OUTPUT_DIR"] = os.path.join(_TMP_HOME, "reports")
+os.environ["RESULT_STORE_DIR"] = os.path.join(_TMP_HOME, "results")
+os.environ["UPLOAD_DIR"] = os.path.join(_TMP_HOME, "uploads")
+
 from fastapi.testclient import TestClient
 
 from app.main import app
