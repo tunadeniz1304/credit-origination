@@ -9,6 +9,15 @@ from __future__ import annotations
 
 from typing import Any, Callable
 
+from app.api.store import update_record_status
+from app.core.config import get_settings
+from app.engine.pipeline import ApplicationPipeline
+from app.engine.store import (
+    load_application,
+    persist_error,
+    persist_result,
+)
+from app.models import ApplicationStatus
 from app.worker.celery_app import create_celery_app
 
 # Dispatcher-local Celery app (worker process uses the shared one).
@@ -25,7 +34,54 @@ def _inline_ping() -> str:
     return "pong"
 
 
+@_celery.task(name="app.tasks.process_application")
+def process_application(application_id: str) -> dict[str, Any]:
+    """Run the full credit pipeline for a persisted application.
+
+    Loads the application from disk (the API process persisted it at submit
+    time), runs the async pipeline, persists result + BDDK report files and
+    mirrors the status into the in-memory record store when present.
+    """
+    settings = get_settings()
+    from app.core.task_dispatcher import run_coroutine_safe
+
+    application = load_application(application_id, settings)
+    if application is None:
+        persist_error(application_id, "application record not found", settings)
+        update_record_status(application_id, status=ApplicationStatus.FAILED)
+        return {
+            "application_id": application_id,
+            "status": ApplicationStatus.FAILED.value,
+            "error": "application record not found",
+        }
+    update_record_status(application_id, status=ApplicationStatus.PROCESSING)
+    try:
+        result = run_coroutine_safe(
+            ApplicationPipeline(settings).run(
+                application, application_id=application_id
+            )
+        )
+        persist_result(application_id, result, settings)
+        update_record_status(application_id, status=result.status, result=result)
+        return result.model_dump(mode="json")
+    except Exception as exc:  # noqa: BLE001 - record failure, never crash the caller
+        persist_error(application_id, str(exc), settings)
+        update_record_status(
+            application_id, status=ApplicationStatus.FAILED, error=str(exc)
+        )
+        return {
+            "application_id": application_id,
+            "status": ApplicationStatus.FAILED.value,
+            "error": str(exc),
+        }
+
+
+def _inline_process_application(application_id: str) -> dict[str, Any]:
+    return process_application(application_id)
+
+
 # Callables available to the inline task dispatcher (name -> function).
 INLINE_TASKS: dict[str, Callable[..., Any]] = {
     "app.tasks.ping": _inline_ping,
+    "app.tasks.process_application": _inline_process_application,
 }
