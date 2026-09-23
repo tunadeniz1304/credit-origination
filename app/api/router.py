@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 
 from app.api.schemas import ApplicationSubmit
 from app.api.store import get_record, list_records, store_record, update_record_status
@@ -225,3 +226,62 @@ def metrics() -> dict:
         "approved_count": approved_count,
         "sum_suggested_amount": round(total_suggested, 2),
     }
+
+
+@router.get("/api/v1/applications/{application_id}/report", tags=["applications"])
+def download_report(application_id: str, format: str = "json") -> FileResponse:
+    """Serve the generated allocation report file (json or pdf)."""
+    if format not in ("json", "pdf"):
+        raise HTTPException(status_code=400, detail="format must be json or pdf")
+    settings = get_settings()
+    result = load_result(application_id, settings)
+    if result is None:
+        record = get_record(application_id)
+        if record is None or record.result is None:
+            raise HTTPException(status_code=404, detail="no report available")
+        result = record.result
+    path = result.report_pdf_path if format == "pdf" else result.report_json_path
+    from pathlib import Path
+
+    file = Path(path)
+    if not file.is_file():
+        raise HTTPException(status_code=404, detail="report file missing on disk")
+    media = "application/pdf" if format == "pdf" else "application/json"
+    return FileResponse(file, media_type=media, filename=file.name)
+
+
+@router.get("/api/v1/applications/{application_id}/documents", tags=["applications"])
+def document_status(application_id: str) -> dict:
+    """Return the current document-control snapshot for an application."""
+    from app.agents.document_agent import DocumentControlAgent
+    from app.engine.store import load_application
+
+    settings = get_settings()
+    application = load_application(application_id, settings)
+    if application is None:
+        raise HTTPException(status_code=404, detail="application not found")
+    check = DocumentControlAgent().check(application)
+    return {
+        "application_id": application_id,
+        "present": check.present,
+        "missing": [req.code for req in check.missing],
+        "complete": check.complete,
+        "request_draft": check.request_draft,
+    }
+
+
+@router.get("/api/v1/applications/{application_id}/scorecard", tags=["applications"])
+def application_scorecard(application_id: str) -> dict:
+    """Return the deterministic BDDK-style composite risk scorecard."""
+    from app.engine.scorecard import build_scorecard
+
+    settings = get_settings()
+    result = load_result(application_id, settings)
+    if result is None:
+        record = get_record(application_id)
+        if record is None or record.result is None:
+            raise HTTPException(status_code=404, detail="no decision available")
+        result = record.result
+    if result.decision is None:
+        raise HTTPException(status_code=404, detail="no decision available")
+    return build_scorecard(application_id, result.decision.factors).model_dump(mode="json")

@@ -175,3 +175,54 @@ def test_root_redirects_to_dashboard():
     dashboard = client.get("/static/dashboard.html")
     assert dashboard.status_code == 200
     assert "Operasyon Paneli" in dashboard.text
+
+
+def test_download_report_json_and_pdf():
+    submitted = client.post("/api/v1/applications", json=_payload())
+    application_id = submitted.json()["application_id"]
+    j = client.get(f"/api/v1/applications/{application_id}/report")
+    assert j.status_code == 200
+    assert j.headers["content-type"].startswith("application/json")
+    assert j.json()["status"] == "APPROVED"
+    p = client.get(f"/api/v1/applications/{application_id}/report", params={"format": "pdf"})
+    assert p.status_code == 200
+    assert p.headers["content-type"] == "application/pdf"
+    assert p.content[:4] == b"%PDF"
+    assert client.get(
+        f"/api/v1/applications/{application_id}/report", params={"format": "doc"}
+    ).status_code == 400
+
+
+def test_document_status_endpoint():
+    complete = client.post("/api/v1/applications", json=_payload())
+    body = client.get(f"/api/v1/applications/{complete.json()['application_id']}/documents").json()
+    assert body["complete"] is True
+    assert body["missing"] == []
+
+    sparse = client.post("/api/v1/applications", json=_payload(submitted_documents=["IDENTITY"]))
+    body = client.get(f"/api/v1/applications/{sparse.json()['application_id']}/documents").json()
+    assert body["complete"] is False
+    assert "INCOME" in body["missing"]
+    assert body["request_draft"]
+
+
+def test_scorecard_endpoint_returns_composite_grade():
+    submitted = client.post("/api/v1/applications", json=_payload())
+    application_id = submitted.json()["application_id"]
+    body = client.get(f"/api/v1/applications/{application_id}/scorecard").json()
+    assert body["application_id"] == application_id
+    assert body["grade"] == "A"
+    assert body["total_score"] == 100.0
+    assert len(body["rows"]) == 4
+    rejected = client.post(
+        "/api/v1/applications",
+        json=_payload(
+            identity_no="34567890123", monthly_income=30_000,
+            requested_amount=50_000, requested_term_months=24,
+        ),
+    ).json()
+    rej_body = client.get(
+        f"/api/v1/applications/{rejected['application_id']}/scorecard"
+    ).json()
+    assert rej_body["total_score"] < 100.0
+    assert rej_body["grade"] != "A"
