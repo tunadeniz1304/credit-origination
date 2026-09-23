@@ -226,3 +226,23 @@ def test_scorecard_endpoint_returns_composite_grade():
     ).json()
     assert rej_body["total_score"] < 100.0
     assert rej_body["grade"] != "A"
+
+
+def test_offer_endpoint_returns_priced_terms():
+    submitted = client.post("/api/v1/applications", json=_payload())
+    application_id = submitted.json()["application_id"]
+    body = client.get(f"/api/v1/applications/{application_id}/offer").json()
+    assert body["status"] == "APPROVED"
+    assert body["proposed_amount"] == 1_800_000.0
+    assert body["instalment"] > 0
+    assert body["risk_grade"] == "A"
+    rejected = client.post(
+        "/api/v1/applications",
+        json=_payload(
+            identity_no="34567890123", monthly_income=30_000,
+            requested_amount=50_000, requested_term_months=24,
+        ),
+    ).json()
+    assert client.get(
+        f"/api/v1/applications/{rejected['application_id']}/offer"
+    ).status_code == 409

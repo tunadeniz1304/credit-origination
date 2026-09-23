@@ -285,3 +285,24 @@ def application_scorecard(application_id: str) -> dict:
     if result.decision is None:
         raise HTTPException(status_code=404, detail="no decision available")
     return build_scorecard(application_id, result.decision.factors).model_dump(mode="json")
+
+
+@router.get("/api/v1/applications/{application_id}/offer", tags=["applications"])
+def application_offer(application_id: str) -> dict:
+    """Return the priced loan offer for an approved application."""
+    from app.engine.offer import build_offer
+    from app.engine.scorecard import build_scorecard
+
+    settings = get_settings()
+    result = load_result(application_id, settings)
+    if result is None:
+        record = get_record(application_id)
+        if record is None or record.result is None:
+            raise HTTPException(status_code=404, detail="no decision available")
+        result = record.result
+    if result.decision is None:
+        raise HTTPException(status_code=404, detail="no decision available")
+    if result.status != ApplicationStatus.APPROVED:
+        raise HTTPException(status_code=409, detail="offer available only for approved applications")
+    scorecard = build_scorecard(application_id, result.decision.factors)
+    return build_offer(application_id, result.decision, scorecard).model_dump(mode="json")
