@@ -108,6 +108,7 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
             Spacer(1, 0.4 * cm),
             Paragraph(f"KARAR: {payload.status.value}", styles["Verdict"]),
         ]
+        _append_schedule(story, styles, application_id, decision)
 
     _table_style = [
         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -139,6 +140,40 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
     except Exception as exc:  # noqa: BLE001 - surface writer failures loudly
         logger.exception("PDF build failed for %s: %s", application_id, exc)
         raise
+
+
+def _append_schedule(story, styles, application_id: str, decision) -> None:
+    """Append the amortization plan (first 12 rows) to the report story."""
+    from app.engine.schedule import build_schedule
+
+    schedule = build_schedule(
+        application_id,
+        principal=decision.suggested_amount,
+        term_months=decision.suggested_term_months,
+    )
+    rows = [["Ay", "Kalan Bakiye", "Faiz", "Ana Para", "Taksit"]]
+    for row in schedule.rows[:12]:
+        rows.append(
+            [
+                str(row.period),
+                f"{row.principal_balance:,.2f}",
+                f"{row.interest:,.2f}",
+                f"{row.principal_paid:,.2f}",
+                f"{row.instalment:,.2f}",
+            ]
+        )
+    story += [
+        PageBreak(),
+        Paragraph("4. Geri Ödeme Planı (Vade Planı)", styles["SectionHeading"]),
+        Table(rows, colWidths=[2 * cm, 4 * cm, 3.4 * cm, 3.4 * cm, 3.2 * cm]),
+        Spacer(1, 0.4 * cm),
+        Paragraph(
+            f"Aylık Taksit: {schedule.instalment:,.2f} TRY &nbsp;&nbsp; "
+            f"Toplam Ödeme: {schedule.total_payment:,.2f} TRY &nbsp;&nbsp; "
+            f"Toplam Faiz: {schedule.total_interest:,.2f} TRY",
+            styles["BodyJustified"],
+        ),
+    ]
 
 
 def pdf_to_text(path: str) -> str:

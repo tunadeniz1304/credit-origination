@@ -125,6 +125,8 @@ def test_generate_report_files_writes_json_and_pdf(tmp_path):
     assert "RAPORU" in pdf_text  # Turkish diacritics are not pypdf-extractable
     assert "KARAR: APPROVED" in pdf_text
     assert "UYGUN" in pdf_text
+    assert "Geri Ödeme Plan" in pdf_text
+    assert "Toplam Ödeme" in pdf_text
 
 
 def test_pipeline_runs_end_to_end_and_writes_reports(tmp_path):
