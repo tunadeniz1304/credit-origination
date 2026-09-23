@@ -202,3 +202,26 @@ def reprocess_application(application_id: str) -> dict:
         record.queue_backend = receipt.backend
         store_record(record)
     return record.to_dict() if record else receipt.model_dump(mode="json")
+
+
+@router.get("/api/v1/metrics", tags=["system"])
+def metrics() -> dict:
+    """Summarize the processed pipeline (status distribution + totals)."""
+    settings = get_settings()
+    from app.api.store import records as _records
+
+    status_counts: dict[str, int] = {}
+    total_suggested = 0.0
+    approved_count = 0
+    for record in _records.values():
+        status_counts[record.status.value] = status_counts.get(record.status.value, 0) + 1
+        if record.result and record.result.decision:
+            total_suggested += record.result.decision.suggested_amount
+            if record.result.status == ApplicationStatus.APPROVED:
+                approved_count += 1
+    return {
+        "total_applications": len(_records),
+        "by_status": status_counts,
+        "approved_count": approved_count,
+        "sum_suggested_amount": round(total_suggested, 2),
+    }

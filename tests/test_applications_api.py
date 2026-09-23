@@ -157,3 +157,21 @@ def test_reprocess_reenqueues_application():
     body = response.json()
     assert body["application_id"] == application_id
     assert body["status"] in ("APPROVED", "REJECTED", "QUEUED", "PROCESSING")
+
+
+def test_metrics_reports_status_distribution():
+    body = client.get("/api/v1/metrics").json()
+    assert "total_applications" in body
+    assert "by_status" in body
+    assert body["total_applications"] >= 1
+    assert body["approved_count"] >= 1
+    assert body["sum_suggested_amount"] > 0
+
+
+def test_root_redirects_to_dashboard():
+    response = client.get("/", follow_redirects=False)
+    assert response.status_code in (307, 308)
+    assert response.headers["location"] == "/static/dashboard.html"
+    dashboard = client.get("/static/dashboard.html")
+    assert dashboard.status_code == 200
+    assert "Operasyon Paneli" in dashboard.text
