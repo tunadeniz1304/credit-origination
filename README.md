@@ -111,6 +111,14 @@ python -m pytest -q
 Unit tests exercise the pipeline through the inline dispatcher and mocked
 HTTP (respx) — no Redis or live network required.
 
+### End-to-end smoke
+
+Against a running server, walk the whole API surface with one command:
+
+```bash
+python scripts/smoke.py --base http://127.0.0.1:8000
+```
+
 ## Docker
 
 ```bash
