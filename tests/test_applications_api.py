@@ -258,3 +258,32 @@ def test_audit_endpoint_returns_lifecycle_events():
     # inline backend finalises synchronously, so the verdict is recorded.
     assert "APPLICATION_APPROVED" in actions
     assert len(body["entries"]) >= 3
+
+
+def test_queue_status_reports_backend_and_registered_tasks():
+    body = client.get("/api/v1/queue").json()
+    assert body["backend"] == "inline"
+    assert "app.tasks.process_application" in body["registered_tasks"]
+    assert body["task_count"] >= 2
+
+
+def test_document_chunks_retrieval():
+    submitted = client.post(
+        "/api/v1/applications", json=_payload(submitted_documents=["INCOME"])
+    )
+    application_id = submitted.json()["application_id"]
+    content = ("Aylık gelir 30000 TRY, maaş ödemeleri banka hesap ekstresinden "
+               "doğrulanır. Bu belgede bordro kesintileri ve primler listelenir.\n") * 20
+    client.post(
+        f"/api/v1/applications/{application_id}/documents",
+        files={"file": ("INCOME.txt", content.encode(), "text/plain")},
+        data={"code": "INCOME"},
+    )
+    body = client.get(
+        f"/api/v1/applications/{application_id}/documents/INCOME/chunks",
+        params={"query": "ekstresi", "k": 3},
+    ).json()
+    assert body["matched_file"]
+    assert body["total_chunks"] >= 1
+    assert body["chunks"]
+    assert all("ekstresi" in chunk["text"].lower() for chunk in body["chunks"])

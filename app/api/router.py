@@ -266,6 +266,33 @@ def metrics() -> dict:
     }
 
 
+@router.get("/api/v1/queue", tags=["system"])
+def queue_status() -> dict:
+    """Report the active queue backend, registered tasks and broker health."""
+    dispatcher = TaskDispatcher()
+    from app.worker.tasks import INLINE_TASKS
+
+    registered = sorted(INLINE_TASKS.keys())
+    body: dict = {
+        "backend": dispatcher.backend,
+        "registered_tasks": registered,
+        "task_count": len(registered),
+        "celery_active": None,
+    }
+    if dispatcher.backend == "celery":
+        try:
+            from app.worker.tasks import _celery
+
+            inspector = _celery.control.inspect()
+            active = inspector.active() or {}
+            body["celery_active"] = {
+                worker: len(tasks) for worker, tasks in active.items()
+            }
+        except Exception as exc:  # noqa: BLE001 - broker inspection is best-effort
+            body["celery_active_error"] = str(exc)
+    return body
+
+
 @router.get("/api/v1/applications/{application_id}/report", tags=["applications"])
 def download_report(application_id: str, format: str = "json") -> FileResponse:
     """Serve the generated allocation report file (json or pdf)."""
@@ -344,3 +371,43 @@ def application_offer(application_id: str) -> dict:
         raise HTTPException(status_code=409, detail="offer available only for approved applications")
     scorecard = build_scorecard(application_id, result.decision.factors)
     return build_offer(application_id, result.decision, scorecard).model_dump(mode="json")
+
+
+@router.get("/api/v1/applications/{application_id}/documents/{code}/chunks", tags=["applications"])
+def document_chunks(
+    application_id: str,
+    code: str,
+    query: str = "",
+    k: int = 3,
+) -> dict:
+    """Retrieve top-k RAG chunks from an uploaded applicant document."""
+    from pathlib import Path
+
+    from app.agents.document_agent import RAGDocumentAnalyzer
+
+    settings = get_settings()
+    normalized = code.upper()
+    matched: str | None = None
+    uploads = settings.uploads_dir
+    if uploads.is_dir():
+        for file in sorted(uploads.iterdir()):
+            if file.is_file() and Path(file.name).stem.upper() == normalized:
+                matched = str(file)
+                break
+    if matched is None:
+        return {
+            "application_id": application_id,
+            "code": normalized,
+            "matched_file": None,
+            "chunks": [],
+        }
+    analyzer = RAGDocumentAnalyzer()
+    analysis = analyzer.analyze([matched])
+    hits = analyzer.retrieve(query, k=min(max(k, 1), 20)) if query else []
+    return {
+        "application_id": application_id,
+        "code": normalized,
+        "matched_file": matched,
+        "total_chunks": analysis.total_chunks,
+        "chunks": [chunk.model_dump(mode="json") for chunk in hits],
+    }

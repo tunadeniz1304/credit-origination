@@ -96,6 +96,10 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
             PageBreak(),
             Paragraph("2. Komite Eşik Değerlendirmeleri", styles["SectionHeading"]),
             Table(factor_rows, colWidths=[6 * cm, 4 * cm, 4 * cm, 2.5 * cm]),
+            Spacer(1, 0.4 * cm),
+        ]
+        _append_risk_grade(story, styles, application_id, decision)
+        story += [
             Spacer(1, 0.6 * cm),
             Paragraph(
                 f"Önerilen Kredi Tutarı: {decision.suggested_amount:,.2f} TRY<br/>"
@@ -140,6 +144,21 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
     except Exception as exc:  # noqa: BLE001 - surface writer failures loudly
         logger.exception("PDF build failed for %s: %s", application_id, exc)
         raise
+
+
+def _append_risk_grade(story, styles, application_id: str, decision) -> None:
+    """Append the composite risk score line to the report story."""
+    from app.engine.scorecard import build_scorecard
+
+    scorecard = build_scorecard(application_id, decision.factors)
+    story.append(
+        Paragraph(
+            "Kompozit Risk Skoru "
+            f"<b>{scorecard.total_score:.0f}/100</b> &nbsp;&nbsp; "
+            f"Risk Sınıfı: <b>{scorecard.grade}</b>",
+            styles["BodyJustified"],
+        )
+    )
 
 
 def _append_schedule(story, styles, application_id: str, decision) -> None:
