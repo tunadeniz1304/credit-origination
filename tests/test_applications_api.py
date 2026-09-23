@@ -86,3 +86,74 @@ def test_list_applications_newest_first():
     assert isinstance(body["applications"], list)
     ids = [item["application_id"] for item in body["applications"]]
     assert ids == sorted(ids, reverse=True)
+
+
+def test_schedule_endpoint_returns_plan_for_approved():
+    response = client.post("/api/v1/applications", json=_payload())
+    application_id = response.json()["application_id"]
+    schedule = client.get(f"/api/v1/applications/{application_id}/schedule").json()
+    assert schedule["term_months"] == 36
+    assert schedule["principal"] == 1_800_000.0  # suggested_amount
+    assert len(schedule["rows"]) == 36
+    assert schedule["instalment"] > 0
+    assert schedule["total_payment"] >= schedule["principal"]
+
+
+def test_schedule_endpoint_rejects_unapproved():
+    response = client.post(
+        "/api/v1/applications",
+        json=_payload(
+            identity_no="34567890123", monthly_income=30_000,
+            requested_amount=50_000, requested_term_months=24,
+        ),
+    )
+    application_id = response.json()["application_id"]
+    assert client.get(f"/api/v1/applications/{application_id}/schedule").status_code == 409
+
+
+def test_upload_document_updates_completeness():
+    submitted = client.post(
+        "/api/v1/applications", json=_payload(submitted_documents=["IDENTITY"])
+    )
+    application_id = submitted.json()["application_id"]
+
+    incomplete = client.post(
+        f"/api/v1/applications/{application_id}/documents",
+        files={"file": ("INCOME.txt", b"aylik gelir belgesi", "text/plain")},
+        data={"code": "INCOME"},
+    )
+    assert incomplete.status_code == 200
+    assert incomplete.json()["complete"] is False
+
+    rest = ["EMPLOYMENT", "ADDRESS", "BANK_STATEMENT"]
+    for code in rest:
+        client.post(
+            f"/api/v1/applications/{application_id}/documents",
+            files={"file": (f"{code}.txt", b"belge", "text/plain")},
+            data={"code": code},
+        )
+    complete = client.get(f"/api/v1/applications/{application_id}").json()
+    assert set(complete["application"]["applicant"]["submitted_documents"]) == set(
+        ["IDENTITY", "INCOME", *rest]
+    )
+
+
+def test_upload_unknown_document_code_returns_400():
+    submitted = client.post("/api/v1/applications", json=_payload())
+    application_id = submitted.json()["application_id"]
+    response = client.post(
+        f"/api/v1/applications/{application_id}/documents",
+        files={"file": ("X.txt", b"x", "text/plain")},
+        data={"code": "NOT_A_CODE"},
+    )
+    assert response.status_code == 400
+
+
+def test_reprocess_reenqueues_application():
+    submitted = client.post("/api/v1/applications", json=_payload())
+    application_id = submitted.json()["application_id"]
+    response = client.post(f"/api/v1/applications/{application_id}/reprocess")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["application_id"] == application_id
+    assert body["status"] in ("APPROVED", "REJECTED", "QUEUED", "PROCESSING")

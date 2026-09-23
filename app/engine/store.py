@@ -88,3 +88,32 @@ def persist_error(application_id: str, message: str, settings: Settings) -> Path
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"error": message}, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
+
+
+def append_submitted_document(
+    application_id: str,
+    code: str,
+    settings: Settings,
+) -> LoanApplication | None:
+    """Deliver a document: add its code to the persisted application and
+    rewrite both the application file and (when present) the in-memory record.
+    Returns the updated application, or ``None`` when it cannot be located."""
+    application = load_application(application_id, settings)
+    if application is None:
+        return None
+    normalized = code.upper()
+    applicant = application.applicant
+    if normalized not in [doc.upper() for doc in applicant.submitted_documents]:
+        applicant = applicant.model_copy(
+            update={"submitted_documents": [*applicant.submitted_documents, normalized]}
+        )
+        application = application.model_copy(update={"applicant": applicant})
+    persist_application(application_id, application, settings)
+
+    from app.api.store import get_record, store_record
+
+    record = get_record(application_id)
+    if record is not None:
+        record.application = application
+        store_record(record)
+    return application
