@@ -437,3 +437,10 @@ def deliver_notification(notification_id: str) -> dict:
     if not ok:
         raise HTTPException(status_code=404, detail="notification not found or already delivered")
     return {"notification_id": notification_id, "delivered": True}
+
+
+@router.post("/api/v1/notifications/dispatch", tags=["system"])
+def dispatch_notifications_api() -> dict:
+    """Enqueue draining of pending outbox notifications."""
+    receipt = TaskDispatcher().enqueue("app.tasks.dispatch_notifications")
+    return receipt.model_dump(mode="json")

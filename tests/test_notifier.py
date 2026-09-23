@@ -4,6 +4,7 @@ from __future__ import annotations
 from app.core.config import Settings
 from app.engine.notifier import (
     EVENT_APPROVED,
+    dispatch_pending,
     enqueue_notification,
     list_notifications,
     mark_delivered,
@@ -44,3 +45,12 @@ def test_delivered_entries_sort_behind_pending(tmp_path):
     mark_delivered(first.id, settings)
     entries = list_notifications(settings=settings)
     assert [e.application_id for e in entries] == ["APP-B", "APP-A"]
+
+
+def test_dispatch_pending_marks_all_delivered(tmp_path):
+    settings = _settings(tmp_path)
+    enqueue_notification("APP-A", "APPLICATION_REJECTED", {}, settings)
+    enqueue_notification("APP-B", EVENT_APPROVED, {}, settings)
+    assert dispatch_pending(settings) == 2
+    assert all(e.delivered for e in list_notifications(settings=settings))
+    assert dispatch_pending(settings) == 0  # nothing left to deliver

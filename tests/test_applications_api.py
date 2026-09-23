@@ -299,3 +299,14 @@ def test_notifications_outbox_reflects_approved_decision():
     assert delivered["delivered"] is True
     after = client.get("/api/v1/notifications").json()
     assert sum(1 for e in after["entries"] if not e["delivered"]) < body["pending"]
+
+
+def test_dispatch_task_drains_outbox():
+    client.post("/api/v1/applications", json=_payload())
+    pending_before = client.get("/api/v1/notifications").json()["pending"]
+    resp = client.post("/api/v1/notifications/dispatch").json()
+    assert resp["backend"] == "inline"
+    dispatched = resp["result"]["dispatched"]
+    assert dispatched >= 1
+    pending_after = client.get("/api/v1/notifications").json()["pending"]
+    assert pending_after == pending_before - dispatched

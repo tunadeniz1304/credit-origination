@@ -125,3 +125,19 @@ def mark_delivered(
                 fh.write("\n".join(rewrites) + "\n")
     return found
 
+
+def dispatch_pending(settings: Settings | None = None) -> int:
+    """Simulate webhook delivery: mark every pending entry delivered.
+
+    Returns the number of entries delivered in this pass.
+    """
+    from app.core.config import get_settings
+
+    settings = settings or get_settings()
+    dispatched = 0
+    for entry in list_notifications(limit=200, settings=settings):
+        if not entry.delivered:
+            if mark_delivered(entry.id, settings):
+                dispatched += 1
+    return dispatched
+

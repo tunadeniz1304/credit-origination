@@ -104,8 +104,22 @@ def _inline_process_application(application_id: str) -> dict[str, Any]:
     return process_application(application_id)
 
 
+@_celery.task(name="app.tasks.dispatch_notifications")
+def dispatch_notifications() -> dict[str, Any]:
+    """Worker task: drain the notification outbox (simulated webhooks)."""
+    from app.engine.notifier import dispatch_pending
+
+    dispatched = dispatch_pending()
+    return {"dispatched": dispatched}
+
+
+def _inline_dispatch_notifications() -> dict[str, Any]:
+    return dispatch_notifications()
+
+
 # Callables available to the inline task dispatcher (name -> function).
 INLINE_TASKS: dict[str, Callable[..., Any]] = {
     "app.tasks.ping": _inline_ping,
     "app.tasks.process_application": _inline_process_application,
+    "app.tasks.dispatch_notifications": _inline_dispatch_notifications,
 }
