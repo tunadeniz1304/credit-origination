@@ -24,7 +24,7 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    command: celery -A app.worker.celery_app:celery_app worker --loglevel=info
+    command: celery -A app.worker.celery_app:celery_app worker --loglevel=info --concurrency=2
     environment:
       REDIS_URL: redis://redis:6379/0
       RESULT_BACKEND: redis://redis:6379/0

@@ -140,4 +140,8 @@ and worker wait for a healthy Redis before starting.
 | GET    | `/api/v1/applications/{id}/offer`       | Priced loan offer terms (approved only)   |
 | GET    | `/api/v1/applications/{id}/report`      | Download JSON/PDF report file             |
 | GET    | `/api/v1/applications/{id}/audit`       | Append-only lifecycle audit trail         |
+| GET    | `/api/v1/applications/{id}/documents/{code}/chunks` | Top-k RAG retrieval over an uploaded doc |
+| GET    | `/api/v1/queue`                         | Queue backend + registered tasks          |
+| GET    | `/api/v1/notifications`                 | Notification outbox (undelivered first)   |
+| POST   | `/api/v1/notifications/{id}/deliver`    | Mark one outbox notification delivered    |
 | GET    | `/api/v1/metrics`                       | Status distribution + suggested-volume    |
