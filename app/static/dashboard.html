@@ -102,6 +102,10 @@ async function showDetail(id) {
       + " TRY</b> &middot; Vade: " + d.suggested_term_months + " ay</p>";
     html += "<a href=\"" + rec.result.report_pdf_path + "\" target=\"_blank\">PDF Rapor</a> &middot; "
       + "<a href=\"" + rec.result.report_json_path + "\" target=\"_blank\">JSON</a>";
+    const sc = await api("GET", API + "/applications/" + id + "/scorecard");
+    html += "<p>Kompozit Risk: <b>" + sc.grade + "</b> (" + sc.total_score + "/100)</p>";
+    const au = await api("GET", API + "/applications/" + id + "/audit");
+    html += "<p>Denetim kaydı: " + au.entries.length + " olay</p>";
     if (rec.status === "APPROVED") {
       const sch = await api("GET", API + "/applications/" + id + "/schedule");
       html += "<hr/><h2>Geri Ödeme Plan</h2><table><thead><tr><th>Ay</th><th>Bakiye</th><th>Faiz</th><th>Ana Para</th><th>Taksit</th></tr></thead><tbody>";
