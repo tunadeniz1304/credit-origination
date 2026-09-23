@@ -76,6 +76,16 @@ def process_application(application_id: str) -> dict[str, Any]:
             ACTION_APPROVED if result.status == ApplicationStatus.APPROVED else ACTION_REJECTED
         )
         append_audit(application_id, action, f"committee verdict: {result.status.value}", settings)
+        from app.engine.notifier import enqueue_notification
+
+        enqueue_notification(
+            application_id,
+            event=result.status.value,
+            payload={"status": result.status.value, "amount": result.decision.suggested_amount}
+            if result.decision
+            else {"status": result.status.value},
+            settings=settings,
+        )
         return result.model_dump(mode="json")
     except Exception as exc:  # noqa: BLE001 - record failure, never crash the caller
         persist_error(application_id, str(exc), settings)

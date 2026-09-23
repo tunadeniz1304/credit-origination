@@ -411,3 +411,29 @@ def document_chunks(
         "total_chunks": analysis.total_chunks,
         "chunks": [chunk.model_dump(mode="json") for chunk in hits],
     }
+
+
+@router.get("/api/v1/notifications", tags=["system"])
+def list_notifications_api(limit: int = 50) -> dict:
+    """Return the notification outbox (undelivered first)."""
+    from app.engine.notifier import list_notifications
+
+    settings = get_settings()
+    entries = list_notifications(limit=limit, settings=settings)
+    return {
+        "total": len(entries),
+        "pending": sum(1 for e in entries if not e.delivered),
+        "entries": [entry.model_dump(mode="json") for entry in entries],
+    }
+
+
+@router.post("/api/v1/notifications/{notification_id}/deliver", tags=["system"])
+def deliver_notification(notification_id: str) -> dict:
+    """Mark one outbox notification as delivered."""
+    from app.engine.notifier import mark_delivered
+
+    settings = get_settings()
+    ok = mark_delivered(notification_id, settings)
+    if not ok:
+        raise HTTPException(status_code=404, detail="notification not found or already delivered")
+    return {"notification_id": notification_id, "delivered": True}

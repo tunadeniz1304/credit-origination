@@ -287,3 +287,15 @@ def test_document_chunks_retrieval():
     assert body["total_chunks"] >= 1
     assert body["chunks"]
     assert all("ekstresi" in chunk["text"].lower() for chunk in body["chunks"])
+
+
+def test_notifications_outbox_reflects_approved_decision():
+    client.post("/api/v1/applications", json=_payload())
+    body = client.get("/api/v1/notifications").json()
+    assert body["pending"] >= 1
+    assert any(e["event"] == "APPROVED" for e in body["entries"])
+    notif_id = body["entries"][0]["id"]
+    delivered = client.post(f"/api/v1/notifications/{notif_id}/deliver").json()
+    assert delivered["delivered"] is True
+    after = client.get("/api/v1/notifications").json()
+    assert sum(1 for e in after["entries"] if not e["delivered"]) < body["pending"]
