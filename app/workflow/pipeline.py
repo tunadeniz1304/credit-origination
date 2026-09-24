@@ -142,12 +142,12 @@ class Pipeline:
         missing = service.missing_documents(app)
         if missing:
             if app.state != State.BELGE_BEKLENIYOR.value:
-                service.transition(
-                    app, State.BELGE_BEKLENIYOR, "eksik belge: " + ", ".join(c for c, _ in missing)
-                )
                 pii = service.pii(app)
                 letter = await self.narrator().missing_documents_letter(
                     missing_docs_context(app, pii["name"], missing, pii)
+                )
+                service.transition(
+                    app, State.BELGE_BEKLENIYOR, "eksik belge: " + ", ".join(c for c, _ in missing)
                 )
                 app.letters = {
                     **(app.letters or {}),
@@ -360,18 +360,6 @@ class Pipeline:
         result = decide(snapshot, policy=policy, models=get_models(), pricing_cfg=load_pricing())
         decision = persist_decision(session, app, snapshot, result)
         DECISIONS.labels(outcome=result.outcome).inc()
-        service.audit(
-            "DECISION_MADE",
-            app.id,
-            {
-                "decision_id": decision.id,
-                "outcome": result.outcome,
-                "pd": result.pd,
-                "rule_set": decision.rule_set_version,
-                "model": decision.model_version,
-                "feature_hash": decision.feature_hash,
-            },
-        )
         pii = service.pii(app)
         flags = [s["label"] for d in service.documents(app) for s in d.fraud_signals]
         ctx = build_context(
@@ -386,6 +374,20 @@ class Pipeline:
             "modes": bundle.modes,
             "errors": bundle.errors,
         }
+        # Slow work (narratives) happens before the first audit append: the audit
+        # chain lock is held from the first append until commit.
+        service.audit(
+            "DECISION_MADE",
+            app.id,
+            {
+                "decision_id": decision.id,
+                "outcome": result.outcome,
+                "pd": result.pd,
+                "rule_set": decision.rule_set_version,
+                "model": decision.model_version,
+                "feature_hash": decision.feature_hash,
+            },
+        )
         app.decided_at = utcnow()
         target = State(result.outcome)
         service.transition(

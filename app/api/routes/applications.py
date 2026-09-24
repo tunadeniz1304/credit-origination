@@ -130,7 +130,7 @@ def timeline(
 
 
 @router.post("/{application_id}/documents", status_code=status.HTTP_201_CREATED)
-async def upload_document(
+def upload_document(
     application_id: str,
     background: BackgroundTasks,
     code: str = Form(...),
@@ -147,7 +147,7 @@ async def upload_document(
     ):
         raise HTTPException(status.HTTP_409_CONFLICT, "bu aşamada belge yüklenemez")
     settings = get_settings()
-    data = await file.read(settings.max_upload_bytes + 1)
+    data = file.file.read(settings.max_upload_bytes + 1)  # sync: runs in the threadpool
     service = ApplicationService(session, user)
     try:
         document = service.add_document(app, code, file.filename or "belge", data)

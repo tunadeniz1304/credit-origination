@@ -67,7 +67,9 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     except IntegrityError:  # another worker process seeded them concurrently
         logger.info("demo users already created by another worker")
     from app.db.session import register_after_commit
+    from app.decisioning.models import get_models
 
+    get_models()  # warm models (and SHAP) before serving traffic
     register_recorder(_buffer_llm_call)
     register_after_commit(_flush_llm_calls)
     if settings.using_dev_jwt_secret and settings.app_env == "prod":
