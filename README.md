@@ -38,6 +38,12 @@ python -m pytest -q --cov=app       # 231 tests, 89% coverage
 * PII (name, TCKN, phone, IBAN, address, e-mail) is pseudonymised before leaving the process and restored in the response; logs are masked.
 * On-premise model: `LLM_BASE_URL=http://vllm:8000/v1 LLM_MODEL=qwen2.5-32b-instruct` — nothing else changes.
 
+## Screenshots
+
+| Applicant portal | Underwriter workbench (SHAP + reason codes) | Management dashboard |
+|---|---|---|
+| ![portal](docs/img/applicant_portal.png) | ![workbench](docs/img/workbench.png) | ![dashboard](docs/img/dashboard.png) |
+
 ## Architecture
 
 ```mermaid

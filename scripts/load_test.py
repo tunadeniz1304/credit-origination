@@ -28,6 +28,7 @@ from app.integrations import personas
 from app.kyc.tckn import synthetic_tckn
 from scripts.smoke import Client
 
+RUN = int(time.time()) % 10**6 * 100  # unique identifiers per run (no velocity hits)
 DONE = {"TEKLIF_SUNULDU", "UZMAN_INCELEMESI", "OTOMATIK_RET"}
 
 
@@ -39,10 +40,10 @@ def one(base: str, index: int, tmp: Path, timeout: float) -> dict:
     body = {
         "name": f"Yük Testi {index}",
         "identity_no": tckn,
-        "phone": f"0544{index:07d}",
+        "phone": f"0544{(index + RUN) % 10**7:07d}",
         "email": "load@example.com",
         "address": f"Yük Sok. No:{index}",
-        "iban": f"TR44000610000000{index:010d}",
+        "iban": f"TR44000610000000{(index + RUN) % 10**10:010d}",
         "monthly_income": income,
         "requested_amount": income * 4,
         "requested_term_months": 36,
