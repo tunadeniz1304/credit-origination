@@ -1,12 +1,11 @@
-"""End-to-end API smoke test (runnable against a live server).
+"""End-to-end smoke test against a running server (Docker or local).
 
-Walks the complete surface: health -> submit (approved + rejected vectors)
--> fetch -> schedule -> scorecard -> offer -> audit -> notifications ->
-dispatch -> metrics -> queue -> dashboard. Prints a PASS/FAIL summary and
-exits non-zero when any step fails.
+Walks the full journey through HTTP only: login → application → document
+upload → decision → offer → acceptance → disbursal, plus a grey-zone review
+with four-eyes, an automatic rejection with a KVKK objection, the AI memo,
+governance endpoints and the dashboard. Exit code 1 on any failure.
 
-Usage:
-    python scripts/smoke.py [--base http://127.0.0.1:8000]
+Usage: python scripts/smoke.py [--base http://127.0.0.1:8000] [--timeout 120]
 """
 
 from __future__ import annotations
@@ -14,105 +13,240 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import tempfile
+import time
 import urllib.error
 import urllib.request
+import uuid
+from pathlib import Path
 
-APPROVE_IDENTITY = "12345678901"
-REJECT_IDENTITY = "34567890123"
-ALL_DOCS = ["IDENTITY", "INCOME", "EMPLOYMENT", "ADDRESS", "BANK_STATEMENT"]
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from app.documents.samples import generate_applicant_bundle
+from app.integrations.personas import DEMO_TCKN, open_banking_transactions
 
-def request(url: str, method: str = "GET", payload: dict | None = None) -> tuple[int, object]:
-    data = json.dumps(payload).encode() if payload is not None else None
-    req = urllib.request.Request(
-        url, data=data, method=method, headers={"Content-Type": "application/json"}
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            raw = resp.read()
-            try:
-                return resp.status, json.loads(raw)
-            except ValueError:
-                return resp.status, raw
-    except urllib.error.HTTPError as exc:
-        return exc.code, exc
+PASS = "Demo123!"
 
 
-def submit(base: str, identity: str, income: float, amount: float, term: int) -> str:
-    status, body = request(
-        f"{base}/api/v1/applications",
-        "POST",
-        {
-            "name": "Smoke",
-            "identity_no": identity,
-            "monthly_income": income,
-            "requested_amount": amount,
-            "requested_term_months": term,
-            "submitted_documents": ALL_DOCS,
+class Client:
+    def __init__(self, base: str) -> None:
+        self.base = base.rstrip("/")
+        self.token: str | None = None
+
+    def call(
+        self,
+        path: str,
+        method: str = "GET",
+        payload: dict | None = None,
+        raw: bytes | None = None,
+        ctype: str | None = None,
+    ):
+        headers = {}
+        data = None
+        if payload is not None:
+            data = json.dumps(payload).encode()
+            headers["Content-Type"] = "application/json"
+        if raw is not None:
+            data, headers["Content-Type"] = raw, ctype or "application/octet-stream"
+        if self.token:
+            headers["Authorization"] = f"Bearer {self.token}"
+        req = urllib.request.Request(self.base + path, data=data, method=method, headers=headers)
+        try:
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                body = resp.read()
+                try:
+                    return resp.status, json.loads(body)
+                except ValueError:
+                    return resp.status, body
+        except urllib.error.HTTPError as exc:
+            return exc.code, exc.read()[:300]
+
+    def login(self, user: str) -> None:
+        self.token = None
+        status, body = self.call("/api/v1/auth/login", "POST", {"username": user, "password": PASS})
+        assert status == 200, body
+        self.token = body["access_token"]
+
+    def upload(self, app_id: str, code: str, path: Path):
+        boundary = uuid.uuid4().hex
+        body = (
+            (
+                f'--{boundary}\r\nContent-Disposition: form-data; name="code"\r\n\r\n{code}\r\n'
+                f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{path.name}"\r\n'
+                "Content-Type: application/pdf\r\n\r\n"
+            ).encode()
+            + path.read_bytes()
+            + f"\r\n--{boundary}--\r\n".encode()
+        )
+        return self.call(
+            f"/api/v1/applications/{app_id}/documents",
+            "POST",
+            raw=body,
+            ctype=f"multipart/form-data; boundary={boundary}",
+        )
+
+
+def application(persona: str, suffix: str, income: float, amount: float) -> dict:
+    return {
+        "name": f"Duman Test {suffix}",
+        "identity_no": DEMO_TCKN[persona],
+        "birth_date": "1985-01-01",
+        "phone": f"0535{abs(hash(suffix)) % 10_000_000:07d}",
+        "email": "smoke@example.com",
+        "address": f"Smoke Sok. No:{suffix}",
+        "iban": f"TR5500061000000000{abs(hash(suffix)) % 10**8:08d}",
+        "monthly_income": income,
+        "employment_type": "MAASLI",
+        "employer_name": "Anadolu Bilişim",
+        "product": "IHTIYAC",
+        "requested_amount": amount,
+        "requested_term_months": 36,
+        "consents": {
+            "kvkk_aydinlatma": True,
+            "acik_riza": True,
+            "kkb_sorgu": True,
+            "edevlet_sorgu": True,
+            "acik_bankacilik": True,
         },
-    )
-    assert status == 202, f"submit status {status}"
-    return body["application_id"]
+    }
+
+
+def wait_state(c: Client, app_id: str, targets: set[str], timeout: float) -> str:
+    deadline = time.time() + timeout
+    state = ""
+    while time.time() < deadline:
+        _, body = c.call(f"/api/v1/applications/{app_id}")
+        state = body["state"]
+        if state in targets:
+            return state
+        time.sleep(1.5)
+    return state
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", default="http://127.0.0.1:8000")
+    parser.add_argument("--timeout", type=float, default=120)
     args = parser.parse_args()
-    base = args.base.rstrip("/")
+    c = Client(args.base)
     failures: list[str] = []
+    tmp = Path(tempfile.mkdtemp(prefix="anil2-smoke-"))
+    run = uuid.uuid4().hex[:6]
 
     def check(label: str, ok: bool, detail: str = "") -> None:
-        print(f"{'PASS' if ok else 'FAIL':4} {label}{(' - ' + detail) if detail else ''}")
+        print(f"{'PASS' if ok else 'FAIL'} {label}{(' - ' + detail) if detail else ''}")
         if not ok:
             failures.append(label)
 
-    status, body = request(f"{base}/health")
+    s, body = c.call("/health/ready")
     check(
-        "health", status == 200 and body["status"] == "ok", f"backend={body.get('queue_backend')}"
+        "ready",
+        s == 200,
+        json.dumps(body.get("checks", {}), ensure_ascii=False) if isinstance(body, dict) else "",
     )
 
-    up = submit(base, APPROVE_IDENTITY, 300_000, 100_000, 36)
-    status, body = request(f"{base}/api/v1/applications/{up}")
-    check("approved submit+fetch", status == 200 and body["status"] == "APPROVED")
+    def submit(persona: str, income: float, amount: float) -> str:
+        c.login("basvuran")
+        s, body = c.call(
+            "/api/v1/applications", "POST", application(persona, f"{persona}{run}", income, amount)
+        )
+        assert s == 202, body
+        app_id = body["application_id"]
+        ob = open_banking_transactions(DEMO_TCKN[persona], income)
+        files = generate_applicant_bundle(
+            tmp / f"{persona}",
+            name=f"Duman Test {persona}{run}",
+            tckn=DEMO_TCKN[persona],
+            iban="TR550006100000000000000001",
+            address="Smoke Sok.",
+            employer="Anadolu Bilişim",
+            net_income=income,
+            transactions=ob["transactions"],
+            opening_balance=ob["account"]["opening_balance"],
+        )
+        for code, path in files.items():
+            s, _ = c.upload(app_id, code, path)
+            assert s == 201, (code, s)
+        return app_id
 
-    for path in ("schedule", "scorecard", "offer", "audit"):
-        s, _ = request(f"{base}/api/v1/applications/{up}/{path}")
-        check(f"approved.{path}", s == 200, f"status={s}")
-
-    status, body = request(f"{base}/api/v1/applications/{up}/report")
-    check("report.json download", status == 200 and body.get("status") == "APPROVED")
-
-    rej = submit(base, REJECT_IDENTITY, 30_000, 50_000, 24)
-    status, body = request(f"{base}/api/v1/applications/{rej}")
-    check("rejected submit", status == 200 and body["status"] == "REJECTED")
-
-    s, _ = request(f"{base}/api/v1/applications/{rej}/schedule")
-    check("rejected.schedule is 409", s == 409, f"status={s}")
-
-    status, body = request(f"{base}/api/v1/notifications")
-    check("notifications list", status == 200 and body["pending"] >= 1)
-    nid = body["entries"][0]["id"]
-    status, body = request(f"{base}/api/v1/notifications/{nid}/deliver", "POST")
-    check("notification deliver", status == 200 and body["delivered"] is True)
-
-    status, body = request(f"{base}/api/v1/notifications/dispatch", "POST")
-    check("outbox dispatch", status == 200)
-
-    status, body = request(f"{base}/api/v1/metrics")
-    check("metrics", status == 200 and body["total_applications"] >= 2)
-
-    status, body = request(f"{base}/api/v1/queue")
-    check(
-        "queue status",
-        status == 200 and "app.tasks.process_application" in body["registered_tasks"],
+    ok_id = submit("temiz", 45_000, 150_000)
+    state = wait_state(
+        c, ok_id, {"TEKLIF_SUNULDU", "UZMAN_INCELEMESI", "OTOMATIK_RET"}, args.timeout
     )
+    check("clean applicant -> offer", state in ("TEKLIF_SUNULDU", "UZMAN_INCELEMESI"), state)
+    if state == "TEKLIF_SUNULDU":
+        s, body = c.call(f"/api/v1/applications/{ok_id}/offer/accept", "POST")
+        check("offer accepted", s == 200 and body["state"] == "SOZLESME_HAZIR")
+        c.login("uzman")
+        s, body = c.call(f"/api/v1/workbench/{ok_id}/disburse", "POST")
+        check("disbursed", s == 200 and body.get("state") == "KULLANDIRILDI")
+        s, pdf = c.call(f"/api/v1/applications/{ok_id}/report?format=pdf")
+        check("report pdf", s == 200 and isinstance(pdf, bytes) and pdf.startswith(b"%PDF"))
+        s, body = c.call(f"/api/v1/agent/{ok_id}/memo", "POST")
+        check(
+            "AI memo",
+            s == 201 and bool(body.get("sections")),
+            body.get("mode", "") if isinstance(body, dict) else "",
+        )
 
-    status, _ = request(f"{base}/static/dashboard.html")
-    check("dashboard served", status == 200)
+    grey_id = submit("gri", 42_000, 220_000)
+    state = wait_state(
+        c, grey_id, {"UZMAN_INCELEMESI", "TEKLIF_SUNULDU", "OTOMATIK_RET"}, args.timeout
+    )
+    check("grey zone -> review", state == "UZMAN_INCELEMESI", state)
+    if state == "UZMAN_INCELEMESI":
+        c.login("uzman")
+        s, body = c.call(
+            f"/api/v1/workbench/{grey_id}/decision",
+            "POST",
+            {
+                "action": "ONAY",
+                "amount": 320000,
+                "justification": "Smoke: dört göz gerektiren onay önerisi.",
+            },
+        )
+        check("maker submits", s == 201 and body["review"]["status"] == "ONAY_BEKLIYOR")
+        review_id = body["review"]["review_id"]
+        c.login("komite")
+        s, body = c.call(
+            f"/api/v1/workbench/reviews/{review_id}/check",
+            "POST",
+            {"approve": True, "note": "Smoke onayı."},
+        )
+        check("checker approves (four-eyes)", s == 200 and body["state"] == "TEKLIF_SUNULDU")
+
+    bad_id = submit("gecikmeli", 40_000, 150_000)
+    state = wait_state(c, bad_id, {"OTOMATIK_RET", "UZMAN_INCELEMESI"}, args.timeout)
+    check("delinquent -> automatic rejection", state == "OTOMATIK_RET", state)
+    if state == "OTOMATIK_RET":
+        s, body = c.call(
+            f"/api/v1/applications/{bad_id}/objection",
+            "POST",
+            {"reason": "Smoke: KVKK m.11 kapsamında insan incelemesi talebi."},
+        )
+        check("KVKK objection", s == 201 and body["state"] == "ITIRAZ_INCELEMESI")
+
+    c.login("modelyon")
+    for path in (
+        "/api/v1/models",
+        "/api/v1/governance/drift",
+        "/api/v1/governance/fairness",
+        "/api/v1/governance/champion-challenger",
+        "/api/v1/llm/status",
+    ):
+        s, _ = c.call(path)
+        check(path, s == 200)
+    c.login("komite")
+    s, body = c.call("/api/v1/audit/verify")
+    check("audit chain valid", s == 200 and body.get("valid") is True)
+    c.token = None
+    s, _ = c.call("/")
+    check("UI served", s == 200)
+    s, _ = c.call("/metrics")
+    check("prometheus metrics", s == 200)
 
     if failures:
-        print(f"\nSMOKE FAILED: {len(failures)} failures -> {', '.join(failures)}", file=sys.stderr)
+        print(f"\nSMOKE FAILED: {len(failures)} -> {', '.join(failures)}", file=sys.stderr)
         return 1
     print("\nSMOKE PASS: all steps OK")
     return 0
