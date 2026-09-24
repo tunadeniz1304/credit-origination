@@ -33,6 +33,25 @@ jobs:
           name: coverage
           path: coverage.xml
 
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      ANIL2_NO_DOTENV: "1"
+      LLM_MODE: demo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      - name: Install Chromium for Playwright
+        run: python -m playwright install --with-deps chromium
+      - name: Browser end-to-end tests
+        run: python -m pytest -m e2e -v
+
   docker:
     runs-on: ubuntu-latest
     timeout-minutes: 40
