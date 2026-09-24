@@ -69,7 +69,6 @@ def test_f02_non_material_tenure_does_not_produce_reason():
     assert all(r.kind == "improvement" for r in model_reasons)
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f03_basel_other_retail_correlation():
     from app.pricing.engine import retail_correlation
 

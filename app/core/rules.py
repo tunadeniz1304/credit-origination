@@ -76,13 +76,23 @@ class ProductPricing(BaseModel):
     min_rate_annual: float
 
 
+class RetailCorrelation(BaseModel):
+    """Basel IRB 'other retail' asset correlation parameters."""
+
+    r_min: float = 0.03
+    r_max: float = 0.16
+    k: float = 35.0
+
+
 class PricingConfig(BaseModel):
     version: str
     taxes: dict[str, float]
     legal_cap_annual: float
     offer_validity_days: int
-    asset_correlation: float = 0.15
+    correlation: RetailCorrelation = Field(default_factory=RetailCorrelation)
     confidence_level: float = 0.999
+    capital_floor: float = 0.01
+    pd_floor: float = 0.0003
     products: dict[str, ProductPricing]
 
     def product(self, code: str) -> ProductPricing:
