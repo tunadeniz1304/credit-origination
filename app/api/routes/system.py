@@ -30,14 +30,27 @@ def _pairs(rows: Any) -> dict[str, int]:
 @router.get("/health")
 def health() -> dict[str, Any]:
     """Backwards-compatible liveness summary."""
+    from app.documents.extraction import ocr_status
+
     rules = load_pipeline_rules()
+    settings = get_settings()
     return {
         "status": "ok",
         "service": "anil2_credit_platform",
         "queue_backend": active_backend(),
         "required_documents": [d.code for d in rules.document_policy.required_documents],
-        "llm_mode": get_settings().llm_effective_mode,
+        "llm_mode": settings.llm_effective_mode,
+        "ocr": ocr_status(),
+        "demo_mode": settings.demo_mode,
     }
+
+
+@router.get("/api/v1/labels")
+def labels_dictionary() -> dict[str, dict[str, str]]:
+    """Turkish labels for enum codes, so no client ever shows a raw code."""
+    from app.core.labels import labels
+
+    return labels()
 
 
 @router.get("/health/live")

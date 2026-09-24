@@ -23,6 +23,7 @@ from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, Tabl
 
 from app.core.config import Settings
 from app.core.crypto import mask_tckn
+from app.core.labels import label
 from app.core.logging import get_logger
 from app.core.pdf import FONT_BOLD, FONT_REGULAR, register_fonts
 from app.db.models import Application, Decision, Offer
@@ -35,6 +36,9 @@ OUTCOME_COLORS = {
     "OTOMATIK_RET": colors.HexColor("#B3261E"),
     "UZMAN_INCELEMESI": colors.HexColor("#9A6700"),
 }
+
+
+SOURCE_LABELS = {"rule": "Politika kuralı", "model": "Risk modeli"}
 
 
 def _tl(value: float | None) -> str:
@@ -203,7 +207,10 @@ def build_pdf(
     story: list[Any] = [
         Paragraph("KREDİ TAHSİS MEMORANDUMU", st["title"]),
         Paragraph(
-            escape(f"Başvuru No: {app.id} · Ürün: {app.product} · Karar türü: {decision.kind}"),
+            escape(
+                f"Başvuru No: {app.id} · Ürün: {label('product', app.product)} · "
+                f"Karar türü: {label('decision_kind', decision.kind)}"
+            ),
             st["small"],
         ),
         Spacer(1, 0.3 * cm),
@@ -217,7 +224,10 @@ def build_pdf(
                     "Talep Edilen Tutar / Vade",
                     f"{_tl(app.requested_amount)} / {app.requested_term_months} ay",
                 ],
-                ["Çalışma Şekli / İşveren", f"{app.employment_type} / {app.employer_name or '—'}"],
+                [
+                    "Çalışma Şekli / İşveren",
+                    f"{label('employment_type', app.employment_type)} / {app.employer_name or '—'}",
+                ],
             ],
             [6 * cm, 11 * cm],
             header=False,
@@ -262,7 +272,11 @@ def build_pdf(
         story.append(Paragraph("3. Gerekçe Kodları", st["h2"]))
         rows = [["Kod", "Açıklama", "Kaynak"]]
         rows += [
-            [r["code"], Paragraph(escape(r["text"]), st["cell"]), r.get("source", "")]
+            [
+                r["code"],
+                Paragraph(escape(r["text"]), st["cell"]),
+                SOURCE_LABELS.get(r.get("source", ""), ""),
+            ]
             for r in decision.reason_codes
         ]
         story.append(_table(rows, [4.2 * cm, 11 * cm, 1.8 * cm]))

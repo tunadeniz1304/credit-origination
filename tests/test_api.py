@@ -197,6 +197,10 @@ def test_report_pdf_has_turkish_glyphs(client, specialist, approved_id):
     assert "KREDİ TAHSİS MEMORANDUMU" in text  # bug #11 regression: İ survives
     for glyph in "ığşİ":
         assert glyph in text
+    # F04: user-facing labels, never raw enum codes.
+    assert "İhtiyaç Kredisi" in text and "Maaşlı çalışan" in text
+    for raw in ("IHTIYAC", "MAASLI", "Karar türü: engine"):
+        assert raw not in text, raw
     json_report = client.get(
         f"/api/v1/applications/{approved_id}/report?format=json", headers=specialist
     ).json()

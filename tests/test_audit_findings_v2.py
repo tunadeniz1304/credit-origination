@@ -82,7 +82,6 @@ def test_f03_basel_other_retail_correlation():
     assert retail_correlation(0.01) == pytest.approx(0.12161, abs=1e-4)
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f04_user_facing_labels_for_enum_codes():
     from app.core.labels import label
 
@@ -116,7 +115,6 @@ def test_f05_genuine_document_from_other_tool_is_not_flagged(tmp_path):
     assert "producer_mismatch" not in codes
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f06_ocr_status_reported_in_health():
     from fastapi.testclient import TestClient
 

@@ -1,0 +1,48 @@
+# Kullanıcıya dönük Türkçe etiketler: ham enum kodları (IHTIYAC, MAASLI, ...) mektuplarda,
+# PDF'lerde ve arayüzde asla görünmez.
+version: labels_v1
+product:
+  IHTIYAC: İhtiyaç Kredisi
+  TASIT: Taşıt Kredisi
+employment_type:
+  MAASLI: Maaşlı çalışan
+  SERBEST: Serbest meslek / kendi işi
+  EMEKLI: Emekli
+state:
+  TASLAK: Taslak
+  GONDERILDI: Gönderildi
+  BELGE_BEKLENIYOR: Belge bekleniyor
+  BELGE_INCELEMEDE: Belgeler inceleniyor
+  VERI_TOPLANIYOR: Veriler toplanıyor
+  KARAR_MOTORU: Karar motorunda
+  OTOMATIK_ONAY: Otomatik onay
+  OTOMATIK_RET: Otomatik ret
+  UZMAN_INCELEMESI: Uzman incelemesinde
+  REDDEDILDI: Reddedildi
+  ITIRAZ_INCELEMESI: İtiraz incelemesinde
+  TEKLIF_SUNULDU: Teklif sunuldu
+  TEKLIF_KABUL: Teklif kabul edildi
+  SOZLESME_HAZIR: Sözleşme hazır
+  KULLANDIRILDI: Kullandırıldı
+  IPTAL: İptal edildi
+outcome:
+  OTOMATIK_ONAY: Onay
+  OTOMATIK_RET: Ret
+  UZMAN_INCELEMESI: Uzman incelemesi
+  ONAYLANDI: Onaylandı
+  REDDEDILDI: Reddedildi
+decision_kind:
+  engine: Karar motoru
+  manual: Uzman kararı
+  override: Uzman kararı (motor kararının aksine)
+document:
+  IDENTITY: Kimlik belgesi
+  INCOME: Maaş bordrosu
+  EMPLOYMENT: SGK hizmet dökümü
+  ADDRESS: Yerleşim yeri belgesi
+  BANK_STATEMENT: Banka hesap özeti
+  TAX_PLATE: Vergi levhası
+review_action:
+  ONAY: Onay
+  RET: Ret
+  BELGE_ISTE: Ek belge talebi
