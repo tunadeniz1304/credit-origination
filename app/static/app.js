@@ -13,13 +13,16 @@ const EMPTY_FORM = () => ({
   consents: { kvkk_aydinlatma: false, acik_riza: false, kkb_sorgu: false, edevlet_sorgu: true, acik_bankacilik: true },
 });
 
+// Chart.js instances must stay outside Alpine's reactive proxies.
+const CHARTS = new Map();
+
 // Codes the backend does not label in /api/v1/labels (UI-only vocabularies).
 const UI_LABELS = {
   role: { basvuran: "Başvuran", uzman: "Krediler Uzmanı", kidemli_uzman: "Kıdemli Krediler Uzmanı", komite: "Kredi Komitesi", model_yoneticisi: "Model Yöneticisi", admin: "Sistem Yöneticisi" },
   document_status: { YUKLENDI: "Yüklendi", ISLENDI: "İşlendi", SUPHELI: "Şüpheli", OCR_GEREKLI: "Uzman incelemesi gerekli (OCR yok)" },
   drift: { STABIL: "Stabil", ORTA: "Orta kayma", ANLAMLI_KAYMA: "Anlamlı kayma" },
   rule_action: { decline: "Ret", refer: "Uzmana yönlendir" },
-  fairness_attr: { gender: "Cinsiyet", age_band: "Yaş bandı", province: "İl", SEX: "Cinsiyet", AGE_BAND: "Yaş bandı", EDUCATION: "Eğitim", MARRIAGE: "Medeni durum" },
+  fairness_attr: { gender: "Cinsiyet", age_band: "Yaş bandı", province: "İl", SEX: "Cinsiyet", AGE_BAND: "Yaş bandı", EDUCATION: "Eğitim", MARRIAGE: "Medeni durum", FOREIGN_WORKER: "Yabancı işçi" },
   model_role: { champion: "Şampiyon", challenger: "Aday (challenger)" },
   model_family: { lightgbm: "Monotonik LightGBM", logistic: "Lojistik regresyon", scorecard: "WoE skor kartı", lightgbm_uncalibrated: "LightGBM (kalibrasyonsuz)" },
   llm_mode: { live: "canlı", demo: "demo" },
@@ -42,7 +45,8 @@ function platform() {
     queue: [], queuePage: { total: 0, limit: 25, offset: 0, sla_breached: 0 }, queueLoading: false, queueSeq: 0, searchTimer: null,
     queueFilter: { q: "", state: "", product: "", sla: "", mine: false, limit: 25, offset: 0 }, fieldEdit: null,
     reviews: [], staff: null, decisionForm: { action: "ONAY", justification: "", amount: null, term_months: null },
-    policyQ: "Borç servis oranı sınırı nedir?", policyA: null, dash: {}, seedResult: "", charts: {},
+    policyQ: "Borç servis oranı sınırı nedir?", policyA: null, dash: {}, dashTab: "genel", promoteError: "",
+    validation: null, validationError: "", valSet: "", valCalModel: "", seedResult: "",
     staffTabs: [["ozet", "Özet"], ["belgeler", "Belgeler"], ["kkb", "KKB"], ["nakit", "Nakit akışı"], ["karar", "Karar + SHAP"], ["fiyat", "Fiyatlama"], ["halka", "Halka"], ["memo", "AI memorandum"], ["politika", "Politika sor"], ["karar_ver", "Karar ver"]],
     bureauKeys: [["bureau_score", "KKB notu"], ["bureau_hit", "KKB kaydı"], ["active_loans", "Aktif kredi"], ["bureau_utilisation", "Limit kullanımı"], ["delinquency_count_24m", "24 ay gecikme"], ["max_dpd_24m", "Azami gecikme günü"], ["inquiries_6m", "6 ay sorgu"], ["existing_debt_service", "Mevcut aylık taksit"], ["existing_dsr", "Mevcut DSR"], ["dsr", "DSR (talep)"], ["employment_months", "Çalışma süresi (ay)"]],
 
@@ -141,7 +145,7 @@ function platform() {
       } catch (e) { this.error = e.message; }
     },
     demoLogin(username) { this.loginForm = { username, password: "Demo123!" }; return this.login(); },
-    clearSession() { this.user = null; this.current = null; this.staff = null; this.applications = []; this.queue = []; this.reviews = []; this.dash = {}; },
+    clearSession() { this.user = null; this.current = null; this.staff = null; this.applications = []; this.queue = []; this.reviews = []; this.dash = {}; this.dashTab = "genel"; this.validation = null; this.promoteError = ""; },
     async logout() {
       try { await this.api("/api/v1/auth/logout", { method: "POST" }); } catch (e) { /* cookies may already be gone */ }
       this.clearSession();
@@ -299,9 +303,9 @@ function platform() {
     },
     chart(id, config) {
       if (typeof Chart === "undefined") return;
-      if (this.charts[id]) this.charts[id].destroy();
+      if (CHARTS.has(id)) { CHARTS.get(id).destroy(); CHARTS.delete(id); }
       const el = document.getElementById(id); if (!el) return;
-      this.charts[id] = new Chart(el, Object.assign({ options: { responsive: true, maintainAspectRatio: false } }, config));
+      CHARTS.set(id, new Chart(el, Object.assign({ options: { responsive: true, maintainAspectRatio: false } }, config)));
     },
     drawCash() {
       const m = (this.staff.cashflow && this.staff.cashflow.monthly) || [];
@@ -366,6 +370,137 @@ function platform() {
     async disburse() { try { await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/disburse", { method: "POST" }); await this.openStaff(this.staff.detail.application_id); this.notify("Kredi kullandırıldı."); } catch (e) { this.notify(e.message); } },
 
     // ------------------------------------------------------------ dashboard
+    // ------------------------------------------------------------ number formatting
+    num(v, digits) { return v === null || v === undefined || Number.isNaN(Number(v)) ? "—" : Number(v).toLocaleString("tr-TR", { minimumFractionDigits: digits, maximumFractionDigits: digits }); },
+    ci(pair, digits) { return Array.isArray(pair) && pair.length === 2 ? "[" + this.num(pair[0], digits) + " – " + this.num(pair[1], digits) + "]" : "—"; },
+    pval(p) { if (p === null || p === undefined) return "—"; return p < 0.001 ? "< 0,001" : this.num(p, 3); },
+    pairs(obj) { return Object.entries(obj || {}); },
+
+    // ------------------------------------------------------------ model validation (lane A, real public data)
+    canValidate() { return !!this.user && (this.user.role === "model_yoneticisi" || this.user.role === "admin"); },
+    setDashTab(tab, focus) {
+      this.dashTab = tab;
+      if (tab === "dogrulama" && !this.validation) this.loadValidation();
+      else if (tab === "dogrulama") this.$nextTick(() => this.drawCalibration());
+      if (focus) this.$nextTick(() => { const el = document.getElementById("dtab-" + tab); if (el) el.focus(); });
+    },
+    async loadValidation() {
+      this.validationError = "";
+      try {
+        const v = await this.api("/api/v1/models/validation");
+        const names = Object.keys(v.sets || {}).filter((n) => v.sets[n]);
+        if (!names.length) { this.validationError = "Doğrulama çıktısı bulunamadı (scripts/run_validation.py çalıştırılmalı)."; return; }
+        this.validation = v;
+        if (!names.includes(this.valSet)) this.valSet = names.includes("uci_taiwan") ? "uci_taiwan" : names[0];
+        this.valCalModel = this.vs().champion.model;
+        this.$nextTick(() => this.drawCalibration());
+      } catch (e) { this.validationError = e.message; }
+    },
+    valSetNames() { return this.validation ? Object.keys(this.validation.sets).filter((n) => this.validation.sets[n]) : []; },
+    vs() { return this.validation && this.valSet ? this.validation.sets[this.valSet] : null; },
+    onValSetChange() { this.valCalModel = this.vs().champion.model; this.$nextTick(() => this.drawCalibration()); },
+    modelLabel(key) {
+      const m = this.vs();
+      if (key === "lightgbm_uncalibrated") return UI_LABELS.model_family.lightgbm_uncalibrated;
+      return (m && m.models && m.models[key]) || this.lbl("model_family", key);
+    },
+    valDesign() {
+      const d = this.vs().design || {};
+      return this.num(d.rows, 0) + " kayıt · hold-out " + this.num(d.holdout_rows, 0) + " · temerrüt oranı " + this.pct(d.default_rate) + " · " + (d.cv_folds || "?") + " katlı CV · " + this.date(this.vs().generated_at);
+    },
+    holdoutRows() {
+      const m = this.vs();
+      return Object.keys(m.holdout).map((key) => {
+        const h = m.holdout[key], cv = (m.cv || {})[key];
+        return {
+          key, label: this.modelLabel(key), champion: key === m.champion.model,
+          auc: this.num(h.auc, 4), ci: this.ci(h.auc_ci, 4), ciDelong: this.ci(h.auc_ci_delong, 4),
+          gini: this.num(h.gini, 4), ks: this.num(h.ks, 4), brier: this.num(h.brier, 4), logloss: this.num(h.log_loss, 4),
+          cv: cv ? this.num(cv.mean_auc, 4) + " ± " + this.num(cv.std_auc, 4) : "—",
+        };
+      });
+    },
+    delongRows() {
+      const d = this.vs().delong || {};
+      return Object.keys(d).map((key) => {
+        const [a, b] = key.split("_vs_");
+        const r = d[key];
+        return { key, label: this.modelLabel(a) + " − " + this.modelLabel(b), diff: this.num(r.auc_diff, 4), ci: this.ci(r.diff_ci, 4), z: this.num(r.z, 2), p: this.pval(r.p_value) };
+      });
+    },
+    championOrder() { return (this.vs().champion.simplicity_order || []).map((k) => this.modelLabel(k)).join(" → "); },
+    calModels() { return Object.keys(this.vs().calibration || {}); },
+    calRows() {
+      const c = (this.vs().calibration || {})[this.valCalModel];
+      if (!c) return [];
+      const low = (c.low_risk && c.low_risk.deciles) || 0;
+      return c.deciles.map((d) => ({
+        decile: d.decile, n: this.num(d.n, 0), range: this.num(d.pd_min, 3) + " – " + this.num(d.pd_max, 3),
+        predicted: this.num(d.predicted, 4), observed: this.num(d.observed, 4), ratio: this.num(d.ratio_observed_to_predicted, 2),
+        lowRisk: d.decile <= low,
+      }));
+    },
+    calSummary() {
+      const c = (this.vs().calibration || {})[this.valCalModel];
+      if (!c) return "";
+      const hl = c.hosmer_lemeshow || {}, lr = c.low_risk || {};
+      return "ECE " + this.num(c.ece, 4) + " · Hosmer-Lemeshow χ²=" + this.num(hl.statistic, 2) + " (sd " + hl.dof + ", p " + this.pval(hl.p_value) + ")"
+        + " · düşük riskli ilk " + (lr.deciles || 0) + " dilim: tahmini " + this.pct(lr.predicted) + ", gözlenen " + this.pct(lr.observed) + " (oran " + this.num(lr.ratio_observed_to_predicted, 2) + ")";
+    },
+    drawCalibration() {
+      if (!this.vs() || this.dashTab !== "dogrulama") return;
+      const c = (this.vs().calibration || {})[this.valCalModel];
+      if (!c) return;
+      const labels = c.deciles.map((d) => String(d.decile));
+      const low = (c.low_risk && c.low_risk.deciles) || 0;
+      this.chart("calChart", { type: "line", data: { labels, datasets: [
+        { label: "Tahmini PD", data: c.deciles.map((d) => d.predicted), borderColor: "#2f6690", backgroundColor: "#2f6690", pointStyle: "circle" },
+        { label: "Gözlenen temerrüt", data: c.deciles.map((d) => d.observed), borderColor: "#b3261e", backgroundColor: c.deciles.map((d) => (d.decile <= low ? "#9a6700" : "#b3261e")), pointStyle: "rectRot", pointRadius: 5, borderDash: [5, 3] }] },
+        options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: "Ondalık dilim (1 = en düşük risk)" } }, y: { title: { display: true, text: "Temerrüt oranı" } } } } });
+    },
+    fairnessTables() {
+      const f = this.vs().fairness || {}, byModel = f.by_model || {};
+      const models = Object.keys(byModel);
+      if (!models.length) return [];
+      return Object.keys(byModel[models[0]]).map((attr) => {
+        const groups = Object.keys(byModel[models[0]][attr].selection_rate || {});
+        return {
+          attr, groups, title: this.lbl("fairness_attr", attr),
+          rows: models.map((m) => {
+            const a = byModel[m][attr];
+            return { model: m, label: this.modelLabel(m), cells: groups.map((g) => this.pct(a.selection_rate[g])), minAir: this.num(a.min_air, 3), pass: a.passes_four_fifths, tpr: this.num(a.tpr_gap, 3), fpr: this.num(a.fpr_gap, 3) };
+          }),
+        };
+      });
+    },
+    ldaRows() {
+      const l = this.vs().lda || {};
+      const row = (r, i, reference) => ({ key: (reference ? "ref-" : "") + i, model: r.model, reference, caveat: !!r.legal_caveat, auc: this.num(r.auc, 4), approval: this.pct(r.approval_rate), badRate: this.pct(r.bad_rate_approved), minAir: this.num(r.min_air, 3), tpr: this.num(r.tpr_gap, 3), fpr: this.num(r.fpr_gap, 3), pass: r.passes_four_fifths });
+      return (l.rows || []).map((r, i) => row(r, i, false)).concat((l.reference_rows || []).map((r, i) => row(r, i, true)));
+    },
+    ldaCaveat() {
+      const l = this.vs().lda || {};
+      const hit = (l.rows || []).concat(l.reference_rows || []).find((r) => r.legal_caveat);
+      return hit ? hit.legal_caveat : "";
+    },
+    proxyList() { return Object.entries((this.vs().lda || {}).proxy_strength || {}).slice(0, 5).map((e) => e[0] + " (" + this.num(e[1], 2) + ")").join(", ") || "—"; },
+    laneBRows() {
+      const b = this.validation && this.validation.lane_b;
+      if (!b) return [];
+      return Object.entries(b).filter((e) => e[1] === null || typeof e[1] !== "object").map((e) => [e[0], String(e[1])]);
+    },
+    ccEvidence() {
+      const v = this.dash.cc && this.dash.cc.validation;
+      if (!v || !v.available) return null;
+      const row = (role, x) => ({ role, family: this.lbl("model_family", x.family), auc: this.num(x.auc, 4), ci: this.ci(x.auc_ci, 4), brier: this.num(x.brier, 4), ece: this.num(x.ece, 4) });
+      const diff = v.auc_diff_challenger_minus_champion;
+      return {
+        rows: [row("Şampiyon", v.champion), row("Challenger", v.challenger)],
+        summary: this.lbl("dataset", v.dataset) + " · ΔAUC (challenger − şampiyon) " + this.num(diff, 4) + " · DeLong p " + this.pval(v.delong_p_value)
+          + " · gerçek veride seçilen şampiyon: " + this.lbl("model_family", v.lane_a_champion),
+      };
+    },
+
     async loadDashboard() {
       const safe = (p) => this.api(p).catch(() => null);
       const [metrics, fairness, drift, cc, models, watchlist, llm] = await Promise.all([
@@ -373,6 +508,7 @@ function platform() {
         safe("/api/v1/governance/champion-challenger"), safe("/api/v1/models"), safe("/api/v1/portfolio/watchlist"), safe("/api/v1/llm/status")]);
       this.dash = { metrics, fairness, drift, cc, models: models ? models.models : [], watchlist };
       if (llm) this.llm = llm;
+      if (this.dashTab === "dogrulama") this.loadValidation();
       this.$nextTick(() => {
         if (!metrics) return;
         const s = metrics.by_state_labels || {};
@@ -385,6 +521,12 @@ function platform() {
       this.busy = true; this.seedResult = "Demo senaryoları yükleniyor…";
       try { const r = await this.api("/api/v1/demo/seed", { method: "POST" }); this.seedResult = r.results.map((x) => x.scenario + " → " + this.lbl("state", x.state)).join(" · "); await this.loadDashboard(); } catch (e) { this.seedResult = e.message; } finally { this.busy = false; }
     },
-    async promote(id) { try { const r = await this.api("/api/v1/models/" + id + "/promote", { method: "POST" }); this.notify("Onay kaydedildi: " + r.approvals.length + "/2"); await this.loadDashboard(); } catch (e) { this.notify(e.message); } },
+    async promote(id) {
+      this.promoteError = "";
+      try {
+        const r = await this.api("/api/v1/models/" + id + "/promote", { method: "POST" });
+        this.notify("Onay kaydedildi: " + r.approvals.length + "/2"); await this.loadDashboard();
+      } catch (e) { this.promoteError = "Terfi reddedildi: " + e.message; }
+    },
   };
 }

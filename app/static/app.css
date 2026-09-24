@@ -90,3 +90,9 @@ tr.selected { background: var(--chip); box-shadow: inset 3px 0 0 var(--brand-2);
 .span-all { grid-column: 1 / -1; }
 .pad { padding: 12px; margin: 0; }
 details.card > summary { cursor: pointer; font-weight: 600; color: var(--brand); }
+/* ---- model validation */
+.mb { margin-bottom: 12px; }
+tr.lowrisk { background: var(--warn-bg); }
+tr.champion th { color: var(--brand); }
+caption { text-align: left; font-weight: 600; padding: 8px 0 4px; color: var(--ink); }
+caption.muted { font-weight: 400; }
