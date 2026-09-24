@@ -1,0 +1,45 @@
+# Başvurana özel Türkçe gerekçe kodu sözlüğü. {placeholder} alanları karar
+# bağlamındaki değerlerle (biçimlendirilmiş) doldurulur.
+version: reasons_v1
+codes:
+  R01_DSR_YUKSEK: "Aylık borç ödemelerinizin gelirinize oranı {dsr} ile politika sınırı olan {max_dsr} seviyesinin üzerinde."
+  R02_KKB_DUSUK: "Kredi Kayıt Bürosu kredi notunuz ({bureau_score}) başvurulan ürün için yeterli seviyede değil."
+  R03_GECIKME_GECMISI: "Son 24 ayda kredi ödemelerinizde {delinquency_count_24m} kez gecikme kaydı bulunuyor."
+  R04_SORGU_SAYISI: "Son 6 ayda adınıza yapılan kredi sorgu sayısı ({inquiries_6m}) yüksek."
+  R05_ISTIHDAM_KISA: "Mevcut işyerinizdeki çalışma süreniz ({employment_months} ay) kısa."
+  R06_GELIR_DEGISKEN: "Hesap hareketlerinizde aylık gelirinizin değişkenliği yüksek (değişkenlik katsayısı {income_cv})."
+  R07_NEGATIF_BAKIYE: "Son 12 ayda hesabınız {negative_balance_days} gün eksi bakiyede kaldı."
+  R08_KUMAR_HARCAMA: "Harcamalarınızın {gambling_share} kadarı şans oyunu/bahis işlemlerinden oluşuyor."
+  R09_TUTAR_GELIR: "Talep edilen kredi tutarı gelirinize göre yüksek (yıllık gelirin {loan_to_income} katı)."
+  R10_BELGE_UYUMSUZ: "Beyan ettiğiniz gelir ile belgelerinizde/hesap hareketlerinizde görülen gelir uyumlu değil."
+  R11_SAHTECILIK_SUPHESI: "Yüklenen belgelerde ek doğrulama gerektiren tutarsızlıklar tespit edildi."
+  R12_YAPTIRIM_ESLESME: "Kimlik bilgileriniz yasal tarama listeleriyle ek kontrol gerektiriyor."
+  R13_YAS: "Başvuru yaş koşullarını (18 yaş ve vade sonunda en fazla 75 yaş) karşılamıyor."
+  R14_TAKIPTE_KREDI: "Kredi Kayıt Bürosu kayıtlarında yasal takipte bir borcunuz bulunuyor."
+  R15_HALKA_SUPHESI: "Başvurunuzdaki iletişim/hesap bilgileri başka başvurularla ortak kullanılıyor; ek doğrulama gerekiyor."
+  R16_VELOCITY: "Son 30 gün içinde çok sayıda kredi başvurusu yapılmış."
+  R17_TASARRUF_DUSUK: "Gelirinize göre aylık tasarruf oranınız düşük ({savings_rate})."
+  R18_FAIZ_TAVANI: "Risk seviyenize uygun fiyat yasal azami faiz oranını aşıyor."
+  R19_KARSILIKSIZ: "Son 12 ayda {nsf_count} adet karşılıksız/iade işlem kaydı bulunuyor."
+  R20_INCE_DOSYA: "Kredi geçmişiniz sınırlı olduğu için değerlendirme hesap hareketlerinize dayanıyor."
+  R21_KIMLIK_DOGRULANAMADI: "T.C. kimlik numarası doğrulanamadı."
+  R22_BELGE_DOGRULAMA: "Belgelerinizden okunan bilgiler bir uzman tarafından doğrulanmalı."
+  R23_ANOMALI: "Başvurunuz olağan dışı özellikler taşıdığı için ek incelemeye alındı."
+  R24_BAKIYE_DUSUK: "Hesabınızdaki ortalama bakiye gelirinize göre düşük."
+  R25_MEVCUT_BORC: "Mevcut kredi ve kart borçlarınızın limitlerinize oranı yüksek ({bureau_utilisation})."
+feature_reasons:        # model feature -> olumsuz katkıda kullanılacak gerekçe kodu
+  bureau_score: R02_KKB_DUSUK
+  dsr: R01_DSR_YUKSEK
+  delinquency_count_24m: R03_GECIKME_GECMISI
+  max_dpd_24m: R03_GECIKME_GECMISI
+  inquiries_6m: R04_SORGU_SAYISI
+  employment_months: R05_ISTIHDAM_KISA
+  income_cv: R06_GELIR_DEGISKEN
+  negative_balance_days: R07_NEGATIF_BAKIYE
+  gambling_share: R08_KUMAR_HARCAMA
+  loan_to_income: R09_TUTAR_GELIR
+  savings_rate: R17_TASARRUF_DUSUK
+  nsf_count: R19_KARSILIKSIZ
+  avg_balance_to_income: R24_BAKIYE_DUSUK
+  bureau_utilisation: R25_MEVCUT_BORC
+  active_loans: R25_MEVCUT_BORC

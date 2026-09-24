@@ -1,0 +1,26 @@
+# Risk bazlı fiyatlama parametreleri.
+# UYARI: BSMV/KKDF oranları ve TCMB azami akdi faiz oranı örnek değerlerdir;
+# canlı kullanımdan önce güncel mevzuatı (Resmî Gazete / TCMB duyuruları) kontrol edin.
+version: pricing_v1
+taxes:
+  bsmv: 0.15      # Banka ve Sigorta Muameleleri Vergisi (faiz üzerinden)
+  kkdf: 0.15      # Kaynak Kullanımını Destekleme Fonu (faiz üzerinden)
+legal_cap_annual: 0.72   # TCMB azami akdi faiz tavanı (örnek)
+offer_validity_days: 7
+asset_correlation: 0.15  # Basel IRB diğer perakende için varsayılan korelasyon
+confidence_level: 0.999
+products:
+  IHTIYAC:
+    lgd: 0.55
+    funding_cost_annual: 0.38
+    opex_annual: 0.02
+    target_raroc: 0.20
+    upfront_fee_rate: 0.005   # tahsis ücreti (kredi tutarının binde 5'i)
+    min_rate_annual: 0.30
+  TASIT:
+    lgd: 0.35
+    funding_cost_annual: 0.38
+    opex_annual: 0.015
+    target_raroc: 0.18
+    upfront_fee_rate: 0.005
+    min_rate_annual: 0.28

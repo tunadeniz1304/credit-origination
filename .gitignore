@@ -34,3 +34,7 @@ data/
 *.iml
 .DS_Store
 Thumbs.db
+
+# Generated datasets and local databases
+*.db
+*.sqlite*

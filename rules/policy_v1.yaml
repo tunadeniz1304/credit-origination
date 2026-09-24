@@ -1,0 +1,109 @@
+# Bireysel kredi politika kuralları — versiyonlu, gerekçe kodlu.
+# İfadeler güvenli bir değerlendirici ile çalışır (eval yok): yalnızca
+# karşılaştırma, aritmetik, and/or/not ve min/max/abs.
+version: policy_v1
+description: Bireysel ihtiyaç kredisi tahsis politikası (örnek, kurgusal)
+effective_from: "2026-01-01"
+
+products:
+  IHTIYAC:
+    label: İhtiyaç Kredisi
+    max_dsr: 0.50            # borç servis oranı sınırı (aylık taksitler / net gelir)
+    min_amount: 10000
+    max_amount: 1500000
+    min_term: 6
+    max_term: 60
+    income_multiplier: 12    # azami tutar <= aylık gelir x çarpan
+  TASIT:
+    label: Taşıt Kredisi
+    max_dsr: 0.45
+    min_amount: 50000
+    max_amount: 3000000
+    min_term: 12
+    max_term: 48
+    income_multiplier: 20
+
+decision:
+  auto_approve_max_pd: 0.05     # PD <= eşik ve kural yönlendirmesi yoksa otomatik onay
+  auto_decline_min_pd: 0.20     # PD >= eşik ise otomatik ret
+  min_document_confidence: 0.70 # altındaki alan güveni uzman doğrulaması ister
+  counter_offer_min_ratio: 0.30 # karşı teklif, talebin en az bu oranı olmalı
+
+risk_bands:            # PD üst sınırı -> bant ve limit çarpanı
+  - {band: A, max_pd: 0.02, limit_factor: 1.00}
+  - {band: B, max_pd: 0.05, limit_factor: 0.90}
+  - {band: C, max_pd: 0.10, limit_factor: 0.75}
+  - {band: D, max_pd: 0.20, limit_factor: 0.50}
+  - {band: E, max_pd: 1.00, limit_factor: 0.00}
+
+rules:
+  - id: KO_YAS_ALT
+    description: Başvuran 18 yaşından küçük
+    when: "age < 18"
+    action: decline
+    reason: R13_YAS
+  - id: KO_YAS_VADE
+    description: Vade sonunda başvuran yaşı 75'i aşıyor
+    when: "age + term_months / 12 > 75"
+    action: decline
+    reason: R13_YAS
+  - id: KO_TAKIP
+    description: KKB'de yasal takipte kredi mevcut
+    when: "bureau_legal_followup == 1"
+    action: decline
+    reason: R14_TAKIPTE_KREDI
+  - id: KO_MEVCUT_DSR
+    description: Mevcut borç servisi tek başına DSR sınırını aşıyor
+    when: "existing_dsr > max_dsr"
+    action: decline
+    reason: R01_DSR_YUKSEK
+  - id: KO_KKB_COK_DUSUK
+    description: KKB kredi notu kabul edilemez seviyede
+    when: "bureau_hit == 1 and bureau_score < 600"
+    action: decline
+    reason: R02_KKB_DUSUK
+  - id: KO_TCKN
+    description: T.C. kimlik numarası doğrulanamadı
+    when: "tckn_valid == 0"
+    action: decline
+    reason: R21_KIMLIK_DOGRULANAMADI
+  - id: RF_YAPTIRIM
+    description: Yaptırım / PEP listesi olası eşleşmesi
+    when: "sanctions_match == 1"
+    action: refer
+    reason: R12_YAPTIRIM_ESLESME
+  - id: RF_SAHTE_BELGE
+    description: Belge sahteciliği sinyali yüksek
+    when: "doc_fraud_score >= 0.6"
+    action: refer
+    reason: R11_SAHTECILIK_SUPHESI
+  - id: RF_HALKA
+    description: Paylaşılan telefon/IBAN/adres ile başvuru halkası
+    when: "fraud_ring_size >= 3"
+    action: refer
+    reason: R15_HALKA_SUPHESI
+  - id: RF_VELOCITY
+    description: Son 30 günde aynı kimlik/iletişim ile çok sayıda başvuru
+    when: "velocity_30d >= 3"
+    action: refer
+    reason: R16_VELOCITY
+  - id: RF_GELIR_UYUMSUZ
+    description: Beyan edilen gelir ile belge/hesap hareketleri uyumsuz
+    when: "income_mismatch == 1"
+    action: refer
+    reason: R10_BELGE_UYUMSUZ
+  - id: RF_DUSUK_GUVEN
+    description: Belgeden çıkarılan alanların güveni düşük
+    when: "min_field_confidence < min_document_confidence"
+    action: refer
+    reason: R22_BELGE_DOGRULAMA
+  - id: RF_ANOMALI
+    description: Başvuru anomali skoru yüksek
+    when: "anomaly_score >= 0.85"
+    action: refer
+    reason: R23_ANOMALI
+  - id: RF_KUMAR
+    description: Hesap hareketlerinde yüksek kumar/bahis harcaması
+    when: "gambling_share >= 0.10"
+    action: refer
+    reason: R08_KUMAR_HARCAMA

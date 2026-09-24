@@ -30,7 +30,7 @@ _ENV_FILES = (str(PROJECT_ROOT.parent / ".env"), str(PROJECT_ROOT / ".env"))
 
 DEFAULT_LLM_BASE_URL = "https://llm-gateway.example.org/v1"
 DEFAULT_LLM_MODEL = "deepseek-v4-flash"
-DEV_JWT_FALLBACK = "dev-only-insecure-jwt-secret-change-me"  # noqa: S105 - dev fallback
+DEV_JWT_FALLBACK = "dev-only-insecure-jwt-secret-change-me"
 
 
 def _dotenv_enabled() -> tuple[str, ...] | None:

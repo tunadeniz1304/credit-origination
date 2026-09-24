@@ -33,6 +33,7 @@ ignore = [
     "S311",   # pseudo-random generators are used only for synthetic data
     "RUF012",
     "UP042",  # str-based Enum is intentional (JSON friendly)
+    "E501",   # line length is enforced by ruff format; long Turkish literals are allowed
 ]
 
 [tool.ruff.lint.per-file-ignores]

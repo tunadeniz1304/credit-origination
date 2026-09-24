@@ -1,0 +1,10 @@
+# Kredi yetki matrisi: tutar ve risk (PD) bandına göre asgari yetkili rol.
+version: authority_v1
+levels:
+  - {role: uzman,         max_amount: 250000,    max_pd: 0.10}
+  - {role: kidemli_uzman, max_amount: 750000,    max_pd: 0.20}
+  - {role: komite,        max_amount: 100000000, max_pd: 1.00}
+four_eyes:
+  amount_threshold: 300000   # bu tutarın üstündeki kararlar dört göz ister
+  pd_threshold: 0.12         # bu PD'nin üstündeki kararlar dört göz ister
+  overrides: true            # motor kararını tersine çeviren her override dört göz ister

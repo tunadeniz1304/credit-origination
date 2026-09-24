@@ -1,0 +1,9 @@
+# KURGUSAL yaptırım / PEP tarama listesi (gerçek kişilerle ilgisi yoktur).
+version: sanctions_demo_2026_09
+entries:
+  - {name: "Kasım Yılmazer", type: SANCTION, list: "DEMO-BM-1267"}
+  - {name: "Nevzat Karaburun", type: SANCTION, list: "DEMO-OFAC-SDN"}
+  - {name: "Selda Öztürkmen", type: PEP, list: "DEMO-PEP-TR"}
+  - {name: "Rıza Demirkapı", type: PEP, list: "DEMO-PEP-TR"}
+  - {name: "Hakan Şahbazoğlu", type: SANCTION, list: "DEMO-MASAK"}
+  - {name: "Gülten Arıkboğa", type: SANCTION, list: "DEMO-AB-RESTRICTIVE"}

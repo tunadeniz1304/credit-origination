@@ -1,0 +1,16 @@
+# İş akışı parametreleri (SLA, süreler, velocity penceresi).
+version: workflow_v1
+sla_hours:
+  UZMAN_INCELEMESI: 24
+  ITIRAZ_INCELEMESI: 720     # KVKK m.13: başvurular en geç 30 gün içinde sonuçlandırılır
+  BELGE_BEKLENIYOR: 240
+objection_window_days: 30
+velocity_window_days: 30
+fraud_ring_min_size: 3
+data_collection_max_retries: 3
+data_collection_retry_seconds: 30
+queue_priority:
+  amount_weight: 0.4
+  risk_weight: 0.4
+  sla_weight: 0.2
+income_tolerance: 0.15       # beyan-belge gelir mutabakatı toleransı
