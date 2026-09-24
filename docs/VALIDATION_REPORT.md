@@ -251,3 +251,49 @@ Group detail for the champion (WoE scorecard (optbinning)):
 | `savings_status_A65` | 0.1296 |
 | `property_A121` | 0.1173 |
 
+## Lane B — anchoring the production model to real data
+
+The production model runs on Turkey-specific features that no public set contains, so it cannot be validated end-to-end on public data. Instead its bureau-behaviour inputs are mapped onto the Taiwan variables (`app/decisioning/public_mapping.py`, table in [`DATA.md`](DATA.md)), a behaviour sub-score is learnt on real defaults, and the synthetic generator and the PD level are anchored to the real default curve.
+
+- Real anchor source: uci_taiwan (full) (30,000 rows, default rate 22.12%).
+- `bureau_behavior_score` (bureau_behavior_v1): monotone LightGBM on delay months, delinquent months and utilisation; real hold-out AUC 0.740 (n = 6,000).
+
+### Generator check — default rate per delinquency band (tolerance ±0.05)
+
+| Max delay (months) | Real default rate | Synthetic default rate | |gap| | Within | Real share | Synthetic share |
+|---|---|---|---|---|---|---|
+| 0 | 11.7% | 11.7% | 0.0002 | yes | 66.4% | 80.6% |
+| 1 | 25.0% | 24.9% | 0.0007 | yes | 5.6% | 10.6% |
+| 2 | 43.5% | 44.3% | 0.0072 | yes | 24.0% | 4.4% |
+| 3+ | 62.9% | 63.8% | 0.0093 | yes | 4.0% | 4.4% |
+
+- Default rate per band is anchored to the real curve; band shares describe the synthetic Turkish applicant mix and intentionally differ from a credit-card book.
+
+### Production PD (pd_lgbm_v2) — level and low-risk calibration
+
+Synthetic time-based test set, n = 16,803: ECE 0.0051, Hosmer–Lemeshow χ² 11.5 (p = 0.175). Lowest 3 deciles: predicted 2.3%, observed 2.3% (ratio 1.036; tolerance ±25% — met in aggregate, met per decile).
+
+| Decile | Predicted | Observed | Obs / pred |
+|---|---|---|---|
+| 1 | 1.7% | 2.0% | 1.188 |
+| 2 | 2.3% | 2.6% | 1.092 |
+| 3 | 2.8% | 2.5% | 0.898 |
+| 4 | 3.4% | 3.8% | 1.113 |
+| 5 | 6.1% | 7.1% | 1.16 |
+| 6 | 10.4% | 12.1% | 1.172 |
+| 7 | 17.9% | 18.0% | 1.003 |
+| 8 | 24.6% | 24.8% | 1.007 |
+| 9 | 35.3% | 34.9% | 0.99 |
+| 10 | 58.5% | 57.9% | 0.99 |
+
+Mean predicted PD per delinquency band vs the real default rate:
+
+| Band | Real default rate | Mean predicted PD | n (test) |
+|---|---|---|---|
+| 0 | 11.7% | 11.7% | 11817 |
+| 1 | 25.0% | 23.8% | 1550 |
+| 2 | 43.5% | 49.7% | 615 |
+| 3 | 62.9% | 63.7% | 645 |
+
+**Reading this honestly.** The anchoring transfers the *shape* of real credit risk (how default rises with arrears) and a realistic PD level into the synthetic population. The Taiwan target is next-month default on credit cards, not 90+ DPD within 12 months on personal loans, and Taiwanese card holders are not Turkish loan applicants: the anchored model is a methodologically sound starting point, not a validated Turkish PD model. A real bank portfolio is needed for re-training and independent validation.
+

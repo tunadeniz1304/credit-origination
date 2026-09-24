@@ -136,7 +136,6 @@ def test_f07_lda_table_compares_models_at_same_approval_rate():
     assert max(rates) - min(rates) <= 0.01
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f07_synthetic_proxies_correlate_with_protected_attributes():
     from app.decisioning.training import generate_dataset
 

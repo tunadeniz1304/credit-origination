@@ -180,20 +180,20 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, mon
     listing = client.get("/api/v1/models", headers=users["modelyon"]).json()["models"]
     ids = {m["model_id"]: m for m in listing}
     assert (
-        ids["pd_lgbm_v1"]["role"] == "champion" and ids["challenger_lr_v1"]["role"] == "challenger"
+        ids["pd_lgbm_v2"]["role"] == "champion" and ids["challenger_lr_v2"]["role"] == "challenger"
     )
-    card = client.get("/api/v1/models/pd_lgbm_v1/card", headers=users["modelyon"]).json()
+    card = client.get("/api/v1/models/pd_lgbm_v2/card", headers=users["modelyon"]).json()
     assert "cinsiyet" in card["excluded_attributes"][0] and card["metrics"]["auc"] > 0.7
-    md = client.get("/api/v1/models/pd_lgbm_v1/card?format=md", headers=users["modelyon"])
+    md = client.get("/api/v1/models/pd_lgbm_v2/card?format=md", headers=users["modelyon"])
     assert md.text.startswith("# Model Kartı")
-    pdf = client.get("/api/v1/models/pd_lgbm_v1/card?format=pdf", headers=users["modelyon"])
+    pdf = client.get("/api/v1/models/pd_lgbm_v2/card?format=pdf", headers=users["modelyon"])
     assert pdf.content.startswith(b"%PDF")
     cc = client.get("/api/v1/governance/champion-challenger", headers=users["modelyon"]).json()
     assert cc["decisions"] >= 1 and 0 <= cc["decision_agreement"] <= 1
     evidence = cc["validation"]
     assert evidence["available"] and evidence["delong_p_value"] < 0.05
     # On real data the LR challenger is significantly weaker: promotion is refused.
-    blocked = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"])
+    blocked = client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon"])
     assert blocked.status_code == 409 and "kanıt" in blocked.json()["detail"]
     from app.governance import inventory
 
@@ -202,16 +202,16 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, mon
         "promotion_evidence",
         lambda champion, challenger: {"allowed": True, "reason": "test: kanıt yeterli"},
     )
-    first = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"]).json()
+    first = client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon"]).json()
     assert first["role"] == "challenger"
-    again = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"])
+    again = client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon"])
     assert again.status_code == 403
     assert (
-        client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["uzman"]).status_code
+        client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["uzman"]).status_code
         == 403
     )
     second = client.post(
-        "/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon2"]
+        "/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon2"]
     ).json()
     assert second["role"] == "champion" and second["status"] == "TERFI_ONAYLANDI"
 
