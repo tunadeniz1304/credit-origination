@@ -38,3 +38,4 @@ Thumbs.db
 # Generated datasets and local databases
 *.db
 *.sqlite*
+coverage.xml
