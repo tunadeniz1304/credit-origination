@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import re
+import unicodedata
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
@@ -24,6 +25,41 @@ EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b")
 
 def _digits(value: str) -> str:
     return re.sub(r"\D", "", value)
+
+
+# Turkish-aware folding. Python's case-insensitive matching treats "İ"/"ı" as
+# unrelated to "I"/"i", and core-banking systems often ASCII-fold names
+# ("IŞIK" → "ISIK"), so every letter matches all its Turkish/ASCII variants.
+_FOLD = str.maketrans(
+    {"ı": "i", "İ": "i", "I": "i", "ş": "s", "Ş": "s", "ğ": "g", "Ğ": "g", "ü": "u", "Ü": "u"}
+    | {"ö": "o", "Ö": "o", "ç": "c", "Ç": "c", "â": "a", "Â": "a", "î": "i", "Î": "i"}
+    | {"û": "u", "Û": "u"}
+)
+_VARIANTS: dict[str, str] = {}
+for _char in "ıİIişŞsSğĞgGüÜuUöÖoOçÇcCâÂaAîÎûÛ":
+    _key = _char.translate(_FOLD).lower()
+    _VARIANTS[_key] = _VARIANTS.get(_key, "") + _char
+
+
+def turkish_fold(text: str) -> str:
+    """Case- and diacritic-insensitive key for Turkish text (``"İSMAİL IŞIK"`` → ``"ismail isik"``)."""
+    return unicodedata.normalize("NFC", text).translate(_FOLD).lower()
+
+
+def turkish_pattern(value: str) -> re.Pattern[str]:
+    """Regex matching ``value`` in any Turkish/ASCII casing (whitespace-tolerant)."""
+    parts: list[str] = []
+    for char in turkish_fold(value):
+        if char.isspace():
+            parts.append(r"\s+")
+        elif char in _VARIANTS:
+            parts.append("[" + re.escape(_VARIANTS[char] + char + char.upper()) + "]")
+        else:
+            parts.append(re.escape(char))
+    # Leading boundary only: "Ali" must not match inside "Mali", but suffixed forms
+    # ("İsmailin", "Işık'a") are still masked (privacy first).
+    boundary = r"(?<![\w])" if value[:1].isalnum() else ""
+    return re.compile(boundary + "".join(parts), re.IGNORECASE)
 
 
 def mask_text(text: str) -> str:
@@ -42,6 +78,7 @@ class Redactor:
     _forward: dict[str, str] = field(default_factory=dict)
     _reverse: dict[str, str] = field(default_factory=dict)
     _counters: dict[str, int] = field(default_factory=dict)
+    _keys: dict[str, str] = field(default_factory=dict)  # folded value -> registered value
 
     @classmethod
     def for_applicant(
@@ -88,17 +125,20 @@ class Redactor:
         value = value.strip()
         if not value:
             return value
-        if value in self._forward:
-            return self._forward[value]
+        key = turkish_fold(value)
+        if key in self._keys:
+            return self._forward[self._keys[key]]
         token = self._pseudonym(kind, value)
         self._forward[value] = token
         self._reverse[token] = value
+        self._keys[key] = value
         return token
 
     def redact(self, text: str) -> str:
-        # Longest values first so "Ali Yılmaz" wins over "Ali".
+        # Longest values first so "Ali Yılmaz" wins over "Ali"; matching is Turkish-aware
+        # (İ/ı/I/i and ASCII-folded spellings).
         for value in sorted(self._forward, key=len, reverse=True):
-            text = re.sub(re.escape(value), self._forward[value], text, flags=re.IGNORECASE)
+            text = turkish_pattern(value).sub(self._forward[value], text)
         text = IBAN_RE.sub(lambda m: self.register(m.group(0), "IBAN"), text)
         text = EMAIL_RE.sub(lambda m: self.register(m.group(0), "EPOSTA"), text)
         text = PHONE_RE.sub(lambda m: self.register(m.group(0), "TEL"), text)

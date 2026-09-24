@@ -252,7 +252,6 @@ def test_f15_prod_defaults_disable_demo_users():
     assert Settings(_env_file=None, app_env="dev").seed_demo_users is True  # type: ignore[call-arg]
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f16_redaction_handles_turkish_dotted_i():
     from app.agents.redaction import Redactor
 
