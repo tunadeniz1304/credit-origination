@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterator
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.orm import Session
 
-from app.core.security import STAFF_ROLES, AuthError, Principal, decode_token
+from app.core.config import get_settings
+from app.core.security import STAFF_ROLES, AuthError, Principal, csrf_valid, decode_token
 from app.db.models import Application
 from app.db.session import session_scope
 
@@ -20,15 +21,35 @@ def db_session() -> Iterator[Session]:
         yield session
 
 
-def current_user(credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)) -> Principal:
-    if credentials is None or credentials.scheme.lower() != "bearer":
+SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def current_user(
+    request: Request, credentials: HTTPAuthorizationCredentials | None = Depends(_bearer)
+) -> Principal:
+    """Bearer token (API clients) or the HttpOnly session cookie (browser).
+
+    Cookie-authenticated unsafe requests must echo the signed CSRF token in
+    the ``X-CSRF-Token`` header (double submit); Bearer requests are not
+    exposed to CSRF because browsers never attach the header automatically.
+    """
+    settings = get_settings()
+    token: str | None = None
+    if credentials is not None and credentials.scheme.lower() == "bearer":
+        token = credentials.credentials
+    else:
+        token = request.cookies.get(settings.session_cookie_name)
+        csrf = request.headers.get(settings.csrf_header_name)
+        if token and request.method not in SAFE_METHODS and not csrf_valid(token, csrf):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "CSRF doğrulaması başarısız")
+    if not token:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "kimlik doğrulama gerekli",
             headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        return decode_token(credentials.credentials)
+        return decode_token(token)
     except AuthError as exc:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,

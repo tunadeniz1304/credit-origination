@@ -20,6 +20,8 @@ os.environ.update(
         "TASK_QUEUE_BACKEND": "inline",
         "CIRCUIT_STATE_BACKEND": "memory",
         "RATE_LIMIT_ENABLED": "false",
+        # TestClient talks plain http://testserver: Secure cookies would never be sent back.
+        "COOKIE_SECURE": "false",
         "DATABASE_URL": f"sqlite:///{os.path.join(_TMP, 'test.db')}",
         "REPORT_OUTPUT_DIR": os.path.join(_TMP, "reports"),
         "RESULT_STORE_DIR": os.path.join(_TMP, "results"),

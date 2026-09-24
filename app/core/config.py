@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator
+from pydantic import AliasChoices, BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.models import DocumentRequirement
@@ -100,8 +100,19 @@ class Settings(BaseSettings):
     rate_limit_login: str = "20/minute"
     rate_limit_submit: str = "60/minute"
     rate_limit_enabled: bool = True
-    demo_users_enabled: bool = True
+    rate_limit_register: str = "5/hour"
+    # Demo users: on by default in dev/test, off in prod unless explicitly enabled.
+    seed_demo_users: bool | None = Field(
+        default=None, validation_alias=AliasChoices("SEED_DEMO_USERS", "DEMO_USERS_ENABLED")
+    )
     demo_password: SecretStr = SecretStr("Demo123!")
+    registration_enabled: bool = True
+    captcha_provider: Literal["none", "hook"] = "none"
+    # Browser sessions: HttpOnly cookie + signed double-submit CSRF token.
+    session_cookie_name: str = "anil2_session"
+    csrf_cookie_name: str = "anil2_csrf"
+    csrf_header_name: str = "X-CSRF-Token"
+    cookie_secure: bool = True
 
     # ---- Uploads ----
     max_upload_mb: float = 10.0
@@ -146,6 +157,16 @@ class Settings(BaseSettings):
     @classmethod
     def _strip_slash(cls, value: str) -> str:
         return value.rstrip("/") or DEFAULT_LLM_BASE_URL
+
+    @model_validator(mode="after")
+    def _environment_defaults(self) -> Settings:
+        if self.seed_demo_users is None:
+            self.seed_demo_users = self.app_env != "prod"
+        return self
+
+    @property
+    def demo_mode(self) -> bool:
+        return bool(self.seed_demo_users)
 
     # ---- Derived helpers ----
     @property

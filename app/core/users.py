@@ -1,4 +1,4 @@
-"""Demo users (development/demo only; disabled with ``DEMO_USERS_ENABLED=false``)."""
+"""Demo users (dev/test only by default; ``SEED_DEMO_USERS`` overrides, off in prod)."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ DEMO_USERS: tuple[tuple[str, str, str], ...] = (
 
 def ensure_demo_users(session: Session, settings: Settings | None = None) -> int:
     settings = settings or get_settings()
-    if not settings.demo_users_enabled:
+    if not settings.seed_demo_users:
         return 0
     existing = set(session.execute(select(User.username)).scalars())
     password = settings.demo_password.get_secret_value()

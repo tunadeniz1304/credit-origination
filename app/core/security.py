@@ -118,3 +118,16 @@ def decode_token(token: str, settings: Settings | None = None) -> Principal:
         role=claims["role"],
         full_name=claims.get("name", ""),
     )
+
+
+def csrf_token_for(session_token: str, settings: Settings | None = None) -> str:
+    """Signed double-submit token bound to the session cookie (resists cookie tossing)."""
+    settings = settings or get_settings()
+    key = settings.jwt_secret.get_secret_value().encode("utf-8")
+    return hmac.new(key, b"csrf:" + session_token.encode("utf-8"), hashlib.sha256).hexdigest()
+
+
+def csrf_valid(session_token: str, presented: str | None, settings: Settings | None = None) -> bool:
+    if not presented:
+        return False
+    return hmac.compare_digest(csrf_token_for(session_token, settings), presented)

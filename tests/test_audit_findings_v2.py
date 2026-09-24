@@ -227,7 +227,6 @@ def test_f13_csp_without_unsafe_eval():
     assert "unsafe-eval" not in csp
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f14_login_sets_httponly_cookie_and_csrf_is_enforced():
     from fastapi.testclient import TestClient
 
@@ -243,7 +242,6 @@ def test_f14_login_sets_httponly_cookie_and_csrf_is_enforced():
         assert blocked.status_code == 403
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f15_prod_defaults_disable_demo_users():
     from app.core.config import Settings
 

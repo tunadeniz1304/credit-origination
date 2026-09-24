@@ -89,6 +89,7 @@ class LoginRequest(BaseModel):
 
 class RegisterRequest(LoginRequest):
     full_name: Name
+    captcha_token: str | None = Field(default=None, max_length=4096)
 
 
 class OpenBankingConsentRequest(BaseModel):
