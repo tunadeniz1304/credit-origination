@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anil2 — Kredi Tahsis Platformu</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/app.css">
   <script defer src="/static/vendor/chart.umd.min.js"></script>
   <script defer src="/static/app.js"></script>
@@ -131,7 +132,7 @@
             <h3>Zaman çizelgesi</h3>
             <ul class="timeline"><template x-for="e in current.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor"></span><div class="muted" x-text="e.reason"></div></li></template></ul>
           </div>
-          <div class="card" x-show="current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI'">
+          <div class="card" x-show="(current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI') && !processing">
             <h2 id="docs-title">Belgelerim</h2>
             <p class="notice" role="note" x-show="ocrMissing">OCR yok — taranmış belgeler uzman incelemesine yönlendirilir.</p>
             <label for="doc-code">Yüklenecek belge</label>
@@ -177,7 +178,7 @@
               </div>
             </template>
           </div>
-          <div class="card" x-show="current.letters && current.letters.eksik_belge">
+          <div class="card" x-show="current.letters && current.letters.eksik_belge && current.missing_documents.length">
             <h2>Eksik belge yazısı</h2><div class="letter" x-text="current.letters ? current.letters.eksik_belge : ''"></div>
           </div>
         </div>

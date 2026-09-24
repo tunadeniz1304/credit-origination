@@ -41,7 +41,7 @@ function platform() {
     demoUsers: [["basvuran", "Başvuran"], ["uzman", "Uzman"], ["kidemli", "Kıdemli uzman"], ["komite", "Komite"], ["modelyon", "Model yöneticisi"], ["admin", "Admin"]],
     demoTckn: { temiz: "68846908942", ince_dosya: "29551411288", gri: "24377158546", gecikmeli: "21134086364" },
     applications: [], current: null, wizard: { open: false, step: 1 }, form: EMPTY_FORM(), quote: null,
-    upload: { code: "IDENTITY", over: false }, objection: "", processing: false, pollTimer: null,
+    upload: { code: "IDENTITY", over: false }, objection: "", processing: false, pollTimer: null, pollCount: 0,
     queue: [], queuePage: { total: 0, limit: 25, offset: 0, sla_breached: 0 }, queueLoading: false, queueSeq: 0, searchTimer: null,
     queueFilter: { q: "", state: "", product: "", sla: "", mine: false, limit: 25, offset: 0 }, fieldEdit: null,
     reviews: [], staff: null, decisionForm: { action: "ONAY", justification: "", amount: null, term_months: null },
@@ -202,16 +202,20 @@ function platform() {
         await this.loadApplications(); await this.openApp(r.application_id);
       } catch (e) { this.error = e.message; } finally { this.busy = false; }
     },
-    async openApp(id) {
+    async openApp(id, polling) {
       clearTimeout(this.pollTimer);
+      this.pollCount = polling ? this.pollCount + 1 : 0;
       try {
         this.current = await this.api("/api/v1/applications/" + id);
       } catch (e) { this.notify(e.message); return; }
       if (this.current.missing_documents.length) this.upload.code = this.current.missing_documents[0];
       // Documents complete: the pipeline runs in the background, so poll until it settles.
+      const wasProcessing = this.processing;
       this.processing = ["BELGE_INCELEMEDE", "VERI_TOPLANIYOR", "KARAR_MOTORU"].includes(this.current.state)
-        || (this.current.state === "GONDERILDI" && !this.current.missing_documents.length);
-      if (this.processing) this.pollTimer = setTimeout(() => { if (this.current && this.current.application_id === id) this.openApp(id); }, 1500);
+        || (["GONDERILDI", "BELGE_BEKLENIYOR"].includes(this.current.state) && !this.current.missing_documents.length);
+      if (this.pollCount >= 60) this.processing = false; // give up after ~90 s; the list shows the final state later
+      if (wasProcessing && !this.processing) this.loadApplications().catch(() => {});
+      if (this.processing) this.pollTimer = setTimeout(() => { if (this.current && this.current.application_id === id) this.openApp(id, true); }, 1500);
     },
     async uploadFile(file) {
       if (!file) return;
