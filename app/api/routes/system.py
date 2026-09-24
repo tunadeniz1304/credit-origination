@@ -94,7 +94,10 @@ def prometheus(session: Session = Depends(db_session)) -> Response:
 
 @router.get("/api/v1/metrics")
 def summary_metrics(
-    session: Session = Depends(db_session), user: Principal = Depends(require_staff)
+    session: Session = Depends(db_session),
+    user: Principal = Depends(
+        require_roles("uzman", "kidemli_uzman", "komite", "model_yoneticisi")
+    ),
 ) -> dict[str, Any]:
     """Operational summary computed from the database (not process memory)."""
     by_state: dict[str, int] = _pairs(

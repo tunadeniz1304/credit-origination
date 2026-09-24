@@ -117,7 +117,10 @@ class ScorecardModel:
             var_rows = table[table["Variable"] == variable].reset_index(drop=True)
             if 0 <= bin_index < len(var_rows):
                 points[variable] = round(float(var_rows.loc[bin_index, "Points"]), 2)
-        lost = {var: round(self.max_points.get(var, pts) - pts, 2) for var, pts in points.items()}
+        lost = {
+            var: round(max(0.0, self.max_points.get(var, pts) - pts), 2)
+            for var, pts in points.items()
+        }
         return {
             "points": round(float(np.clip(total, SCORE_MIN, SCORE_MAX)), 1),
             "raw_points": round(total, 2),

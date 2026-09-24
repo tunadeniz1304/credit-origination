@@ -204,7 +204,7 @@
 
         <div x-show="staff.tab === 'karar'"><template x-if="staff.decision"><div class="grid-2">
           <div><h3>SHAP katkıları (log-odds)</h3><div class="chart-box"><canvas id="shapChart"></canvas></div></div>
-          <div><h3>Gerekçe kodları</h3><ul><template x-for="r in staff.decision.reason_codes"><li><b x-text="r.code"></b> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
+          <div><h3>Gerekçe kodları</h3><ul><template x-for="r in staff.decision.reason_codes"><li><b x-text="r.code"></b> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
             <h3>Politika kuralları</h3><ul><template x-for="r in staff.decision.rule_results.filter(x => x.fired)"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="r.action"></span> <span x-text="r.id + ' — ' + r.description"></span></li></template></ul>
             <h3>Karşı-olgusal</h3><ul><template x-for="c in staff.decision.counterfactuals"><li x-text="c"></li></template></ul>
             <p class="muted" x-text="'Kural seti ' + staff.decision.rule_set_version + ' · model ' + staff.decision.model_version + ' · özet ' + staff.decision.feature_hash.slice(0,12)"></p>
