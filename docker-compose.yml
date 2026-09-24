@@ -1,4 +1,29 @@
+x-app-env: &app-env
+  DATABASE_URL: postgresql+psycopg://anil2:anil2@postgres:5432/anil2
+  DB_AUTO_CREATE: "false"
+  REDIS_URL: redis://redis:6379/0
+  RESULT_BACKEND: redis://redis:6379/0
+  TASK_QUEUE_BACKEND: celery
+  CIRCUIT_STATE_BACKEND: redis
+  SMTP_HOST: mailhog
+  SMTP_PORT: "1025"
+
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: anil2
+      POSTGRES_PASSWORD: anil2
+      POSTGRES_DB: anil2
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U anil2 -d anil2"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   redis:
     image: redis:7-alpine
     restart: unless-stopped
@@ -8,18 +33,26 @@ services:
       timeout: 3s
       retries: 5
 
+  mailhog:
+    image: mailhog/mailhog:v1.0.1
+    restart: unless-stopped
+    ports:
+      - "8025:8025"
+
   app:
     build: .
     restart: unless-stopped
     ports:
       - "8000:8000"
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
     volumes:
       - appdata:/app/data
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      RESULT_BACKEND: redis://redis:6379/0
-      TASK_QUEUE_BACKEND: celery
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
 
@@ -27,15 +60,36 @@ services:
     build: .
     restart: unless-stopped
     command: celery -A app.worker.celery_app:celery_app worker --loglevel=info --concurrency=2
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
     volumes:
       - appdata:/app/data
-    environment:
-      REDIS_URL: redis://redis:6379/0
-      RESULT_BACKEND: redis://redis:6379/0
-      TASK_QUEUE_BACKEND: celery
+    healthcheck:
+      test: ["CMD-SHELL", "celery -A app.worker.celery_app:celery_app inspect ping -d celery@$$HOSTNAME -t 5 || exit 1"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 30s
     depends_on:
+      app:
+        condition: service_healthy
       redis:
+        condition: service_healthy
+
+  beat:
+    build: .
+    restart: unless-stopped
+    command: celery -A app.worker.celery_app:celery_app beat --loglevel=info --schedule /tmp/celerybeat-schedule
+    env_file:
+      - path: .env
+        required: false
+    environment: *app-env
+    depends_on:
+      app:
         condition: service_healthy
 
 volumes:
   appdata:
+  pgdata:

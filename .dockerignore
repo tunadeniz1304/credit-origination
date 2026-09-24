@@ -1,0 +1,12 @@
+.env
+.env.*
+!.env.example
+.git
+data
+logs
+**/__pycache__
+.pytest_cache
+.mypy_cache
+.ruff_cache
+Anil2.md
+src

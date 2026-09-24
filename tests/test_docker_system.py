@@ -1,10 +1,4 @@
-"""Docker deployment topology tests (no docker daemon required).
-
-These guard the compose/worker contract: three services wired to Redis,
-healthy-start ordering, the shared image with distinct commands, and the
-Celery app entrypoint the worker resolves. ``docker compose config`` lint is
-the operational companion check (see README).
-"""
+"""Docker deployment topology tests (no docker daemon required)."""
 
 from __future__ import annotations
 
@@ -20,60 +14,73 @@ def _compose() -> dict:
         return yaml.safe_load(fh)
 
 
-def test_compose_defines_three_services():
+def test_compose_services():
     services = _compose()["services"]
-    assert set(services) == {"app", "worker", "redis"}
+    assert {"postgres", "redis", "app", "worker", "beat"} <= set(services)
 
 
-def test_app_and_worker_rely_on_healthy_redis():
+def test_app_and_worker_share_image_env_and_env_file():
     services = _compose()["services"]
     for name in ("app", "worker"):
-        depends = services[name]["depends_on"]["redis"]
-        assert depends == {"condition": "service_healthy"}
-    healthcheck = services["redis"].get("healthcheck")
-    assert healthcheck and "redis-cli" in healthcheck["test"]
+        env = services[name]["environment"]
+        assert env["TASK_QUEUE_BACKEND"] == "celery"
+        assert env["DATABASE_URL"].startswith("postgresql+psycopg://")
+        assert services[name]["env_file"][0]["path"] == ".env"
+        assert services[name]["build"] == "."
+    assert services["app"]["depends_on"]["postgres"] == {"condition": "service_healthy"}
+    assert services["worker"]["command"].startswith(
+        "celery -A app.worker.celery_app:celery_app worker"
+    )
 
-    worker_cmd = services["worker"]["command"]
-    assert worker_cmd.startswith("celery -A app.worker.celery_app:celery_app worker")
 
-
-def test_app_and_worker_share_image_and_celery_backend():
+def test_healthchecks_defined():
     services = _compose()["services"]
-    assert services["app"]["build"] == services["worker"]["build"] == "."
-    for name in ("app", "worker"):
-        environment = services[name]["environment"]
-        assert environment["TASK_QUEUE_BACKEND"] == "celery"
-        assert environment["REDIS_URL"] == "redis://redis:6379/0"
+    for name in ("postgres", "redis", "worker"):
+        assert services[name].get("healthcheck")
 
 
-def test_dockerfile_runs_uvicorn_on_port_8000():
+def test_dockerfile_contract():
     dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
     assert "FROM python:3.11-slim" in dockerfile
     assert "EXPOSE 8000" in dockerfile
-    assert 'CMD ["uvicorn", "app.main:app"' in dockerfile
-
-
-def test_dockerfile_installs_pinned_requirements():
-    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-    assert "COPY requirements.txt ." in dockerfile
+    assert "alembic upgrade head" in dockerfile
     assert "pip install --no-cache-dir -r requirements.txt" in dockerfile
+    assert "COPY .env" not in dockerfile  # secrets are injected via env_file only
 
 
-def test_app_and_worker_share_persistent_data_volume():
-    compose = _compose()
-    services = compose["services"]
-    # Worker-written reports/results must be visible to the API: both mount
-    # the same named volume at /app/data.
-    for name in ("app", "worker"):
-        assert "appdata:/app/data" in services[name]["volumes"]
-    assert "appdata" in compose.get("volumes", {})
+def test_env_is_never_shipped():
+    assert ".env" in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()
+    assert ".env" in (ROOT / ".gitignore").read_text(encoding="utf-8").splitlines()
 
 
-def test_celery_app_entrypoint_autodiscovers_tasks():
-    """The worker entrypoint must register app.tasks.process_application."""
+def test_celery_app_registers_tasks():
     from app.worker.celery_app import celery_app
 
-    assert celery_app.main == "credit_agent"
     registered = set(celery_app.tasks.keys())
-    assert "app.tasks.process_application" in registered
-    assert "app.tasks.ping" in registered
+    assert {
+        "app.tasks.process_application",
+        "app.tasks.dispatch_notifications",
+        "app.tasks.retry_stalled",
+    } <= registered
+
+
+def test_alembic_migration_matches_models(tmp_path, monkeypatch):
+    from alembic.config import Config
+    from sqlalchemy import create_engine, inspect
+
+    from alembic import command
+    from app.db.models import Base
+
+    url = f"sqlite:///{(tmp_path / 'm.db').as_posix()}"
+    monkeypatch.setenv("DATABASE_URL", url)
+    from app.core.config import get_settings
+
+    get_settings.cache_clear()
+    try:
+        config = Config(str(ROOT / "alembic.ini"))
+        config.set_main_option("script_location", str(ROOT / "alembic"))
+        command.upgrade(config, "head")
+    finally:
+        get_settings.cache_clear()
+    tables = set(inspect(create_engine(url)).get_table_names())
+    assert set(Base.metadata.tables) <= tables

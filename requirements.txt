@@ -1,17 +1,28 @@
-# Akıllı Kredi Operasyon Ajanı — Python dependencies
-# Pinned to the versions verified under CPython 3.11 on Windows/dev.
+# Anil2 credit origination platform — core dependencies (CPython 3.11).
+# Heavy optional capabilities live in pyproject extras (ocr, barcode, layout,
+# explain, challenger, drift, embeddings, survival).
 
-# Web framework
+# Web framework & security
 fastapi==0.141.1
 uvicorn[standard]==0.34.0
 gunicorn==23.0.0
 python-multipart==0.0.32
 python-dotenv==1.0.1
 PyYAML==6.0.3
+PyJWT==2.14.0
+cryptography==50.0.1
+slowapi==0.1.9
+email-validator==2.2.0
+prometheus_client==0.23.1
 
 # Validation
 pydantic==2.13.5
 pydantic-settings==2.14.1
+
+# Persistence
+SQLAlchemy==2.0.36
+alembic==1.14.0
+psycopg[binary]==3.3.3
 
 # Async task queue (broker: Redis; local fallback = inline dispatcher)
 celery==5.6.3
@@ -19,17 +30,29 @@ redis==5.2.0
 fakeredis==2.26.1
 tenacity==9.0.0
 
-# RAG / document analysis
-langchain==0.3.30
-langchain-community==0.3.31
-langchain-text-splitters==0.3.11
+# Documents, RAG, agent
+langgraph==1.2.12
+rank_bm25==0.2.2
 pypdf==6.13.2
 PyMuPDF==1.27.2.3
-
-# Reports
+pikepdf==10.13.0.post1
 reportlab==4.4.10
 
-# Optional real LLM providers (gated on API keys)
+# Decisioning, explainability, governance
+numpy==2.4.6
+pandas==2.2.3
+scipy==1.15.0
+scikit-learn==1.9.1
+lightgbm==4.3.0
+shap==0.51.0
+optbinning==1.0.0
+fairlearn==0.14.0
+networkx==3.4.2
+RapidFuzz==3.14.6
+joblib==1.6.0
+matplotlib==3.10.1
+
+# LLM providers (OpenAI-compatible first)
 openai==2.54.0
 anthropic==0.97.0
 
