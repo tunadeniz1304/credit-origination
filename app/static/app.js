@@ -41,7 +41,7 @@ function platform() {
     demoUsers: [["basvuran", "Başvuran"], ["uzman", "Uzman"], ["kidemli", "Kıdemli uzman"], ["komite", "Komite"], ["modelyon", "Model yöneticisi"], ["admin", "Admin"]],
     demoTckn: { temiz: "68846908942", ince_dosya: "29551411288", gri: "24377158546", gecikmeli: "21134086364" },
     applications: [], current: null, wizard: { open: false, step: 1 }, form: EMPTY_FORM(), quote: null,
-    upload: { code: "IDENTITY", over: false }, objection: "",
+    upload: { code: "IDENTITY", over: false }, objection: "", processing: false, pollTimer: null,
     queue: [], queuePage: { total: 0, limit: 25, offset: 0, sla_breached: 0 }, queueLoading: false, queueSeq: 0, searchTimer: null,
     queueFilter: { q: "", state: "", product: "", sla: "", mine: false, limit: 25, offset: 0 }, fieldEdit: null,
     reviews: [], staff: null, decisionForm: { action: "ONAY", justification: "", amount: null, term_months: null },
@@ -122,7 +122,11 @@ function platform() {
         await this.afterLogin();
       } catch (e) { this.user = null; }
     },
-    toggleTheme() { this.theme = this.theme === "dark" ? "light" : "dark"; try { localStorage.setItem("anil2-theme", this.theme); } catch (e) { /* ignore */ } },
+    toggleTheme() {
+      this.theme = this.theme === "dark" ? "light" : "dark";
+      try { localStorage.setItem("anil2-theme", this.theme); } catch (e) { /* theme preference only */ }
+      this.$nextTick(() => this.redrawCharts());
+    },
     async login() {
       this.error = "";
       try {
@@ -167,6 +171,7 @@ function platform() {
       this.view = this.views()[0].id;
       this.api("/api/v1/llm/status").then((s) => { this.llm = s; }).catch(() => {});
       await this.go(this.view);
+      this.$nextTick(() => { const main = document.getElementById("main"); if (main) main.focus(); });
     },
     async go(view) {
       this.view = view;
@@ -181,6 +186,8 @@ function platform() {
     async loadApplications() { this.applications = (await this.api("/api/v1/applications?limit=100")).applications; },
     startWizard() { this.form = EMPTY_FORM(); this.wizard = { open: true, step: 1 }; this.current = null; this.error = ""; },
     wizardBack() { if (this.wizard.step > 1) this.wizard.step--; else this.wizard.open = false; },
+    wizardSubmit() { if (this.wizard.step < 3) this.wizardNext(); else this.submitApplication(); },
+    onFileChosen(event) { const file = event.target.files[0]; event.target.value = ""; return this.uploadFile(file); },
     wizardNext() { this.wizard.step++; if (this.wizard.step === 3) this.loadQuote(); },
     onDrop(event) { this.upload.over = false; this.uploadFile(event.dataTransfer.files[0]); },
     pickDemo(key) { if (key) { this.form.identity_no = this.demoTckn[key]; } },
@@ -196,8 +203,15 @@ function platform() {
       } catch (e) { this.error = e.message; } finally { this.busy = false; }
     },
     async openApp(id) {
-      this.current = await this.api("/api/v1/applications/" + id);
+      clearTimeout(this.pollTimer);
+      try {
+        this.current = await this.api("/api/v1/applications/" + id);
+      } catch (e) { this.notify(e.message); return; }
       if (this.current.missing_documents.length) this.upload.code = this.current.missing_documents[0];
+      // Documents complete: the pipeline runs in the background, so poll until it settles.
+      this.processing = ["BELGE_INCELEMEDE", "VERI_TOPLANIYOR", "KARAR_MOTORU"].includes(this.current.state)
+        || (this.current.state === "GONDERILDI" && !this.current.missing_documents.length);
+      if (this.processing) this.pollTimer = setTimeout(() => { if (this.current && this.current.application_id === id) this.openApp(id); }, 1500);
     },
     async uploadFile(file) {
       if (!file) return;
@@ -205,7 +219,7 @@ function platform() {
       try {
         const r = await this.api("/api/v1/applications/" + this.current.application_id + "/documents", { method: "POST", body });
         this.notify(r.complete ? "Belgeler tamamlandı, değerlendirme başladı." : "Belge yüklendi. Eksik: " + this.lblList("document", r.missing_documents));
-        setTimeout(() => this.openApp(this.current.application_id), r.processing_resumed ? 1500 : 10);
+        await this.openApp(this.current.application_id);
       } catch (e) { this.notify(e.message); }
     },
     async act(path) {
@@ -301,8 +315,20 @@ function platform() {
         if (tab === "halka") this.drawRing();
       });
     },
+    palette() {
+      const css = getComputedStyle(document.body);
+      const v = (name) => css.getPropertyValue(name).trim();
+      return { primary: v("--link"), bad: v("--bad"), ok: v("--ok"), warn: v("--warn"), text: v("--muted"), grid: v("--line") };
+    },
+    redrawCharts() {
+      if (this.view === "dashboard") { if (this.dashTab === "dogrulama") this.drawCalibration(); else this.drawDashCharts(); }
+      if (this.view === "workbench" && this.staff) this.staffTab(this.staff.tab);
+    },
     chart(id, config) {
       if (typeof Chart === "undefined") return;
+      const pal = this.palette();
+      Chart.defaults.color = pal.text;
+      Chart.defaults.borderColor = pal.grid;
       if (CHARTS.has(id)) { CHARTS.get(id).destroy(); CHARTS.delete(id); }
       const el = document.getElementById(id); if (!el) return;
       CHARTS.set(id, new Chart(el, Object.assign({ options: { responsive: true, maintainAspectRatio: false } }, config)));
@@ -310,23 +336,24 @@ function platform() {
     drawCash() {
       const m = (this.staff.cashflow && this.staff.cashflow.monthly) || [];
       this.chart("cashChart", { type: "bar", data: { labels: m.map((x) => x.month), datasets: [
-        { label: "Gelir", data: m.map((x) => x.income), backgroundColor: "#2f6690" },
-        { label: "Harcama", data: m.map((x) => x.spending), backgroundColor: "#b3261e" },
-        { label: "Ay sonu bakiye", data: m.map((x) => x.end_balance), type: "line", borderColor: "#1e7b34" }] } });
+        { label: "Gelir", data: m.map((x) => x.income), backgroundColor: this.palette().primary },
+        { label: "Harcama", data: m.map((x) => x.spending), backgroundColor: this.palette().bad },
+        { label: "Ay sonu bakiye", data: m.map((x) => x.end_balance), type: "line", borderColor: this.palette().ok, backgroundColor: this.palette().ok }] } });
     },
     drawShap() {
       const s = (this.staff.decision && this.staff.decision.shap || []).slice(0, 10);
-      this.chart("shapChart", { type: "bar", data: { labels: s.map((x) => x.label), datasets: [{ label: "Katkı", data: s.map((x) => x.value), backgroundColor: s.map((x) => (x.value > 0 ? "#b3261e" : "#1e7b34")) }] }, options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
+      this.chart("shapChart", { type: "bar", data: { labels: s.map((x) => x.label), datasets: [{ label: "Katkı", data: s.map((x) => x.value), backgroundColor: s.map((x) => (x.value > 0 ? this.palette().bad : this.palette().ok)) }] }, options: { indexAxis: "y", responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } } });
     },
     drawRing() {
+      const pal = this.palette();
       const svg = document.getElementById("ringSvg"); if (!svg) return;
       while (svg.firstChild) svg.removeChild(svg.firstChild);
       const nodes = (this.staff.network && this.staff.network.nodes) || [];
       const edges = (this.staff.network && this.staff.network.edges) || [];
       const ns = "http://www.w3.org/2000/svg", pos = {};
       nodes.forEach((n, i) => { const a = (2 * Math.PI * i) / Math.max(nodes.length, 1); pos[n.id] = [300 + 120 * Math.cos(a), 160 + 120 * Math.sin(a)]; });
-      edges.forEach((e) => { const l = document.createElementNS(ns, "line"); const [x1, y1] = pos[e.source]; const [x2, y2] = pos[e.target]; l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); l.setAttribute("stroke", "#9aa5b1"); svg.appendChild(l); });
-      nodes.forEach((n) => { const [x, y] = pos[n.id]; const c = document.createElementNS(ns, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", n.kind === "application" ? 14 : 9); c.setAttribute("fill", n.kind === "application" ? "#2f6690" : "#9a6700"); svg.appendChild(c);
+      edges.forEach((e) => { const l = document.createElementNS(ns, "line"); const [x1, y1] = pos[e.source]; const [x2, y2] = pos[e.target]; l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); l.setAttribute("stroke", pal.text); svg.appendChild(l); });
+      nodes.forEach((n) => { const [x, y] = pos[n.id]; const c = document.createElementNS(ns, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", n.kind === "application" ? 14 : 9); c.setAttribute("fill", n.kind === "application" ? pal.primary : pal.warn); svg.appendChild(c);
         const t = document.createElementNS(ns, "text"); t.setAttribute("x", x + 16); t.setAttribute("y", y + 4); t.textContent = this.lbl("node_kind", n.kind) + ": " + n.label; svg.appendChild(t); });
       if (!nodes.length) { const t = document.createElementNS(ns, "text"); t.setAttribute("x", 200); t.setAttribute("y", 160); t.textContent = "Ortak tanımlayıcı bulunmadı"; svg.appendChild(t); }
     },
@@ -454,8 +481,8 @@ function platform() {
       const labels = c.deciles.map((d) => String(d.decile));
       const low = (c.low_risk && c.low_risk.deciles) || 0;
       this.chart("calChart", { type: "line", data: { labels, datasets: [
-        { label: "Tahmini PD", data: c.deciles.map((d) => d.predicted), borderColor: "#2f6690", backgroundColor: "#2f6690", pointStyle: "circle" },
-        { label: "Gözlenen temerrüt", data: c.deciles.map((d) => d.observed), borderColor: "#b3261e", backgroundColor: c.deciles.map((d) => (d.decile <= low ? "#9a6700" : "#b3261e")), pointStyle: "rectRot", pointRadius: 5, borderDash: [5, 3] }] },
+        { label: "Tahmini PD", data: c.deciles.map((d) => d.predicted), borderColor: this.palette().primary, backgroundColor: this.palette().primary, pointStyle: "circle" },
+        { label: "Gözlenen temerrüt", data: c.deciles.map((d) => d.observed), borderColor: this.palette().bad, backgroundColor: c.deciles.map((d) => (d.decile <= low ? this.palette().warn : this.palette().bad)), pointStyle: "rectRot", pointRadius: 5, borderDash: [5, 3] }] },
         options: { responsive: true, maintainAspectRatio: false, scales: { x: { title: { display: true, text: "Ondalık dilim (1 = en düşük risk)" } }, y: { title: { display: true, text: "Temerrüt oranı" } } } } });
     },
     fairnessTables() {
@@ -509,13 +536,16 @@ function platform() {
       this.dash = { metrics, fairness, drift, cc, models: models ? models.models : [], watchlist };
       if (llm) this.llm = llm;
       if (this.dashTab === "dogrulama") this.loadValidation();
-      this.$nextTick(() => {
-        if (!metrics) return;
-        const s = metrics.by_state_labels || {};
-        this.chart("stateChart", { type: "doughnut", data: { labels: Object.keys(s), datasets: [{ data: Object.values(s) }] } });
-        const d = metrics.pd_distribution || {};
-        this.chart("pdChart", { type: "bar", data: { labels: Object.keys(d), datasets: [{ label: "Karar sayısı", data: Object.values(d), backgroundColor: "#2f6690" }] } });
-      });
+      this.$nextTick(() => this.drawDashCharts());
+    },
+    drawDashCharts() {
+      const metrics = this.dash.metrics;
+      if (!metrics) return;
+      const pal = this.palette();
+      const s = metrics.by_state_labels || {};
+      this.chart("stateChart", { type: "doughnut", data: { labels: Object.keys(s), datasets: [{ data: Object.values(s), backgroundColor: [pal.primary, pal.warn, pal.ok, pal.bad, pal.text], borderColor: getComputedStyle(document.body).getPropertyValue("--panel").trim() }] } });
+      const d = metrics.pd_distribution || {};
+      this.chart("pdChart", { type: "bar", data: { labels: Object.keys(d), datasets: [{ label: "Karar sayısı", data: Object.values(d), backgroundColor: pal.primary }] } });
     },
     async seedDemo() {
       this.busy = true; this.seedResult = "Demo senaryoları yükleniyor…";

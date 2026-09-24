@@ -273,7 +273,6 @@ def test_f17_queue_is_paginated():
     assert len(body["items"]) <= 5
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f18_every_form_control_is_labelled():
     html = (PROJECT_ROOT / "app" / "static" / "index.html").read_text(encoding="utf-8")
     controls = re.findall(r"<(input|select|textarea)\b([^>]*)>", html)

@@ -10,27 +10,28 @@
   <script defer src="/static/vendor/alpine-csp-3.17.4.min.js"></script>
 </head>
 <body x-data="platform" :data-theme="theme">
+<a class="skip-link" href="#main">İçeriğe geç</a>
 <header>
   <h1>Anil2 · Kredi Tahsis Platformu</h1>
   <nav x-show="user" aria-label="Ana menü">
     <template x-for="v in views()" :key="v.id">
-      <button :class="{active: view === v.id}" @click="go(v.id)" x-text="v.label"></button>
+      <button type="button" :class="{active: view === v.id}" :aria-current="view === v.id ? 'page' : 'false'" @click="go(v.id)" x-text="v.label"></button>
     </template>
   </nav>
   <span class="spacer"></span>
   <span class="ai-badge" x-show="llm" x-text="llm && llm.mode === 'live' ? 'AI: Canlı (' + llm.model + ')' : 'AI: Demo'" :title="llm ? 'LLM çağrıları: ' + llm.calls : ''"></span>
-  <button @click="toggleTheme()" aria-label="Tema değiştir" x-text="theme === 'dark' ? '☀' : '☾'"></button>
-  <template x-if="user"><span><span x-text="user.full_name + ' · ' + user.role_label"></span> <button @click="logout()">Çıkış</button></span></template>
+  <button type="button" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'" :aria-pressed="theme === 'dark' ? 'true' : 'false'" x-text="theme === 'dark' ? '☀' : '☾'"></button>
+  <template x-if="user"><span><span x-text="user.full_name + ' · ' + user.role_label"></span> <button type="button" @click="logout()">Çıkış</button></span></template>
 </header>
 
-<main>
+<main id="main" tabindex="-1">
   <!-- ============================== LOGIN -->
-  <section x-show="!user" class="card" style="max-width:520px;margin:40px auto">
-    <h2>Giriş</h2>
+  <section x-show="!user" class="card login" aria-labelledby="login-title">
+    <h2 id="login-title">Giriş</h2>
     <form @submit.prevent="login()">
-      <label for="u">Kullanıcı adı</label><input id="u" x-model="loginForm.username" autocomplete="username">
-      <label for="p">Parola</label><input id="p" type="password" x-model="loginForm.password" autocomplete="current-password">
-      <p class="error" x-text="error"></p>
+      <label for="u">Kullanıcı adı</label><input id="u" x-model="loginForm.username" autocomplete="username" required>
+      <label for="p">Parola</label><input id="p" type="password" x-model="loginForm.password" autocomplete="current-password" required>
+      <p class="error" role="alert" x-text="user ? '' : error"></p>
       <button class="primary" type="submit">Giriş yap</button>
     </form>
     <div x-show="authConfig.demo_mode">
@@ -54,61 +55,70 @@
   </section>
 
   <!-- ============================== APPLICANT PORTAL -->
-  <section x-show="user && view === 'portal'">
+  <section x-show="user && view === 'portal'" aria-labelledby="portal-title">
     <div class="card">
-      <div class="row"><h2 style="margin:0">Başvurularım</h2><span class="spacer"></span><button class="primary" @click="startWizard()">Yeni başvuru</button></div>
-      <table>
-        <thead><tr><th>No</th><th>Durum</th><th>Tutar</th><th>Vade</th><th>Tarih</th></tr></thead>
+      <div class="row"><h2 id="portal-title" class="flush">Başvurularım</h2><span class="spacer"></span><button type="button" class="primary" @click="startWizard()">Yeni başvuru</button></div>
+      <div class="table-scroll"><table aria-labelledby="portal-title">
+        <thead><tr><th scope="col">Başvuru</th><th scope="col">Ürün</th><th scope="col">Durum</th><th scope="col">Tutar</th><th scope="col">Vade</th><th scope="col">Tarih</th></tr></thead>
         <tbody>
           <template x-for="a in applications" :key="a.application_id">
-            <tr class="clickable" @click="openApp(a.application_id)">
-              <td x-text="a.application_id"></td><td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td>
-              <td x-text="tl(a.requested_amount)"></td><td x-text="a.requested_term_months + ' ay'"></td><td x-text="date(a.created_at)"></td>
+            <tr class="clickable" :class="{selected: current && current.application_id === a.application_id}" @click="openApp(a.application_id)">
+              <td><button type="button" class="linklike" @click.stop="openApp(a.application_id)" x-text="a.application_id"></button></td>
+              <td x-text="lbl('product', a.product)"></td>
+              <td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td>
+              <td class="num" x-text="tl(a.requested_amount)"></td><td x-text="a.requested_term_months + ' ay'"></td><td x-text="date(a.created_at)"></td>
             </tr>
           </template>
         </tbody>
-      </table>
+      </table></div>
       <p class="muted" x-show="!applications.length">Henüz başvurunuz yok.</p>
     </div>
 
     <!-- wizard -->
-    <div class="card" x-show="wizard.open">
-      <h2>Yeni kredi başvurusu</h2>
-      <div class="steps"><span :class="{on: wizard.step===1}">1 · Kişisel bilgiler</span><span :class="{on: wizard.step===2}">2 · Gelir ve talep</span><span :class="{on: wizard.step===3}">3 · KVKK ve rızalar</span></div>
-      <div x-show="wizard.step === 1" class="grid">
-        <div><label>Ad Soyad</label><input x-model="form.name"></div>
-        <div><label>T.C. Kimlik No</label><input x-model="form.identity_no" inputmode="numeric" maxlength="11"></div>
-        <div><label>Doğum tarihi</label><input type="date" x-model="form.birth_date"></div>
-        <div><label>Cep telefonu</label><input x-model="form.phone"></div>
-        <div><label>E-posta</label><input x-model="form.email"></div>
-        <div><label>IBAN</label><input x-model="form.iban"></div>
-        <div style="grid-column:1/-1"><label>Adres</label><input x-model="form.address"></div>
-        <div><label>Demo kimliği seç</label><select @change="pickDemo($event.target.value)"><option value="">—</option><template x-for="(t,k) in demoTckn" :key="k"><option :value="k" x-text="k"></option></template></select></div>
-      </div>
-      <div x-show="wizard.step === 2" class="grid">
-        <div><label>Aylık net gelir (TL)</label><input type="number" x-model.number="form.monthly_income"></div>
-        <div><label>Çalışma şekli</label><select x-model="form.employment_type"><template x-for="e in labelEntries('employment_type')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
-        <div><label>İşveren</label><input x-model="form.employer_name"></div>
-        <div><label>Ürün</label><select x-model="form.product"><template x-for="e in labelEntries('product')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
-        <div><label>Talep edilen tutar (TL)</label><input type="number" x-model.number="form.requested_amount"></div>
-        <div><label>Vade (ay)</label><input type="number" x-model.number="form.requested_term_months"></div>
-        <div style="grid-column:1/-1" x-show="quote"><p class="muted">Tahmini (B bandı) taksit: <b x-text="quote ? tl(quote.instalment) : ''"></b> · yıllık maliyet oranı <b x-text="quote ? pct(quote.apr) : ''"></b></p></div>
-      </div>
-      <div x-show="wizard.step === 3">
+    <form class="card" x-show="wizard.open" aria-labelledby="wizard-title" @submit.prevent="wizardSubmit()">
+      <h2 id="wizard-title">Yeni kredi başvurusu</h2>
+      <ol class="steps" aria-label="Adımlar">
+        <li :class="{on: wizard.step === 1}" :aria-current="wizard.step === 1 ? 'step' : 'false'">1 · Kişisel bilgiler</li>
+        <li :class="{on: wizard.step === 2}" :aria-current="wizard.step === 2 ? 'step' : 'false'">2 · Gelir ve talep</li>
+        <li :class="{on: wizard.step === 3}" :aria-current="wizard.step === 3 ? 'step' : 'false'">3 · KVKK ve rızalar</li>
+      </ol>
+      <fieldset x-show="wizard.step === 1" class="grid plain">
+        <legend class="sr-only">Kişisel bilgiler</legend>
+        <div><label for="f-name">Ad Soyad</label><input id="f-name" x-model="form.name" autocomplete="name"></div>
+        <div><label for="f-tckn">T.C. Kimlik No</label><input id="f-tckn" x-model="form.identity_no" inputmode="numeric" maxlength="11" autocomplete="off"></div>
+        <div><label for="f-birth">Doğum tarihi</label><input id="f-birth" type="date" x-model="form.birth_date" autocomplete="bday"></div>
+        <div><label for="f-phone">Cep telefonu</label><input id="f-phone" x-model="form.phone" inputmode="tel" autocomplete="tel"></div>
+        <div><label for="f-email">E-posta</label><input id="f-email" type="email" x-model="form.email" autocomplete="email"></div>
+        <div><label for="f-iban">IBAN</label><input id="f-iban" x-model="form.iban" autocomplete="off"></div>
+        <div class="span-all"><label for="f-address">Adres</label><input id="f-address" x-model="form.address" autocomplete="street-address"></div>
+        <div x-show="authConfig.demo_mode"><label for="f-demo">Demo kimliği seç</label><select id="f-demo" @change="pickDemo($event.target.value)"><option value="">—</option><template x-for="(t,k) in demoTckn" :key="k"><option :value="k" x-text="lbl('persona', k)"></option></template></select></div>
+      </fieldset>
+      <fieldset x-show="wizard.step === 2" class="grid plain">
+        <legend class="sr-only">Gelir ve talep</legend>
+        <div><label for="f-income">Aylık net gelir (TL)</label><input id="f-income" type="number" min="0" x-model.number="form.monthly_income"></div>
+        <div><label for="f-employment">Çalışma şekli</label><select id="f-employment" x-model="form.employment_type"><template x-for="e in labelEntries('employment_type')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
+        <div><label for="f-employer">İşveren</label><input id="f-employer" x-model="form.employer_name" autocomplete="organization"></div>
+        <div><label for="f-product">Ürün</label><select id="f-product" x-model="form.product"><template x-for="e in labelEntries('product')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
+        <div><label for="f-amount">Talep edilen tutar (TL)</label><input id="f-amount" type="number" min="0" x-model.number="form.requested_amount"></div>
+        <div><label for="f-term">Vade (ay)</label><input id="f-term" type="number" min="1" max="120" x-model.number="form.requested_term_months"></div>
+        <div class="span-all" x-show="quote"><p class="muted">Tahmini (B bandı) taksit: <b x-text="quote ? tl(quote.instalment) : ''"></b> · yıllık maliyet oranı <b x-text="quote ? pct(quote.apr) : ''"></b></p></div>
+      </fieldset>
+      <fieldset x-show="wizard.step === 3" class="plain">
+        <legend class="sr-only">KVKK ve rızalar</legend>
         <p class="letter">Kişisel verileriniz 6698 sayılı KVKK kapsamında kredi değerlendirmesi amacıyla işlenir. KKB, e-Devlet ve (onay verirseniz) açık bankacılık verileri yalnızca rızanızla sorgulanır. Kararın otomatik verilmesi halinde itiraz ve insan incelemesi talep etme hakkınız vardır (KVKK m.11).</p>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.kvkk_aydinlatma"> Aydınlatma metnini okudum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.acik_riza"> Otomatik değerlendirme ve profillemeye açık rıza veriyorum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.kkb_sorgu"> KKB/Findeks sorgusuna izin veriyorum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.edevlet_sorgu"> e-Devlet/SGK sorgusuna izin veriyorum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.acik_bankacilik"> Açık bankacılık (GEÇİT) ile son 12 ay hesap hareketlerimin paylaşılmasına 90 gün süreyle izin veriyorum</label>
-      </div>
-      <p class="error" x-text="error"></p>
+        <div class="check"><input id="c-kvkk" type="checkbox" x-model="form.consents.kvkk_aydinlatma"><label for="c-kvkk">Aydınlatma metnini okudum</label></div>
+        <div class="check"><input id="c-riza" type="checkbox" x-model="form.consents.acik_riza"><label for="c-riza">Otomatik değerlendirme ve profillemeye açık rıza veriyorum</label></div>
+        <div class="check"><input id="c-kkb" type="checkbox" x-model="form.consents.kkb_sorgu"><label for="c-kkb">KKB/Findeks sorgusuna izin veriyorum</label></div>
+        <div class="check"><input id="c-edevlet" type="checkbox" x-model="form.consents.edevlet_sorgu"><label for="c-edevlet">e-Devlet/SGK sorgusuna izin veriyorum</label></div>
+        <div class="check"><input id="c-ob" type="checkbox" x-model="form.consents.acik_bankacilik"><label for="c-ob">Açık bankacılık (GEÇİT) ile son 12 ay hesap hareketlerimin paylaşılmasına 90 gün süreyle izin veriyorum</label></div>
+      </fieldset>
+      <p class="error" role="alert" x-text="user ? error : ''"></p>
       <div class="row">
-        <button @click="wizardBack()" x-text="wizard.step > 1 ? 'Geri' : 'Vazgeç'"></button>
-        <button class="primary" x-show="wizard.step < 3" @click="wizardNext()">İleri</button>
-        <button class="primary" x-show="wizard.step === 3" @click="submitApplication()" :disabled="busy">Başvuruyu gönder</button>
+        <button type="button" @click="wizardBack()" x-text="wizard.step > 1 ? 'Geri' : 'Vazgeç'"></button>
+        <button type="submit" class="primary" x-show="wizard.step < 3">İleri</button>
+        <button type="submit" class="primary" x-show="wizard.step === 3" :disabled="busy">Başvuruyu gönder</button>
       </div>
-    </div>
+    </form>
 
     <!-- applicant detail -->
     <template x-if="current">
@@ -117,33 +127,36 @@
           <div class="card">
             <h2 x-text="current.application_id"></h2>
             <p><span class="badge" :class="stateClass(current.state)" x-text="current.state_label"></span> <span class="muted" x-text="lbl('product', current.product) + ' · ' + tl(current.requested_amount) + ' · ' + current.requested_term_months + ' ay'"></span></p>
+            <p class="muted" role="status" x-text="processing ? 'Başvurunuz değerlendiriliyor…' : ''"></p>
             <h3>Zaman çizelgesi</h3>
             <ul class="timeline"><template x-for="e in current.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor"></span><div class="muted" x-text="e.reason"></div></li></template></ul>
           </div>
           <div class="card" x-show="current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI'">
-            <h2>Belgelerim</h2>
+            <h2 id="docs-title">Belgelerim</h2>
             <p class="notice" role="note" x-show="ocrMissing">OCR yok — taranmış belgeler uzman incelemesine yönlendirilir.</p>
-            <div class="row"><select x-model="upload.code"><template x-for="d in current.required_documents"><option :value="d.code" x-text="d.description + (current.missing_documents.includes(d.code) ? ' (eksik)' : ' ✓')"></option></template></select></div>
+            <label for="doc-code">Yüklenecek belge</label>
+            <select id="doc-code" x-model="upload.code"><template x-for="d in current.required_documents" :key="d.code"><option :value="d.code" x-text="d.description + (current.missing_documents.includes(d.code) ? ' (eksik)' : ' ✓')"></option></template></select>
             <div class="drop" :class="{over: upload.over}" @dragover.prevent="upload.over = true" @dragleave="upload.over = false" @drop.prevent="onDrop($event)">
-              Dosyayı buraya sürükleyin veya <input type="file" style="width:auto" @change="uploadFile($event.target.files[0])" accept=".pdf,.png,.jpg,.jpeg">
+              <label for="doc-file">Dosyayı buraya sürükleyin veya seçin (PDF, PNG, JPG)</label>
+              <input id="doc-file" type="file" class="file" @change="onFileChosen($event)" accept=".pdf,.png,.jpg,.jpeg">
             </div>
-            <p class="muted" x-text="'Eksik: ' + (current.missing_documents.length ? lblList('document', current.missing_documents) : 'yok')"></p>
+            <p class="muted" role="status" x-text="'Eksik: ' + (current.missing_documents.length ? lblList('document', current.missing_documents) : 'yok')"></p>
           </div>
         </div>
         <div>
-          <div class="card" x-show="current.offer">
-            <h2>Kredi teklifiniz</h2>
+          <div class="card" x-show="current.offer" aria-labelledby="offer-title">
+            <h2 id="offer-title">Kredi teklifiniz</h2>
             <template x-if="current.offer">
               <div>
                 <div class="grid">
-                  <div><div class="muted">Tutar</div><div class="kpi" x-text="tl(current.offer.amount)"></div></div>
-                  <div><div class="muted">Aylık taksit</div><div class="kpi" x-text="tl(current.offer.instalment)"></div></div>
+                  <div><div class="muted">Tutar</div><div class="kpi" data-testid="offer-amount" x-text="tl(current.offer.amount)"></div></div>
+                  <div><div class="muted">Aylık taksit</div><div class="kpi" data-testid="offer-instalment" x-text="tl(current.offer.instalment)"></div></div>
                 </div>
                 <p class="muted" x-text="'Yıllık akdi faiz ' + pct(current.offer.annual_rate) + ' · yıllık maliyet oranı ' + pct(current.offer.apr) + ' · toplam geri ödeme ' + tl(current.offer.total_payment) + ' · geçerlilik ' + date(current.offer.valid_until)"></p>
-                <button class="primary" x-show="current.state === 'TEKLIF_SUNULDU'" @click="act('offer/accept')">Teklifi kabul et</button>
-                <button x-show="current.reports_contract || current.state === 'SOZLESME_HAZIR' || current.state === 'KULLANDIRILDI'" @click="download('/api/v1/applications/' + current.application_id + '/contract', 'sozlesme.pdf')">Sözleşme öncesi bilgi formu</button>
-                <details><summary>Ödeme planı</summary><table><thead><tr><th>Ay</th><th>Taksit</th><th>Faiz</th><th>Vergiler</th><th>Anapara</th><th>Kalan</th></tr></thead>
-                  <tbody><template x-for="r in current.offer.schedule"><tr><td x-text="r.period"></td><td x-text="tl(r.instalment)"></td><td x-text="tl(r.interest)"></td><td x-text="tl(r.kkdf + r.bsmv)"></td><td x-text="tl(r.principal)"></td><td x-text="tl(r.closing_balance)"></td></tr></template></tbody></table></details>
+                <button type="button" class="primary" x-show="current.state === 'TEKLIF_SUNULDU'" @click="act('offer/accept')">Teklifi kabul et</button>
+                <button type="button" x-show="current.reports_contract || current.state === 'SOZLESME_HAZIR' || current.state === 'KULLANDIRILDI'" @click="download('/api/v1/applications/' + current.application_id + '/contract', 'sozlesme.pdf')">Sözleşme öncesi bilgi formu</button>
+                <details><summary>Ödeme planı</summary><div class="table-scroll"><table><thead><tr><th scope="col">Ay</th><th scope="col">Taksit</th><th scope="col">Faiz</th><th scope="col">Vergiler</th><th scope="col">Anapara</th><th scope="col">Kalan</th></tr></thead>
+                  <tbody><template x-for="r in current.offer.schedule"><tr><td x-text="r.period"></td><td class="num" x-text="tl(r.instalment)"></td><td class="num" x-text="tl(r.interest)"></td><td class="num" x-text="tl(r.kkdf + r.bsmv)"></td><td class="num" x-text="tl(r.principal)"></td><td class="num" x-text="tl(r.closing_balance)"></td></tr></template></tbody></table></div></details>
               </div>
             </template>
           </div>
@@ -155,11 +168,12 @@
                 <ul><template x-for="r in current.decision.reason_codes"><li x-text="r.text"></li></template></ul>
                 <div x-show="current.decision.counterfactuals.length"><h3>Ne değişirse onaylanırsınız?</h3><ul><template x-for="c in current.decision.counterfactuals"><li x-text="c"></li></template></ul></div>
                 <details><summary>Bildirim mektubu</summary><div class="letter" x-text="current.decision.applicant_letter"></div></details>
-                <div x-show="current.decision.objection_right && (current.state === 'OTOMATIK_RET' || current.state === 'REDDEDILDI')">
+                <form x-show="current.decision.objection_right && (current.state === 'OTOMATIK_RET' || current.state === 'REDDEDILDI')" @submit.prevent="submitObjection()">
                   <h3>İtiraz (KVKK m.11)</h3>
-                  <textarea x-model="objection" placeholder="İtiraz gerekçeniz (en az 10 karakter)"></textarea>
-                  <button class="primary" @click="submitObjection()">İtiraz et ve insan incelemesi talep et</button>
-                </div>
+                  <label for="objection-text">İtiraz gerekçeniz (en az 10 karakter)</label>
+                  <textarea id="objection-text" x-model="objection" minlength="10"></textarea>
+                  <button type="submit" class="primary">İtiraz et ve insan incelemesi talep et</button>
+                </form>
               </div>
             </template>
           </div>
@@ -471,6 +485,6 @@
     </div>
   </section>
 </main>
-<div class="toast" x-show="toast" x-text="toast" role="status" aria-live="polite"></div>
+<div class="toast" x-text="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
