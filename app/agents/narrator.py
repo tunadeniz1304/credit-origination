@@ -467,7 +467,14 @@ class Narrator:
         )
 
     async def applicant_letter(self, ctx: NarrativeContext) -> Generation[Any]:
-        facts = ctx.fact_map()
+        from app.agents.citations import extract_numbers
+
+        facts: dict[str, Any] = dict(ctx.fact_map())
+        # Numbers quoted by reason-code / counterfactual texts are part of the context too.
+        quoted = [rc.text for rc in ctx.reason_codes] + ctx.counterfactuals
+        for i, (_, readings) in enumerate(n for text in quoted for n in extract_numbers(text)):
+            for j, value in enumerate(sorted(readings)):
+                facts[f"f:quoted.{i}.{j}"] = value
         adverse_note = (
             " Sonuç olumsuz olduğu için gerekçe kodlarını sade dille açıkla, karşı-olgusal "
             "önerileri aktar ve KVKK m.11 kapsamındaki itiraz hakkını ve insan incelemesi "
@@ -489,7 +496,7 @@ class Narrator:
                 ),
             },
         ]
-        generation = await self.service.generate(
+        generation: Any = await self.service.generate(
             "applicant_letter",
             messages,
             fallback=lambda: render_applicant_letter(ctx),

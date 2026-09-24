@@ -177,6 +177,18 @@ class OpenAICompatibleProvider(LLMProvider):
         except Exception as exc:
             raise LLMCallError(_classify_openai_error(exc), type(exc).__name__) from exc
 
+        first = completion.choices[0]
+        if (
+            not (first.message.content or "").strip()
+            and getattr(first, "finish_reason", "") == "length"
+        ):
+            # Reasoning models (e.g. DeepSeek) can spend the whole budget on
+            # reasoning_content; retry once with a larger completion budget.
+            kwargs["max_tokens"] = int(kwargs["max_tokens"]) * 4
+            try:
+                completion = await self._client.chat.completions.create(**kwargs)
+            except Exception as exc:
+                raise LLMCallError(_classify_openai_error(exc), type(exc).__name__) from exc
         latency = (time.perf_counter() - started) * 1000
         choice = completion.choices[0].message
         tool_calls: list[ToolCall] = []
@@ -231,14 +243,16 @@ class AnthropicProvider(LLMProvider):
             message = await self._client.messages.create(
                 model=self.model,
                 system=system,
-                messages=convo,
+                messages=convo,  # type: ignore[arg-type]
                 max_tokens=max_tokens or self.settings.llm_max_tokens,
                 temperature=self.settings.llm_temperature if temperature is None else temperature,
             )
         except Exception as exc:
             raise LLMCallError("unknown", type(exc).__name__) from exc
         text = "".join(
-            block.text for block in message.content if getattr(block, "type", None) == "text"
+            getattr(block, "text", "")
+            for block in message.content
+            if getattr(block, "type", None) == "text"
         )
         return LLMResponse(
             content=text.strip(),
