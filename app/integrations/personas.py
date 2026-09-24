@@ -155,12 +155,17 @@ DEMO_TCKN: dict[str, str] = {
     "asiri_borclu": synthetic_tckn("demo-asiri-borclu"),
     "kurcalanmis": synthetic_tckn("demo-kurcalanmis"),
     "halka": synthetic_tckn("demo-halka-1"),
+    "halka_2": synthetic_tckn("demo-halka-2"),
+    "halka_3": synthetic_tckn("demo-halka-3"),
     "gri": synthetic_tckn("demo-gri"),
     "gecikmeli": synthetic_tckn("demo-gecikmeli"),
     "takipte": synthetic_tckn("demo-takipte"),
 }
-_PINNED: dict[str, str] = {tckn: key for key, tckn in DEMO_TCKN.items() if key != "halka"}
-_PINNED[DEMO_TCKN["halka"]] = "temiz"
+_PINNED: dict[str, str] = {
+    tckn: key for key, tckn in DEMO_TCKN.items() if not key.startswith("halka")
+}
+for _key in ("halka", "halka_2", "halka_3"):
+    _PINNED[DEMO_TCKN[_key]] = "temiz"
 
 EMPLOYERS = (
     "Yıldız Holding A.Ş.",

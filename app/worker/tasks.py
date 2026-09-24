@@ -1,121 +1,137 @@
 """Celery tasks and their inline (broker-less) equivalents.
 
-Each domain task is implemented once as a plain function; it is registered
-both as a Celery task (``@celery_app.task``) and in ``INLINE_TASKS`` so the
-:class:`TaskDispatcher` can run the exact same body synchronously when no
-Redis broker is available (local development and the test suite).
+Each task body is a plain function registered both as a Celery task and in
+``INLINE_TASKS`` so :class:`~app.core.task_dispatcher.TaskDispatcher` runs the
+identical code without Redis (local development, tests). All state lives in
+the database, so the API and any number of workers stay coherent.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import timedelta
 from typing import Any
 
-from app.api.store import update_record_status
+from sqlalchemy import select
+
 from app.core.config import get_settings
-from app.engine.pipeline import ApplicationPipeline
-from app.engine.store import (
-    load_application,
-    persist_error,
-    persist_result,
-)
-from app.models import ApplicationStatus
+from app.core.logging import get_logger
 from app.worker.celery_app import create_celery_app
 
-# Dispatcher-local Celery app (worker process uses the shared one).
 _celery = create_celery_app()
+logger = get_logger("worker.tasks")
 
 
-@_celery.task(name="app.tasks.ping")
-def ping() -> str:
-    """Broker connectivity smoke task: always returns ``"pong"``."""
+def _ping() -> str:
     return "pong"
 
 
-def _inline_ping() -> str:
-    return "pong"
-
-
-@_celery.task(name="app.tasks.process_application")
-def process_application(application_id: str) -> dict[str, Any]:
-    """Run the full credit pipeline for a persisted application.
-
-    Loads the application from disk (the API process persisted it at submit
-    time), runs the async pipeline, persists result + BDDK report files and
-    mirrors the status into the in-memory record store when present.
-    """
-    settings = get_settings()
+def _process_application(application_id: str) -> dict[str, Any]:
+    """Advance one application through the staged pipeline."""
+    from app.core.rules import load_workflow
     from app.core.task_dispatcher import run_coroutine_safe
-    from app.engine.audit import (
-        ACTION_APPROVED,
-        ACTION_FAILED,
-        ACTION_PROCESSING,
-        ACTION_REJECTED,
-        append_audit,
-    )
+    from app.workflow.pipeline import Pipeline
+    from app.workflow.states import State
 
-    application = load_application(application_id, settings)
-    if application is None:
-        persist_error(application_id, "application record not found", settings)
-        append_audit(application_id, ACTION_FAILED, "application record missing", settings)
-        update_record_status(application_id, status=ApplicationStatus.FAILED)
-        return {
-            "application_id": application_id,
-            "status": ApplicationStatus.FAILED.value,
-            "error": "application record not found",
-        }
-    update_record_status(application_id, status=ApplicationStatus.PROCESSING)
-    append_audit(application_id, ACTION_PROCESSING, "worker started pipeline", settings)
     try:
-        result = run_coroutine_safe(
-            ApplicationPipeline(settings).run(application, application_id=application_id)
+        state = run_coroutine_safe(Pipeline(get_settings()).run(application_id))
+    except KeyError:
+        return {"application_id": application_id, "error": "not found"}
+    if state == State.VERI_TOPLANIYOR.value:
+        _schedule_retry(application_id, load_workflow().data_collection_retry_seconds)
+    return {"application_id": application_id, "state": state}
+
+
+def _schedule_retry(application_id: str, countdown: int) -> None:
+    from app.core.task_dispatcher import resolve_backend
+
+    if resolve_backend() != "celery":
+        return  # inline: retried by retry_stalled / reprocess
+    from app.core.rules import load_workflow
+    from app.db.models import Application
+    from app.db.session import session_scope
+
+    with session_scope() as session:
+        app = session.get(Application, application_id)
+        if app is None or app.retry_count > load_workflow().data_collection_max_retries:
+            return
+    process_application.apply_async(kwargs={"application_id": application_id}, countdown=countdown)
+
+
+def _dispatch_notifications() -> dict[str, Any]:
+    from app.db.outbox import dispatch_pending
+
+    return dispatch_pending()
+
+
+def _retry_stalled() -> dict[str, Any]:
+    """Re-run applications stuck in data collection (provider outages)."""
+    from app.db.models import Application
+    from app.db.session import session_scope
+    from app.workflow.states import State
+
+    with session_scope() as session:
+        ids = list(
+            session.execute(
+                select(Application.id).where(Application.state == State.VERI_TOPLANIYOR.value)
+            ).scalars()
         )
-        persist_result(application_id, result, settings)
-        update_record_status(application_id, status=result.status, result=result)
-        action = ACTION_APPROVED if result.status == ApplicationStatus.APPROVED else ACTION_REJECTED
-        append_audit(application_id, action, f"committee verdict: {result.status.value}", settings)
-        from app.engine.notifier import enqueue_notification
-
-        enqueue_notification(
-            application_id,
-            event=result.status.value,
-            payload={"status": result.status.value, "amount": result.decision.suggested_amount}
-            if result.decision
-            else {"status": result.status.value},
-            settings=settings,
-        )
-        return result.model_dump(mode="json")
-    except Exception as exc:
-        persist_error(application_id, str(exc), settings)
-        append_audit(application_id, ACTION_FAILED, str(exc), settings)
-        update_record_status(application_id, status=ApplicationStatus.FAILED, error=str(exc))
-        return {
-            "application_id": application_id,
-            "status": ApplicationStatus.FAILED.value,
-            "error": str(exc),
-        }
+    results = [_process_application(app_id) for app_id in ids]
+    return {"retried": len(ids), "results": results}
 
 
-def _inline_process_application(application_id: str) -> dict[str, Any]:
-    return process_application(application_id)
+def _apply_retention() -> dict[str, Any]:
+    """KVKK retention: anonymise PII of rejected/cancelled applications after N days."""
+    from app.db.models import Applicant, Application, utcnow
+    from app.db.session import session_scope
+    from app.workflow.states import State
+
+    settings = get_settings()
+    cutoff = utcnow() - timedelta(days=settings.retention_days_rejected)
+    closed = (State.OTOMATIK_RET.value, State.REDDEDILDI.value, State.IPTAL.value)
+    anonymised = 0
+    with session_scope() as session:
+        rows = session.execute(
+            select(Applicant)
+            .join(Application, Application.applicant_id == Applicant.id)
+            .where(
+                Application.state.in_(closed),
+                Application.updated_at < cutoff,
+                Applicant.anonymized_at.is_(None),
+            )
+        ).scalars()
+        for applicant in rows:
+            applicant.name_enc = applicant.phone_enc = applicant.email_enc = None
+            applicant.address_enc = applicant.iban_enc = applicant.tckn_enc = None
+            applicant.phone_bidx = applicant.iban_bidx = applicant.address_bidx = None
+            applicant.anonymized_at = utcnow()
+            anonymised += 1
+    logger.info("retention job anonymised %d applicants", anonymised)
+    return {"anonymised": anonymised, "cutoff": cutoff.isoformat()}
 
 
-@_celery.task(name="app.tasks.dispatch_notifications")
-def dispatch_notifications() -> dict[str, Any]:
-    """Worker task: drain the notification outbox (simulated webhooks)."""
-    from app.engine.notifier import dispatch_pending
+def _compute_drift() -> dict[str, Any]:
+    from app.db.session import session_scope
+    from app.governance.drift import compute_drift_report
 
-    dispatched = dispatch_pending()
-    return {"dispatched": dispatched}
-
-
-def _inline_dispatch_notifications() -> dict[str, Any]:
-    return dispatch_notifications()
+    with session_scope() as session:
+        return compute_drift_report(session)
 
 
-# Callables available to the inline task dispatcher (name -> function).
+ping = _celery.task(name="app.tasks.ping")(_ping)
+process_application = _celery.task(name="app.tasks.process_application")(_process_application)
+dispatch_notifications = _celery.task(name="app.tasks.dispatch_notifications")(
+    _dispatch_notifications
+)
+retry_stalled = _celery.task(name="app.tasks.retry_stalled")(_retry_stalled)
+apply_retention = _celery.task(name="app.tasks.apply_retention")(_apply_retention)
+compute_drift = _celery.task(name="app.tasks.compute_drift")(_compute_drift)
+
 INLINE_TASKS: dict[str, Callable[..., Any]] = {
-    "app.tasks.ping": _inline_ping,
-    "app.tasks.process_application": _inline_process_application,
-    "app.tasks.dispatch_notifications": _inline_dispatch_notifications,
+    "app.tasks.ping": _ping,
+    "app.tasks.process_application": _process_application,
+    "app.tasks.dispatch_notifications": _dispatch_notifications,
+    "app.tasks.retry_stalled": _retry_stalled,
+    "app.tasks.apply_retention": _apply_retention,
+    "app.tasks.compute_drift": _compute_drift,
 }

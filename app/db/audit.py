@@ -22,7 +22,10 @@ from app.db.models import AuditLog, utcnow
 
 GENESIS = "0" * 64
 _ADVISORY_KEY = 4_242_2026
-_process_lock = threading.RLock()
+# A plain Lock (not RLock): FastAPI may commit a session on a different thread than
+# the one that appended, and only non-owned locks can be released cross-thread.
+_process_lock = threading.Lock()
+_LOCK_TIMEOUT = 30.0
 
 
 def _normalise_ts(ts: datetime) -> str:
@@ -57,28 +60,32 @@ def compute_hash(
     return hashlib.sha256((prev_hash + canonical).encode("utf-8")).hexdigest()
 
 
-def _release(session: Session) -> None:
+def _on_transaction_end(session: Session, transaction: Any) -> None:
+    """Release only when the *root* transaction ends (savepoints must not)."""
+    if transaction.parent is not None:
+        return
+    session.info.pop("audit_pg_locked", None)
     if session.info.pop("audit_lock_held", False):
         _process_lock.release()
+
+
+def _ensure_listener(session: Session) -> None:
+    if not session.info.get("audit_listener"):
+        event.listen(session, "after_transaction_end", _on_transaction_end)
+        session.info["audit_listener"] = True
 
 
 def _acquire(session: Session) -> None:
     if session.info.get("audit_lock_held") or session.info.get("audit_pg_locked"):
         return
-    bind = session.get_bind()
-    if bind.dialect.name == "postgresql":
+    _ensure_listener(session)
+    if session.get_bind().dialect.name == "postgresql":
         session.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _ADVISORY_KEY})
         session.info["audit_pg_locked"] = True
-
-        @event.listens_for(session, "after_transaction_end", once=True)
-        def _clear_pg(sess: Session, _trans: Any) -> None:
-            sess.info.pop("audit_pg_locked", None)
-
         return
-    _process_lock.acquire()
+    if not _process_lock.acquire(timeout=_LOCK_TIMEOUT):  # pragma: no cover - defensive
+        return  # never hang the request; verify_chain will surface a fork
     session.info["audit_lock_held"] = True
-    for name in ("after_commit", "after_rollback"):
-        event.listen(session, name, _release, once=True)
 
 
 def append_audit(

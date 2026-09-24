@@ -8,7 +8,8 @@ SQLite/dev (``DB_AUTO_CREATE``); Docker runs ``alembic upgrade head``.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+import threading
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from functools import lru_cache
 from pathlib import Path
@@ -17,6 +18,27 @@ from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import Settings, get_settings
+
+# Hooks run after a unit of work commits (e.g. flushing buffered LLM call records
+# in their own short transaction once the caller's write lock is released).
+_after_commit_hooks: list[Callable[[], None]] = []
+_hook_guard = threading.local()
+
+
+def register_after_commit(hook: Callable[[], None]) -> None:
+    if hook not in _after_commit_hooks:
+        _after_commit_hooks.append(hook)
+
+
+def _run_hooks() -> None:
+    if getattr(_hook_guard, "active", False):
+        return
+    _hook_guard.active = True
+    try:
+        for hook in list(_after_commit_hooks):
+            hook()
+    finally:
+        _hook_guard.active = False
 
 
 @lru_cache(maxsize=4)
@@ -68,6 +90,7 @@ def session_scope(settings: Settings | None = None) -> Iterator[Session]:
         raise
     finally:
         session.close()
+    _run_hooks()
 
 
 def get_db() -> Iterator[Session]:

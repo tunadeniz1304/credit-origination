@@ -1,34 +1,5 @@
-"""Public model surface for the credit pipeline."""
+"""Pydantic models: domain value objects and API request schemas."""
 
-from app.models.domain import (
-    AggregatedFinancialData,
-    Applicant,
-    ApplicationRecord,
-    ApplicationStatus,
-    CommitteeDecision,
-    CommitteeFactor,
-    DocumentCheckResult,
-    DocumentRequirement,
-    EmploymentRecord,
-    KBBReport,
-    LoanApplication,
-    PipelineResult,
-)
-from app.models.rag import DocumentChunk, RAGAnalysis
+from app.models.domain import DocumentRequirement
 
-__all__ = [
-    "AggregatedFinancialData",
-    "Applicant",
-    "ApplicationRecord",
-    "ApplicationStatus",
-    "CommitteeDecision",
-    "CommitteeFactor",
-    "DocumentCheckResult",
-    "DocumentChunk",
-    "DocumentRequirement",
-    "EmploymentRecord",
-    "KBBReport",
-    "LoanApplication",
-    "PipelineResult",
-    "RAGAnalysis",
-]
+__all__ = ["DocumentRequirement"]
