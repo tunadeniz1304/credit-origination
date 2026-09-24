@@ -88,6 +88,29 @@ def test_queue_lists_grey_zone_with_sla(client, users, grey_id):
     assert grey_id in {i["application_id"] for i in mine["items"]}
 
 
+def test_queue_pagination_search_and_filters(client, users, grey_id):
+    second = submit_complete(
+        client, users["basvuran"], "gri", monthly_income=40_000, requested_amount=210_000
+    )
+    full = client.get("/api/v1/workbench/queue?limit=100", headers=users["uzman"]).json()
+    assert full["total"] >= 2 and full["offset"] == 0 and full["limit"] == 100
+    first_page = client.get("/api/v1/workbench/queue?limit=1", headers=users["uzman"]).json()
+    next_page = client.get(
+        "/api/v1/workbench/queue?limit=1&offset=1", headers=users["uzman"]
+    ).json()
+    assert len(first_page["items"]) == 1 and len(next_page["items"]) == 1
+    assert first_page["items"][0]["application_id"] != next_page["items"][0]["application_id"]
+    assert first_page["total"] == full["total"]
+    found = client.get(f"/api/v1/workbench/queue?q={second[-6:]}", headers=users["uzman"]).json()
+    assert [i["application_id"] for i in found["items"]] == [second]
+    assert found["items"][0]["product_label"] == "İhtiyaç Kredisi"
+    none = client.get("/api/v1/workbench/queue?product=TASIT", headers=users["uzman"]).json()
+    assert none["total"] == 0
+    fresh = client.get("/api/v1/workbench/queue?sla_breached=false", headers=users["uzman"]).json()
+    assert fresh["total"] == full["total"]
+    assert client.get("/api/v1/workbench/queue?limit=500", headers=users["uzman"]).status_code == 422
+
+
 def test_justification_is_mandatory(client, users, grey_id):
     response = client.post(
         f"/api/v1/workbench/{grey_id}/decision",

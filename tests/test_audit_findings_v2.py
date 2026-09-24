@@ -260,7 +260,6 @@ def test_f16_redaction_handles_turkish_dotted_i():
 
 
 # ------------------------------------------------------------------ F. UI
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f17_queue_is_paginated():
     from fastapi.testclient import TestClient
 

@@ -57,15 +57,25 @@ def _review_view(review: Review) -> dict[str, Any]:
 def review_queue(
     state: str | None = Query(default=None, pattern="^(UZMAN_INCELEMESI|ITIRAZ_INCELEMESI)$"),
     mine: bool = False,
+    q: str | None = Query(default=None, max_length=64),
+    product: str | None = Query(default=None, pattern="^[A-Z_]{2,20}$"),
+    sla_breached: bool | None = None,
+    limit: int = Query(default=25, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
     session: Session = Depends(db_session),
     user: Principal = Depends(require_staff),
 ) -> dict[str, Any]:
-    items = queue(session, state=state, assigned_to=user.username if mine else None)
-    return {
-        "items": items,
-        "count": len(items),
-        "sla_breached": sum(1 for i in items if i["sla_breached"]),
-    }
+    page = queue(
+        session,
+        state=state,
+        assigned_to=user.username if mine else None,
+        search=q,
+        product=product,
+        sla_breached=sla_breached,
+        limit=limit,
+        offset=offset,
+    )
+    return {**page, "count": len(page["items"])}
 
 
 @router.post("/{application_id}/assign")

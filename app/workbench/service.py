@@ -5,11 +5,12 @@ from __future__ import annotations
 from datetime import UTC
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.agents.llm_service import LLMService
 from app.agents.narrator import Narrator
+from app.core.labels import label
 from app.core.security import Principal
 from app.db.models import Application, Decision, Objection, Review, utcnow
 from app.pricing.engine import quote
@@ -20,6 +21,7 @@ from app.workflow.service import ApplicationService
 from app.workflow.states import State
 
 REVIEWABLE = (State.UZMAN_INCELEMESI.value, State.ITIRAZ_INCELEMESI.value)
+URGENT_SLA_HOURS = 4.0  # queue boost when the SLA runs out within this window
 
 
 class WorkbenchError(ValueError):
@@ -37,34 +39,70 @@ def sla_remaining_hours(app: Application) -> float | None:
     return round((due - utcnow()).total_seconds() / 3600, 1)
 
 
+def _queue_key(app: Application) -> tuple[float, float]:
+    remaining = sla_remaining_hours(app)
+    urgency = 1.0 if remaining is not None and remaining < URGENT_SLA_HOURS else 0.0
+    return (-((app.priority or 0.0) + urgency), remaining if remaining is not None else 1e9)
+
+
 def queue(
-    session: Session, *, state: str | None = None, assigned_to: str | None = None
-) -> list[dict[str, Any]]:
+    session: Session,
+    *,
+    state: str | None = None,
+    assigned_to: str | None = None,
+    search: str | None = None,
+    product: str | None = None,
+    sla_breached: bool | None = None,
+    limit: int = 25,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Filtered, prioritised review queue with server-side pagination.
+
+    Filtering and ordering use only application columns; the latest decision
+    and pending review are loaded for the returned page only.
+    """
     query = select(Application).where(Application.state.in_(REVIEWABLE))
     if state:
         query = query.where(Application.state == state)
     if assigned_to:
         query = query.where(Application.assigned_to == assigned_to)
+    if product:
+        query = query.where(Application.product == product)
+    if search:
+        term = f"%{search.strip()}%"
+        query = query.where(or_(Application.id.ilike(term), Application.persona.ilike(term)))
+    apps = list(session.execute(query).scalars())
+    if sla_breached is not None:
+        apps = [
+            a
+            for a in apps
+            if ((sla_remaining_hours(a) or 0.0) < 0 and a.sla_due_at is not None) == sla_breached
+        ]
+    apps.sort(key=_queue_key)
+    total = len(apps)
+    breached = sum(
+        1 for a in apps if a.sla_due_at is not None and (sla_remaining_hours(a) or 0) < 0
+    )
+    page = apps[offset : offset + limit]
+    ids = [a.id for a in page]
+    pending_by_app = {
+        r.application_id: r.id
+        for r in session.execute(
+            select(Review).where(Review.application_id.in_(ids), Review.status == "ONAY_BEKLIYOR")
+        ).scalars()
+    }
     items = []
-    for app in session.execute(query).scalars():
+    for app in page:
         decision = latest_decision(session, app.id)
-        pending = (
-            session.execute(
-                select(Review).where(
-                    Review.application_id == app.id, Review.status == "ONAY_BEKLIYOR"
-                )
-            )
-            .scalars()
-            .first()
-        )
         remaining = sla_remaining_hours(app)
-        urgency = 1.0 if remaining is not None and remaining < 4 else 0.0
+        urgency = 1.0 if remaining is not None and remaining < URGENT_SLA_HOURS else 0.0
         items.append(
             {
                 "application_id": app.id,
                 "state": app.state,
                 "requested_amount": app.requested_amount,
                 "product": app.product,
+                "product_label": label("product", app.product),
                 "pd": decision.pd if decision else None,
                 "risk_band": decision.risk_band if decision else None,
                 "reason_codes": [r["code"] for r in decision.reason_codes] if decision else [],
@@ -73,17 +111,17 @@ def queue(
                 "sla_breached": remaining is not None and remaining < 0,
                 "assigned_to": app.assigned_to,
                 "priority": round((app.priority or 0.0) + urgency, 4),
-                "pending_review_id": pending.id if pending else None,
+                "pending_review_id": pending_by_app.get(app.id),
                 "persona": app.persona,
             }
         )
-    items.sort(
-        key=lambda i: (
-            -float(i["priority"]),  # type: ignore[arg-type]
-            i["sla_remaining_hours"] if i["sla_remaining_hours"] is not None else 1e9,
-        )
-    )
-    return items
+    return {
+        "items": items,
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+        "sla_breached": breached,
+    }
 
 
 class Workbench:
