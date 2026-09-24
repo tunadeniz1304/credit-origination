@@ -25,6 +25,7 @@ from app.db.audit import append_audit
 from app.db.models import Decision, ModelRecord, RuleSet, utcnow
 from app.decisioning.features import FEATURE_LABELS, MODEL_FEATURES
 from app.decisioning.models import get_models
+from app.validation.evidence import KIND_TO_FAMILY, family_evidence, promotion_evidence
 
 REQUIRED_APPROVALS = 2
 
@@ -178,8 +179,13 @@ def champion_challenger(session: Session, limit: int = 2000) -> dict[str, Any]:
     pairs = [
         (pd, ch.get("pd")) for pd, ch in rows if pd is not None and ch and ch.get("pd") is not None
     ]
+    models = get_models()
+    validation = family_evidence(
+        KIND_TO_FAMILY.get(models.pd_model.meta["kind"], "lightgbm"),
+        KIND_TO_FAMILY.get(models.challenger.meta["kind"], "logistic"),
+    )
     if not pairs:
-        return {"decisions": 0}
+        return {"decisions": 0, "validation": validation}
     champ = [p for p, _ in pairs]
     chall = [c for _, c in pairs]
     cutoff = 0.05
@@ -196,9 +202,11 @@ def champion_challenger(session: Session, limit: int = 2000) -> dict[str, Any]:
         },
         "decision_agreement": round(agree / len(pairs), 4),
         "offline_metrics": {
-            m.version: m.meta.get("metrics", {})
-            for m in (get_models().pd_model, get_models().challenger)
+            m.version: {k: v for k, v in m.meta.get("metrics", {}).items() if k != "calibration"}
+            for m in (models.pd_model, models.challenger)
         },
+        "offline_metrics_note": "Sentetik veri üzerindeki metrikler; gerçek veri kanıtı 'validation' alanındadır.",
+        "validation": validation,
     }
 
 
@@ -211,7 +219,19 @@ def approve_promotion(session: Session, model_id: str, approver: str) -> ModelRe
     approvals = list(row.approvals or [])
     if approver in {a["by"] for a in approvals}:
         raise GovernanceError("dört göz: aynı kişi ikinci kez onay veremez", 403)
-    approvals.append({"by": approver, "at": utcnow().isoformat()})
+    champion = get_models().pd_model.meta["kind"]
+    evidence = promotion_evidence(champion, row.kind)
+    if not evidence["allowed"]:
+        append_audit(
+            session,
+            actor=approver,
+            action="MODEL_PROMOTION_BLOCKED",
+            entity_type="model",
+            entity_id=model_id,
+            payload={"reason": evidence["reason"]},
+        )
+        raise GovernanceError(f"terfi kanıta dayanmıyor: {evidence['reason']}", 409)
+    approvals.append({"by": approver, "at": utcnow().isoformat(), "evidence": evidence["reason"]})
     row.approvals = approvals
     append_audit(
         session,

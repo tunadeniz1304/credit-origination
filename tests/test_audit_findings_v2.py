@@ -127,7 +127,6 @@ def test_f06_ocr_status_reported_in_health():
 
 
 # ------------------------------------------------------------------ C. governance
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f07_lda_table_compares_models_at_same_approval_rate():
     from app.decisioning.features import MODEL_FEATURES
     from app.decisioning.training import generate_dataset
@@ -147,11 +146,11 @@ def test_f07_synthetic_proxies_correlate_with_protected_attributes():
     assert df["age"].corr(df["employment_months"]) > 0.2
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f08_champion_challenger_shows_statistical_evidence():
-    from app.db.session import session_scope
+    from app.db.session import init_db, session_scope
     from app.governance.inventory import champion_challenger
 
+    init_db()
     with session_scope() as session:
         data = champion_challenger(session)
     evidence = data["validation"]
@@ -186,12 +185,16 @@ def test_f10_half_open_admits_a_single_probe():
 
 @pytest.mark.xfail(strict=True, reason=V0)
 def test_f11_single_pending_review_per_application():
+    from sqlalchemy import text
     from sqlalchemy.exc import IntegrityError
 
     from app.db.models import Review
-    from app.db.session import session_factory
+    from app.db.session import init_db, session_factory
 
+    init_db()
     session = session_factory()()
+    # Isolate the uniqueness rule from the foreign key to applications.
+    session.execute(text("PRAGMA foreign_keys=OFF"))
     try:
         for _ in range(2):
             session.add(
@@ -209,6 +212,7 @@ def test_f11_single_pending_review_per_application():
             session.flush()
     finally:
         session.rollback()
+        session.execute(text("PRAGMA foreign_keys=ON"))
         session.close()
 
 

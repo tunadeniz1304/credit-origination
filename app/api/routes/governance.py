@@ -62,6 +62,23 @@ def models(
     }
 
 
+@router.get("/api/v1/models/validation")
+def validation(user: Principal = Depends(require_roles("model_yoneticisi"))) -> dict[str, Any]:
+    """Real public-data validation (lane A per dataset, lane B anchoring)."""
+    from app.validation.evidence import available_sets, load_lane_b, load_metrics
+
+    sets = {name: load_metrics(name) for name in available_sets()}
+    return {
+        "sets": sets,
+        "lane_b": load_lane_b(),
+        "note": (
+            "Metodoloji gerçek halka açık veriyle doğrulanmıştır; üretim modeli Türkiye'ye özgü "
+            "sentetik özelliklerle çalışır. Gerçek bir banka portföyünde yeniden eğitim ve "
+            "bağımsız doğrulama gerekir."
+        ),
+    }
+
+
 @router.get("/api/v1/models/{model_id}/card")
 def card(
     model_id: str,
@@ -146,7 +163,26 @@ def fairness(
         )
     path = get_settings().models_path / "fairness.json"
     offline = json.loads(path.read_text(encoding="utf-8")) if path.is_file() else None
-    return {"live": live_fairness(rows), "offline": offline}
+    return {"live": live_fairness(rows), "offline": offline, "real_data": _real_data_fairness()}
+
+
+def _real_data_fairness() -> dict[str, Any]:
+    """Lane A fairness on real protected attributes (champion + LDA table) per dataset."""
+    from app.validation.evidence import available_sets, load_metrics
+
+    out: dict[str, Any] = {}
+    for name in available_sets():
+        metrics = load_metrics(name)
+        if not metrics:
+            continue
+        champion = metrics["champion"]["model"]
+        out[name] = {
+            "champion": champion,
+            "approval_rate": metrics["fairness"]["approval_rate"],
+            "attributes": metrics["fairness"]["by_model"][champion],
+            "lda": metrics["lda"],
+        }
+    return out
 
 
 @router.get("/api/v1/rule-sets")

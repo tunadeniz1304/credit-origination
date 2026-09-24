@@ -176,7 +176,7 @@ def test_psi_and_drift():
     assert report["features"]["x"]["status"] == "ANLAMLI_KAYMA" and report["alerts"]
 
 
-def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id):
+def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, monkeypatch):
     listing = client.get("/api/v1/models", headers=users["modelyon"]).json()["models"]
     ids = {m["model_id"]: m for m in listing}
     assert (
@@ -190,6 +190,18 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id):
     assert pdf.content.startswith(b"%PDF")
     cc = client.get("/api/v1/governance/champion-challenger", headers=users["modelyon"]).json()
     assert cc["decisions"] >= 1 and 0 <= cc["decision_agreement"] <= 1
+    evidence = cc["validation"]
+    assert evidence["available"] and evidence["delong_p_value"] < 0.05
+    # On real data the LR challenger is significantly weaker: promotion is refused.
+    blocked = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"])
+    assert blocked.status_code == 409 and "kanıt" in blocked.json()["detail"]
+    from app.governance import inventory
+
+    monkeypatch.setattr(
+        inventory,
+        "promotion_evidence",
+        lambda champion, challenger: {"allowed": True, "reason": "test: kanıt yeterli"},
+    )
     first = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"]).json()
     assert first["role"] == "challenger"
     again = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"])
@@ -210,6 +222,18 @@ def test_drift_fairness_endpoints(client, users):
     fairness = client.get("/api/v1/governance/fairness", headers=users["modelyon"]).json()
     assert fairness["live"]["decisions"] >= 1
     assert fairness["offline"] is None or fairness["offline"]["attributes"]["gender"]["min_air"] > 0
+    real = fairness["real_data"]["uci_taiwan"]
+    assert set(real["attributes"]) == {"SEX", "AGE_BAND", "EDUCATION", "MARRIAGE"}
+    assert {r["approval_rate"] for r in real["lda"]["rows"]} == {real["approval_rate"]}
+
+
+def test_validation_endpoint_is_for_model_managers(client, users):
+    body = client.get("/api/v1/models/validation", headers=users["modelyon"]).json()
+    taiwan = body["sets"]["uci_taiwan"]
+    assert taiwan["holdout"]["lightgbm"]["auc_ci"][0] < taiwan["holdout"]["lightgbm"]["auc"]
+    assert "delong" in taiwan and taiwan["champion"]["model"]
+    assert "sentetik" in body["note"]
+    assert client.get("/api/v1/models/validation", headers=users["uzman"]).status_code == 403
 
 
 def test_rule_set_backtest_and_two_approvals(client, users):
