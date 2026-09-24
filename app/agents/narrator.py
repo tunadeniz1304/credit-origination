@@ -192,7 +192,9 @@ def render_analysis(ctx: NarrativeContext) -> AnalysisOutput:
         (strengths if within else risks).append(Claim(text=text, field_ids=[dsr.id, limit.id]))
     pd = ctx.get("f:model.pd")
     if pd is not None:
-        low = float(pd.value) <= 0.05
+        from app.core.rules import load_policy_file
+
+        low = float(pd.value) <= load_policy_file().decision.auto_approve_max_pd
         (strengths if low else risks).append(
             Claim(
                 text=f"Model bazlı 12 aylık temerrüt olasılığı {pd.display} olarak hesaplanmıştır.",

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import db_session, require_roles
 from app.api.schemas import RuleSetDraft
 from app.core.config import get_settings
+from app.core.rules import load_policy_file
 from app.core.security import Principal
 from app.db.models import Applicant, Application, Decision, LoanPerformance, ModelRecord, RuleSet
 from app.ews.model import watchlist_entry
@@ -191,7 +192,7 @@ def rule_sets(
 ) -> dict[str, Any]:
     rows = session.execute(select(RuleSet).order_by(RuleSet.created_at.desc())).scalars().all()
     return {
-        "active_file": "policy_v1",
+        "active_file": "policy_v2",
         "rule_sets": [
             {"version": r.id, "status": r.status, "backtest": r.backtest, "approvals": r.approvals}
             for r in rows
@@ -279,7 +280,13 @@ def watchlist(
             .first()
         )
         entries.append(
-            watchlist_entry(app.id, history, decision.pd if decision and decision.pd else 0.05)
+            watchlist_entry(
+                app.id,
+                history,
+                decision.pd
+                if decision and decision.pd
+                else load_policy_file().decision.auto_approve_max_pd,
+            )
         )
     entries.sort(key=lambda e: e["ews_score"], reverse=True)
     return {

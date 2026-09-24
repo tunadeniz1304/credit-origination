@@ -96,7 +96,7 @@ def _decide(snapshot):
 # ------------------------------------------------------------------ rules
 def test_policy_file_parses_and_is_versioned():
     policy = parse_policy(policy_file_text())
-    assert policy.version == "policy_v1"
+    assert policy.version == "policy_v2"
     assert {r.action for r in policy.rules} == {"decline", "refer"}
     assert all(r.reason.startswith("R") for r in policy.rules)
 

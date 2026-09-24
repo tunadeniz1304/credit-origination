@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.pdf import FONT_BOLD, FONT_REGULAR, register_fonts
+from app.core.rules import load_policy_file
 from app.core.security import Principal
 from app.db.models import Application, LoanPerformance, Offer, utcnow
 from app.workflow.pipeline import latest_offer
@@ -96,7 +97,9 @@ def seed_performance(session: Session, app: Application, offer: Offer, months: i
     from app.workflow.pipeline import latest_decision
 
     decision = latest_decision(session, app.id)
-    pd = decision.pd if decision and decision.pd else 0.05
+    pd = (
+        decision.pd if decision and decision.pd else load_policy_file().decision.auto_approve_max_pd
+    )
     for row in simulate_behaviour(app.id, offer.amount, offer.instalment, pd, months):
         session.add(LoanPerformance(application_id=app.id, **row))
 

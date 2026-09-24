@@ -7,7 +7,7 @@ Credit decisions must be accurate, explainable to applicants and regulators, and
 
 ## Decision
 A three-layer engine, evaluated as a pure function of a persisted feature snapshot:
-1. **Policy rules** in a versioned YAML DSL (`rules/policy_v1.yaml`) evaluated by a whitelisted AST interpreter (no `eval`). Rules either `decline` (knock-out) or `refer` (human review) and carry a reason code.
+1. **Policy rules** in a versioned YAML DSL (`rules/policy_v2.yaml`) evaluated by a whitelisted AST interpreter (no `eval`). Rules either `decline` (knock-out) or `refer` (human review) and carry a reason code.
 2. **Calibrated PD model** (monotone LightGBM + isotonic) drives auto-approve / grey zone / auto-decline cut-offs, the risk band and the limit factor.
 3. **WoE scorecard** (optbinning) gives a transparent 300–900 point view shown next to SHAP reasons.
 Limits (DSR capacity, income multiple, band factor) can turn a request into a conditional counter-offer.

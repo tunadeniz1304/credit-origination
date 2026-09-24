@@ -16,7 +16,7 @@ KKB kredi notu 600'ün altındaki başvurular reddedilir. Yasal takipte kredisi 
 
 ## 4. Temerrüt olasılığı eşikleri
 
-On iki aylık temerrüt olasılığı (PD) yüzde 5 veya altındaysa ve hiçbir yönlendirme kuralı tetiklenmemişse başvuru otomatik onaylanır. PD yüzde 20 veya üzerindeyse otomatik ret uygulanır. Arada kalan gri bölgedeki başvurular uzman incelemesine yönlendirilir. PD bandı aynı zamanda limit çarpanını belirler: A bandı tam limit, B bandı yüzde 90, C bandı yüzde 75, D bandı yüzde 50.
+On iki aylık temerrüt olasılığı (PD) yüzde 8 veya altındaysa ve hiçbir yönlendirme kuralı tetiklenmemişse başvuru otomatik onaylanır. PD yüzde 30 veya üzerindeyse otomatik ret uygulanır. Arada kalan gri bölgedeki başvurular uzman incelemesine yönlendirilir. PD bandı aynı zamanda limit çarpanını belirler: A bandı (PD yüzde 3'e kadar) tam limit, B bandı (yüzde 8'e kadar) yüzde 90, C bandı (yüzde 15'e kadar) yüzde 75, D bandı (yüzde 30'a kadar) yüzde 50.
 
 ## 5. Uzman incelemesine yönlendirme
 
@@ -24,7 +24,7 @@ Yaptırım veya PEP listesiyle olası eşleşme, belge sahteciliği şüphesi, b
 
 ## 6. Yetki matrisi ve dört göz
 
-250.000 TL'ye kadar ve PD yüzde 10'a kadar kararları krediler uzmanı verebilir. 750.000 TL'ye kadar ve PD yüzde 20'ye kadar kararlar kıdemli uzman yetkisindedir; daha büyük veya daha riskli kararlar kredi komitesine aittir. 300.000 TL üzerindeki, PD'si yüzde 12'nin üzerindeki ve motor kararını tersine çeviren her karar dört göz ilkesine tabidir: kararı öneren kişi onaylayamaz ve onaylayanın yetkisi yeterli olmalıdır. Her uzman kararında yazılı gerekçe zorunludur.
+250.000 TL'ye kadar ve PD yüzde 15'e kadar kararları krediler uzmanı verebilir. 750.000 TL'ye kadar ve PD yüzde 30'a kadar kararlar kıdemli uzman yetkisindedir; daha büyük veya daha riskli kararlar kredi komitesine aittir. 300.000 TL üzerindeki, PD'si yüzde 20'nin üzerindeki ve motor kararını tersine çeviren her karar dört göz ilkesine tabidir: kararı öneren kişi onaylayamaz ve onaylayanın yetkisi yeterli olmalıdır. Her uzman kararında yazılı gerekçe zorunludur.
 
 ## 7. Fiyatlama
 

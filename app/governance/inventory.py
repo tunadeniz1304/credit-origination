@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import PROJECT_ROOT, get_settings
-from app.core.rules import load_pricing, parse_policy
+from app.core.rules import load_policy_file, load_pricing, parse_policy
 from app.db.audit import append_audit
 from app.db.models import Decision, ModelRecord, RuleSet, utcnow
 from app.decisioning.features import FEATURE_LABELS, MODEL_FEATURES
@@ -188,7 +188,7 @@ def champion_challenger(session: Session, limit: int = 2000) -> dict[str, Any]:
         return {"decisions": 0, "validation": validation}
     champ = [p for p, _ in pairs]
     chall = [c for _, c in pairs]
-    cutoff = 0.05
+    cutoff = load_policy_file().decision.auto_approve_max_pd
     agree = sum(1 for p, c in pairs if (p <= cutoff) == (c <= cutoff))
     return {
         "decisions": len(pairs),
@@ -355,4 +355,4 @@ def approve_rule_set(session: Session, version: str, approver: str) -> RuleSet:
 
 
 def default_policy_path() -> Path:
-    return PROJECT_ROOT / "rules" / "policy_v1.yaml"
+    return PROJECT_ROOT / "rules" / "policy_v2.yaml"

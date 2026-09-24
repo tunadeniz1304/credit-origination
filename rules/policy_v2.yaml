@@ -1,9 +1,14 @@
 # Bireysel kredi politika kuralları — versiyonlu, gerekçe kodlu.
 # İfadeler güvenli bir değerlendirici ile çalışır (eval yok): yalnızca
 # karşılaştırma, aritmetik, and/or/not ve min/max/abs.
-version: policy_v1
+version: policy_v2
 description: Bireysel ihtiyaç kredisi tahsis politikası (örnek, kurgusal)
-effective_from: "2026-01-01"
+effective_from: "2026-09-25"
+# v2 değişikliği: PD modeli gerçek halka açık veriye çıpalanarak yeniden kalibre edildi
+# (pd_lgbm_v2; ortalama PD %10,6 → %16,3; eski model düşük risk bölgesinde riski ~2 kat
+# düşük tahmin ediyordu). Eşikler aynı risk iştahını yeni ölçekte ifade eder: otomatik onaylanan
+# portföyün gerçekleşen kötü oranı v1'de %4,8 idi; v2'de PD ≤ %8 ile %4,0 (sentetik test seti,
+# payı %55). Ayrıntı: docs/MODEL_CARD.md, "Policy recalibration".
 
 products:
   IHTIYAC:
@@ -24,16 +29,17 @@ products:
     income_multiplier: 20
 
 decision:
-  auto_approve_max_pd: 0.05     # PD <= eşik ve kural yönlendirmesi yoksa otomatik onay
-  auto_decline_min_pd: 0.20     # PD >= eşik ise otomatik ret
+  auto_approve_max_pd: 0.08     # PD <= eşik ve kural yönlendirmesi yoksa otomatik onay
+  auto_decline_min_pd: 0.30     # PD >= eşik ise otomatik ret
   min_document_confidence: 0.70 # altındaki alan güveni uzman doğrulaması ister
   counter_offer_min_ratio: 0.30 # karşı teklif, talebin en az bu oranı olmalı
+  max_pricing_iterations: 6     # fiyat ↔ limit iterasyonu: vergili taksitle DSR yeniden kontrol
 
 risk_bands:            # PD üst sınırı -> bant ve limit çarpanı
-  - {band: A, max_pd: 0.02, limit_factor: 1.00}
-  - {band: B, max_pd: 0.05, limit_factor: 0.90}
-  - {band: C, max_pd: 0.10, limit_factor: 0.75}
-  - {band: D, max_pd: 0.20, limit_factor: 0.50}
+  - {band: A, max_pd: 0.03, limit_factor: 1.00}
+  - {band: B, max_pd: 0.08, limit_factor: 0.90}
+  - {band: C, max_pd: 0.15, limit_factor: 0.75}
+  - {band: D, max_pd: 0.30, limit_factor: 0.50}
   - {band: E, max_pd: 1.00, limit_factor: 0.00}
 
 rules:

@@ -468,7 +468,7 @@ def persist_decision(
 def queue_priority(app: Application, decision: Decision) -> float:
     weights = load_workflow().queue_priority
     amount_score = min(app.requested_amount / 1_000_000, 1.0)
-    risk_score = min((decision.pd or 0.0) / 0.2, 1.0)
+    risk_score = min((decision.pd or 0.0) / load_policy_file().decision.auto_decline_min_pd, 1.0)
     return round(
         weights.get("amount_weight", 0.4) * amount_score
         + weights.get("risk_weight", 0.4) * risk_score

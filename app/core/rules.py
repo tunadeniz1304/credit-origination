@@ -207,11 +207,11 @@ def parse_policy(text: str) -> PolicyRules:
 
 @lru_cache(maxsize=1)
 def load_policy_file() -> PolicyRules:
-    return PolicyRules.model_validate(read_yaml("policy_v1.yaml"))
+    return PolicyRules.model_validate(read_yaml("policy_v2.yaml"))
 
 
 def policy_file_text() -> str:
-    return (_rules_dir() / "policy_v1.yaml").read_text(encoding="utf-8")
+    return (_rules_dir() / "policy_v2.yaml").read_text(encoding="utf-8")
 
 
 @lru_cache(maxsize=1)

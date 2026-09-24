@@ -16,12 +16,13 @@ def _p(role: str, name: str = "x") -> Principal:
 
 
 # ------------------------------------------------------------------ unit: authority matrix
+# authority_v2 limits (PD scale recalibrated with pd_lgbm_v2): uzman ≤ 15 %, kıdemli ≤ 30 %.
 @pytest.mark.parametrize(
     ("amount", "pd", "role"),
     [
         (100_000, 0.05, "uzman"),
         (300_000, 0.05, "kidemli_uzman"),
-        (100_000, 0.15, "kidemli_uzman"),
+        (100_000, 0.20, "kidemli_uzman"),
         (900_000, 0.05, "komite"),
         (100_000, 0.5, "komite"),
     ],
@@ -37,7 +38,7 @@ def test_four_eyes_triggers():
     assert big.four_eyes and not big.maker_may_finalise
     override = evaluate_authority(_p("komite"), amount=50_000, pd=0.01, is_override=True)
     assert override.four_eyes and "override" in override.reasons[0]
-    underpowered = evaluate_authority(_p("uzman"), amount=200_000, pd=0.11, is_override=False)
+    underpowered = evaluate_authority(_p("uzman"), amount=200_000, pd=0.22, is_override=False)
     assert underpowered.required_role == "kidemli_uzman" and not underpowered.maker_may_finalise
 
 
@@ -108,7 +109,9 @@ def test_queue_pagination_search_and_filters(client, users, grey_id):
     assert none["total"] == 0
     fresh = client.get("/api/v1/workbench/queue?sla_breached=false", headers=users["uzman"]).json()
     assert fresh["total"] == full["total"]
-    assert client.get("/api/v1/workbench/queue?limit=500", headers=users["uzman"]).status_code == 422
+    assert (
+        client.get("/api/v1/workbench/queue?limit=500", headers=users["uzman"]).status_code == 422
+    )
 
 
 def test_justification_is_mandatory(client, users, grey_id):

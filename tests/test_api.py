@@ -171,7 +171,7 @@ def test_clean_applicant_gets_offer(client, applicant, approved_id):
 def test_staff_sees_full_decision_and_cashflow(client, specialist, approved_id):
     decision = client.get(f"/api/v1/applications/{approved_id}/decision", headers=specialist).json()
     assert 0 < decision["pd"] < 0.05
-    assert decision["rule_set_version"] == "policy_v1" and decision["model_version"] == "pd_lgbm_v2"
+    assert decision["rule_set_version"] == "policy_v2" and decision["model_version"] == "pd_lgbm_v2"
     assert decision["shap"] and decision["scorecard"]["points"] >= 300
     assert decision["narratives"]["mode"] == "demo"
     assert "KREDİ KOMİTESİ ÖZETİ" in decision["narratives"]["committee_summary"]
