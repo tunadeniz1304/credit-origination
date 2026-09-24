@@ -87,9 +87,9 @@
       </div>
       <div x-show="wizard.step === 2" class="grid">
         <div><label>Aylık net gelir (TL)</label><input type="number" x-model.number="form.monthly_income"></div>
-        <div><label>Çalışma şekli</label><select x-model="form.employment_type"><option value="MAASLI">Maaşlı</option><option value="SERBEST">Serbest meslek</option><option value="EMEKLI">Emekli</option></select></div>
+        <div><label>Çalışma şekli</label><select x-model="form.employment_type"><template x-for="e in labelEntries('employment_type')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
         <div><label>İşveren</label><input x-model="form.employer_name"></div>
-        <div><label>Ürün</label><select x-model="form.product"><option value="IHTIYAC">İhtiyaç kredisi</option><option value="TASIT">Taşıt kredisi</option></select></div>
+        <div><label>Ürün</label><select x-model="form.product"><template x-for="e in labelEntries('product')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
         <div><label>Talep edilen tutar (TL)</label><input type="number" x-model.number="form.requested_amount"></div>
         <div><label>Vade (ay)</label><input type="number" x-model.number="form.requested_term_months"></div>
         <div style="grid-column:1/-1" x-show="quote"><p class="muted">Tahmini (B bandı) taksit: <b x-text="quote ? tl(quote.instalment) : ''"></b> · yıllık maliyet oranı <b x-text="quote ? pct(quote.apr) : ''"></b></p></div>
@@ -116,17 +116,18 @@
         <div>
           <div class="card">
             <h2 x-text="current.application_id"></h2>
-            <p><span class="badge" :class="stateClass(current.state)" x-text="current.state_label"></span> <span class="muted" x-text="tl(current.requested_amount) + ' · ' + current.requested_term_months + ' ay'"></span></p>
+            <p><span class="badge" :class="stateClass(current.state)" x-text="current.state_label"></span> <span class="muted" x-text="lbl('product', current.product) + ' · ' + tl(current.requested_amount) + ' · ' + current.requested_term_months + ' ay'"></span></p>
             <h3>Zaman çizelgesi</h3>
             <ul class="timeline"><template x-for="e in current.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor"></span><div class="muted" x-text="e.reason"></div></li></template></ul>
           </div>
           <div class="card" x-show="current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI'">
             <h2>Belgelerim</h2>
+            <p class="notice" role="note" x-show="ocrMissing">OCR yok — taranmış belgeler uzman incelemesine yönlendirilir.</p>
             <div class="row"><select x-model="upload.code"><template x-for="d in current.required_documents"><option :value="d.code" x-text="d.description + (current.missing_documents.includes(d.code) ? ' (eksik)' : ' ✓')"></option></template></select></div>
             <div class="drop" :class="{over: upload.over}" @dragover.prevent="upload.over = true" @dragleave="upload.over = false" @drop.prevent="onDrop($event)">
               Dosyayı buraya sürükleyin veya <input type="file" style="width:auto" @change="uploadFile($event.target.files[0])" accept=".pdf,.png,.jpg,.jpeg">
             </div>
-            <p class="muted" x-text="'Eksik: ' + (current.missing_documents.join(', ') || 'yok')"></p>
+            <p class="muted" x-text="'Eksik: ' + (current.missing_documents.length ? lblList('document', current.missing_documents) : 'yok')"></p>
           </div>
         </div>
         <div>
@@ -175,17 +176,17 @@
     <div class="card">
       <div class="row"><h2 style="margin:0">İnceleme kuyruğu</h2><span class="spacer"></span><button @click="loadQueue()">Yenile</button></div>
       <table>
-        <thead><tr><th>No</th><th>Durum</th><th>Tutar</th><th>PD</th><th>Gerekçe</th><th>SLA</th><th>Atanan</th></tr></thead>
+        <thead><tr><th>No</th><th>Durum</th><th>Tutar</th><th>PD</th><th>Ürün</th><th>SLA</th><th>Atanan</th></tr></thead>
         <tbody><template x-for="q in queue" :key="q.application_id">
           <tr class="clickable" @click="openStaff(q.application_id)">
-            <td x-text="q.application_id"></td><td><span class="badge warn" x-text="q.state"></span> <span class="badge" x-show="q.pending_review_id">4 göz bekliyor</span></td>
-            <td x-text="tl(q.requested_amount)"></td><td x-text="pct(q.pd)"></td><td x-text="q.reason_codes.slice(0,2).join(', ')"></td>
+            <td x-text="q.application_id"></td><td><span class="badge warn" x-text="lbl('state', q.state)"></span> <span class="badge" x-show="q.pending_review_id">4 göz bekliyor</span></td>
+            <td x-text="tl(q.requested_amount)"></td><td x-text="pct(q.pd)"></td><td x-text="q.product_label"></td>
             <td><span class="badge" :class="q.sla_breached ? 'bad' : (q.sla_remaining_hours < 4 ? 'warn' : 'ok')" x-text="q.sla_remaining_hours === null ? '—' : q.sla_remaining_hours + ' sa'"></span></td><td x-text="q.assigned_to || '—'"></td>
           </tr></template></tbody>
       </table>
       <h3>Tüm başvurular</h3>
       <table><thead><tr><th>No</th><th>Başvuran</th><th>Durum</th><th>Tutar</th><th>Senaryo</th></tr></thead>
-        <tbody><template x-for="a in applications" :key="a.application_id"><tr class="clickable" @click="openStaff(a.application_id)"><td x-text="a.application_id"></td><td x-text="a.applicant_name"></td><td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td><td x-text="tl(a.requested_amount)"></td><td x-text="a.persona || ''"></td></tr></template></tbody></table>
+        <tbody><template x-for="a in applications" :key="a.application_id"><tr class="clickable" @click="openStaff(a.application_id)"><td x-text="a.application_id"></td><td x-text="a.applicant_name"></td><td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td><td x-text="tl(a.requested_amount)"></td><td x-text="a.persona ? lbl('persona', a.persona) : '—'"></td></tr></template></tbody></table>
     </div>
 
     <template x-if="staff">
@@ -203,8 +204,9 @@
         </div>
 
         <div x-show="staff.tab === 'belgeler'">
+          <p class="notice" role="note" x-show="ocrMissing">OCR yok — taranmış belgeler uzman incelemesine yönlendirilir.</p>
           <template x-for="d in staff.documents"><div class="card">
-            <div class="row"><b x-text="d.code"></b><span class="badge" :class="d.fraud_score >= 0.6 ? 'bad' : (d.fraud_score > 0 ? 'warn' : 'ok')" x-text="'sahtecilik ' + d.fraud_score"></span><span class="badge" x-text="d.status"></span><span class="spacer"></span><button @click="download('/api/v1/applications/' + staff.detail.application_id + '/documents/' + d.document_id + '/file', d.filename)">Görüntüle</button></div>
+            <div class="row"><b x-text="lbl('document', d.code)"></b><span class="badge" :class="d.fraud_score >= 0.6 ? 'bad' : (d.fraud_score > 0 ? 'warn' : 'ok')" x-text="'sahtecilik ' + d.fraud_score"></span><span class="badge" x-text="lbl('document_status', d.status)"></span><span class="spacer"></span><button @click="download('/api/v1/applications/' + staff.detail.application_id + '/documents/' + d.document_id + '/file', d.filename)">Görüntüle</button></div>
             <ul><template x-for="s in d.fraud_signals"><li class="error" x-text="s.label + (s.detail ? ' — ' + s.detail : '')"></li></template></ul>
             <table><thead><tr><th>Alan</th><th>Değer</th><th>Güven</th><th>Sayfa</th><th></th></tr></thead><tbody><template x-for="f in d.fields"><tr><td x-text="f.name"></td><td x-text="f.value"></td><td x-text="f.confidence"></td><td x-text="f.page"></td><td><button @click="correctField(f)">Düzelt</button></td></tr></template></tbody></table>
           </div></template>
@@ -216,8 +218,8 @@
 
         <div x-show="staff.tab === 'karar'"><template x-if="staff.decision"><div class="grid-2">
           <div><h3>SHAP katkıları (log-odds)</h3><div class="chart-box"><canvas id="shapChart"></canvas></div></div>
-          <div><h3>Gerekçe kodları</h3><ul><template x-for="r in staff.decision.reason_codes"><li><b x-text="r.code"></b> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
-            <h3>Politika kuralları</h3><ul><template x-for="r in firedRules()"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="r.action"></span> <span x-text="r.id + ' — ' + r.description"></span></li></template></ul>
+          <div><h3>Gerekçe kodları</h3><ul><template x-for="r in staff.decision.reason_codes"><li><span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
+            <h3>Politika kuralları</h3><ul><template x-for="r in firedRules()"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="lbl('rule_action', r.action)"></span> <span x-text="r.description"></span></li></template></ul>
             <h3>Karşı-olgusal</h3><ul><template x-for="c in staff.decision.counterfactuals"><li x-text="c"></li></template></ul>
             <p class="muted" x-text="'Kural seti ' + staff.decision.rule_set_version + ' · model ' + staff.decision.model_version + ' · özet ' + staff.decision.feature_hash.slice(0,12)"></p>
             <button @click="replay()">Kararı yeniden üret (replay)</button> <span x-text="staff.replay"></span></div>
@@ -228,7 +230,7 @@
         <div x-show="staff.tab === 'halka'"><p class="muted" x-text="staff.network ? ('Halka büyüklüğü ' + staff.network.ring_size + ' · ortak tanımlayıcılar: ' + (staff.network.shared_identifiers || []).join(', ')) : ''"></p><svg id="ringSvg" width="100%" height="320" viewBox="0 0 600 320" role="img" aria-label="Başvuru halkası grafiği"></svg></div>
 
         <div x-show="staff.tab === 'memo'"><button class="primary" @click="generateMemo()" :disabled="busy">AI kredi memorandumu üret</button>
-          <template x-if="staff.memo"><div><p class="muted" x-text="'Mod: ' + staff.memo.mode + ' · adımlar: ' + memoSteps()"></p>
+          <template x-if="staff.memo"><div><p class="muted" x-text="'Mod: ' + lbl('llm_mode', staff.memo.mode) + ' · adımlar: ' + memoSteps()"></p>
             <template x-for="s in staff.memo.sections"><div><h3 x-text="s.title"></h3><p x-text="s.text"></p></div></template><h3>Öneri</h3><p x-text="staff.memo.recommendation"></p></div></template></div>
 
         <div x-show="staff.tab === 'politika'"><label>Politika / mevzuat sorusu</label><input x-model="policyQ" @keydown.enter="askPolicy()"><button @click="askPolicy()">Sor</button>
@@ -236,7 +238,7 @@
 
         <div x-show="staff.tab === 'karar_ver'">
           <template x-if="staff.detail.state === 'UZMAN_INCELEMESI' || staff.detail.state === 'ITIRAZ_INCELEMESI'"><div>
-            <p class="muted" x-show="staff.authority" x-text="staff.authority ? ('Gerekli yetki: ' + staff.authority.required_role + (staff.authority.four_eyes ? ' · DÖRT GÖZ: ' + staff.authority.reasons.join('; ') : '')) : ''"></p>
+            <p class="muted" x-show="staff.authority" x-text="staff.authority ? ('Gerekli yetki: ' + lbl('role', staff.authority.required_role) + (staff.authority.four_eyes ? ' · DÖRT GÖZ: ' + staff.authority.reasons.join('; ') : '')) : ''"></p>
             <div x-show="staff.detail.state === 'ITIRAZ_INCELEMESI'"><h3>İtiraz çözümü</h3><textarea x-model="decisionForm.justification" placeholder="İnceleme notu"></textarea><button class="primary" @click="resolveObjection(true)">İtirazı kabul et (yeniden incele)</button> <button class="danger" @click="resolveObjection(false)">İtirazı reddet</button></div>
             <div x-show="staff.detail.state === 'UZMAN_INCELEMESI'">
               <label>Karar</label><select x-model="decisionForm.action"><option value="ONAY">Onay</option><option value="RET">Ret</option><option value="BELGE_ISTE">Ek belge iste</option></select>
@@ -245,7 +247,7 @@
               <button class="primary" @click="submitDecision()">Kararı gönder</button></div>
           </div></template>
           <h3>Onay bekleyen dört göz talepleri</h3>
-          <table><tbody><template x-for="r in reviews" :key="r.review_id"><tr><td x-text="r.application_id"></td><td x-text="r.action + ' · ' + (r.amount ? tl(r.amount) : '') + ' · ' + r.maker + ' · gerekli ' + r.required_role"></td><td x-text="r.justification"></td>
+          <table><tbody><template x-for="r in reviews" :key="r.review_id"><tr><td x-text="r.application_id"></td><td x-text="lbl('review_action', r.action) + ' · ' + (r.amount ? tl(r.amount) : '') + ' · ' + r.maker + ' · gerekli ' + lbl('role', r.required_role)"></td><td x-text="r.justification"></td>
             <td><button class="primary" @click="checkReview(r, true)">Onayla</button> <button class="danger" @click="checkReview(r, false)">Reddet</button></td></tr></template></tbody></table>
           <div x-show="staff.detail.state === 'SOZLESME_HAZIR'"><button class="primary" @click="disburse()">Krediyi kullandır</button></div>
         </div>
@@ -263,7 +265,7 @@
         <div class="card"><div class="muted">Onay oranı</div><div class="kpi" x-text="pct(dash.metrics.approval_rate)"></div></div>
         <div class="card"><div class="muted">Ort. karar süresi</div><div class="kpi" x-text="(dash.metrics.average_decision_latency_ms || 0) + ' ms'"></div></div>
         <div class="card"><div class="muted">İnceleme kuyruğu</div><div class="kpi" x-text="dash.metrics.review_queue_depth"></div></div>
-        <div class="card"><div class="muted">LLM çağrıları</div><div class="kpi" x-text="llm ? llm.calls : 0"></div><div class="muted" x-text="llm ? ('fallback ' + llm.fallbacks + ' · mod ' + llm.mode) : ''"></div></div>
+        <div class="card"><div class="muted">LLM çağrıları</div><div class="kpi" x-text="llm ? llm.calls : 0"></div><div class="muted" x-text="llm ? ('fallback ' + llm.fallbacks + ' · mod ' + lbl('llm_mode', llm.mode)) : ''"></div></div>
       </div>
       <div class="grid-2">
         <div class="card"><h2>Durum dağılımı</h2><div class="chart-box"><canvas id="stateChart"></canvas></div></div>
@@ -271,13 +273,13 @@
       </div>
       <div class="grid-2">
         <div class="card"><h2>Adillik (AIR, 4/5 kuralı)</h2>
-          <template x-for="(s, attr) in (dash.fairness && dash.fairness.offline ? dash.fairness.offline.attributes : {})"><div><b x-text="attr"></b> <span class="badge" :class="s.passes_four_fifths ? 'ok' : 'bad'" x-text="'min AIR ' + s.min_air"></span></div></template>
+          <template x-for="(s, attr) in (dash.fairness && dash.fairness.offline ? dash.fairness.offline.attributes : {})"><div><b x-text="lbl('fairness_attr', attr)"></b> <span class="badge" :class="s.passes_four_fifths ? 'ok' : 'bad'" x-text="'min AIR ' + s.min_air"></span></div></template>
           <p class="muted" x-text="dash.fairness ? ('Canlı kararlar: ' + dash.fairness.live.decisions) : ''"></p></div>
-        <div class="card"><h2>Drift (PSI)</h2><table><tbody><template x-for="(v,k) in (dash.drift ? dash.drift.features : {})"><tr><td x-text="k"></td><td x-text="v.psi"></td><td><span class="badge" :class="v.status === 'STABIL' ? 'ok' : (v.status === 'ORTA' ? 'warn' : 'bad')" x-text="v.status"></span></td></tr></template></tbody></table></div>
+        <div class="card"><h2>Drift (PSI)</h2><table><tbody><template x-for="(v,k) in (dash.drift ? dash.drift.features : {})"><tr><td x-text="k"></td><td x-text="v.psi"></td><td><span class="badge" :class="v.status === 'STABIL' ? 'ok' : (v.status === 'ORTA' ? 'warn' : 'bad')" x-text="lbl('drift', v.status)"></span></td></tr></template></tbody></table></div>
       </div>
       <div class="grid-2">
         <div class="card"><h2>Champion / Challenger</h2><template x-if="dash.cc && dash.cc.decisions"><div><p x-text="'Karar uyumu ' + pct(dash.cc.decision_agreement) + ' · ortalama PD ' + pct(dash.cc.mean_pd.champion) + ' / ' + pct(dash.cc.mean_pd.challenger)"></p></div></template>
-          <table><tbody><template x-for="m in dash.models"><tr><td x-text="m.model_id"></td><td x-text="m.role"></td><td x-text="'AUC ' + (m.metrics.auc || '—')"></td><td><button x-show="user.role === 'model_yoneticisi' && m.role === 'challenger'" @click="promote(m.model_id)">Terfi onayı</button></td></tr></template></tbody></table></div>
+          <table><tbody><template x-for="m in dash.models"><tr><td x-text="m.model_id"></td><td x-text="lbl('model_role', m.role)"></td><td x-text="'AUC ' + (m.metrics.auc || '—')"></td><td><button x-show="user.role === 'model_yoneticisi' && m.role === 'challenger'" @click="promote(m.model_id)">Terfi onayı</button></td></tr></template></tbody></table></div>
         <div class="card"><h2>Erken uyarı izleme listesi</h2><table><tbody><template x-for="w in (dash.watchlist ? dash.watchlist.entries : [])"><tr><td x-text="w.application_id"></td><td x-text="'EWS ' + w.ews_score"></td><td x-text="w.triggers.join(', ') || '—'"></td></tr></template></tbody></table></div>
       </div>
     </div></template>

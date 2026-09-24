@@ -13,6 +13,20 @@ const EMPTY_FORM = () => ({
   consents: { kvkk_aydinlatma: false, acik_riza: false, kkb_sorgu: false, edevlet_sorgu: true, acik_bankacilik: true },
 });
 
+// Codes the backend does not label in /api/v1/labels (UI-only vocabularies).
+const UI_LABELS = {
+  role: { basvuran: "Başvuran", uzman: "Krediler Uzmanı", kidemli_uzman: "Kıdemli Krediler Uzmanı", komite: "Kredi Komitesi", model_yoneticisi: "Model Yöneticisi", admin: "Sistem Yöneticisi" },
+  document_status: { YUKLENDI: "Yüklendi", ISLENDI: "İşlendi", SUPHELI: "Şüpheli", OCR_GEREKLI: "Uzman incelemesi gerekli (OCR yok)" },
+  drift: { STABIL: "Stabil", ORTA: "Orta kayma", ANLAMLI_KAYMA: "Anlamlı kayma" },
+  rule_action: { decline: "Ret", refer: "Uzmana yönlendir" },
+  fairness_attr: { gender: "Cinsiyet", age_band: "Yaş bandı", province: "İl", SEX: "Cinsiyet", AGE_BAND: "Yaş bandı", EDUCATION: "Eğitim", MARRIAGE: "Medeni durum" },
+  model_role: { champion: "Şampiyon", challenger: "Aday (challenger)" },
+  model_family: { lightgbm: "Monotonik LightGBM", logistic: "Lojistik regresyon", scorecard: "WoE skor kartı", lightgbm_uncalibrated: "LightGBM (kalibrasyonsuz)" },
+  llm_mode: { live: "canlı", demo: "demo" },
+  persona: { temiz: "Temiz dosya", ince_dosya: "İnce dosya", yuksek_dsr: "Yüksek borç/gelir", asiri_borclu: "Aşırı borçlu", kurcalanmis: "Kurcalanmış belge", halka: "Olası dolandırıcılık halkası", halka_2: "Olası dolandırıcılık halkası", halka_3: "Olası dolandırıcılık halkası", gri: "Gri bölge", gecikmeli: "Gecikme geçmişi", takipte: "Takipte kayıt" },
+  dataset: { uci_taiwan: "UCI Tayvan kredi kartı verisi", german_credit: "German Credit verisi" },
+};
+
 document.addEventListener("alpine:init", () => { window.Alpine.data("platform", platform); });
 
 function platform() {
@@ -29,7 +43,19 @@ function platform() {
     staffTabs: [["ozet", "Özet"], ["belgeler", "Belgeler"], ["kkb", "KKB"], ["nakit", "Nakit akışı"], ["karar", "Karar + SHAP"], ["fiyat", "Fiyatlama"], ["halka", "Halka"], ["memo", "AI memorandum"], ["politika", "Politika sor"], ["karar_ver", "Karar ver"]],
     bureauKeys: [["bureau_score", "KKB notu"], ["bureau_hit", "KKB kaydı"], ["active_loans", "Aktif kredi"], ["bureau_utilisation", "Limit kullanımı"], ["delinquency_count_24m", "24 ay gecikme"], ["max_dpd_24m", "Azami gecikme günü"], ["inquiries_6m", "6 ay sorgu"], ["existing_debt_service", "Mevcut aylık taksit"], ["existing_dsr", "Mevcut DSR"], ["dsr", "DSR (talep)"], ["employment_months", "Çalışma süresi (ay)"]],
 
+    labels: {}, health: null,
+
     // ------------------------------------------------------------ helpers
+    /** Turkish label for an enum code: never show the raw code if a label exists. */
+    lbl(kind, code) {
+      if (code === null || code === undefined || code === "") return "—";
+      const server = this.labels[kind] || {};
+      const local = UI_LABELS[kind] || {};
+      return server[code] || local[code] || String(code);
+    },
+    lblList(kind, codes) { return (codes || []).map((c) => this.lbl(kind, c)).join(", "); },
+    get ocrMissing() { return !!(this.health && this.health.ocr && this.health.ocr.available === false); },
+    labelEntries(kind) { return Object.entries(this.labels[kind] || {}); },
     tl(v) { return v === null || v === undefined ? "—" : Number(v).toLocaleString("tr-TR", { style: "currency", currency: "TRY" }); },
     pct(v) { return v === null || v === undefined ? "—" : "%" + (Number(v) * 100).toLocaleString("tr-TR", { maximumFractionDigits: 2 }); },
     date(v) { return v ? new Date(v).toLocaleString("tr-TR") : ""; },
@@ -127,6 +153,10 @@ function platform() {
       return v;
     },
     async afterLogin() {
+      if (!Object.keys(this.labels).length) {
+        try { this.labels = await this.api("/api/v1/labels"); } catch (e) { this.labels = {}; }
+      }
+      this.api("/health").then((h) => { this.health = h; }).catch(() => {});
       this.view = this.views()[0].id;
       this.api("/api/v1/llm/status").then((s) => { this.llm = s; }).catch(() => {});
       await this.go(this.view);
@@ -167,7 +197,7 @@ function platform() {
       const body = new FormData(); body.append("code", this.upload.code); body.append("file", file);
       try {
         const r = await this.api("/api/v1/applications/" + this.current.application_id + "/documents", { method: "POST", body });
-        this.notify(r.complete ? "Belgeler tamamlandı, değerlendirme başladı." : "Belge yüklendi. Eksik: " + r.missing_documents.join(", "));
+        this.notify(r.complete ? "Belgeler tamamlandı, değerlendirme başladı." : "Belge yüklendi. Eksik: " + this.lblList("document", r.missing_documents));
         setTimeout(() => this.openApp(this.current.application_id), r.processing_resumed ? 1500 : 10);
       } catch (e) { this.notify(e.message); }
     },
@@ -249,12 +279,12 @@ function platform() {
       if (this.decisionForm.term_months) body.term_months = this.decisionForm.term_months;
       try {
         const r = await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/decision", { method: "POST", json: body });
-        this.notify(r.review.status === "ONAY_BEKLIYOR" ? "Dört göz onayı bekleniyor." : "Karar kaydedildi: " + r.state);
+        this.notify(r.review.status === "ONAY_BEKLIYOR" ? "Dört göz onayı bekleniyor." : "Karar kaydedildi: " + this.lbl("state", r.state));
         await this.loadQueue(); await this.openStaff(this.staff.detail.application_id);
       } catch (e) { this.notify(e.message); }
     },
     async checkReview(r, approve) {
-      try { const res = await this.api("/api/v1/workbench/reviews/" + r.review_id + "/check", { method: "POST", json: { approve, note: approve ? "Uygundur." : "Uygun değildir." } }); this.notify("Durum: " + res.state); await this.loadQueue(); } catch (e) { this.notify(e.message); }
+      try { const res = await this.api("/api/v1/workbench/reviews/" + r.review_id + "/check", { method: "POST", json: { approve, note: approve ? "Uygundur." : "Uygun değildir." } }); this.notify("Durum: " + this.lbl("state", res.state)); await this.loadQueue(); } catch (e) { this.notify(e.message); }
     },
     async resolveObjection(upheld) {
       try { await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/objection/resolve", { method: "POST", json: { upheld, note: this.decisionForm.justification || "İnceleme tamamlandı, gerekçe dosyada." } }); await this.loadQueue(); await this.openStaff(this.staff.detail.application_id); } catch (e) { this.notify(e.message); }
@@ -279,7 +309,7 @@ function platform() {
     },
     async seedDemo() {
       this.busy = true; this.seedResult = "Demo senaryoları yükleniyor…";
-      try { const r = await this.api("/api/v1/demo/seed", { method: "POST" }); this.seedResult = r.results.map((x) => x.scenario + "→" + x.state).join(" · "); await this.loadDashboard(); } catch (e) { this.seedResult = e.message; } finally { this.busy = false; }
+      try { const r = await this.api("/api/v1/demo/seed", { method: "POST" }); this.seedResult = r.results.map((x) => x.scenario + " → " + this.lbl("state", x.state)).join(" · "); await this.loadDashboard(); } catch (e) { this.seedResult = e.message; } finally { this.busy = false; }
     },
     async promote(id) { try { const r = await this.api("/api/v1/models/" + id + "/promote", { method: "POST" }); this.notify("Onay kaydedildi: " + r.approvals.length + "/2"); await this.loadDashboard(); } catch (e) { this.notify(e.message); } },
   };

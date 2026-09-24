@@ -1,11 +1,11 @@
 :root {
   --bg: #f4f6f9; --panel: #ffffff; --ink: #1c2733; --muted: #5b6b7c; --line: #dde3ea;
   --brand: #1f3b57; --brand-2: #2f6690; --ok: #1e7b34; --bad: #b3261e; --warn: #9a6700;
-  --chip: #eef2f7; --shadow: 0 1px 3px rgba(16, 24, 40, .08);
+  --chip: #eef2f7; --shadow: 0 1px 3px rgba(16, 24, 40, .08); --warn-bg: #fff4d6;
 }
 [data-theme="dark"] {
   --bg: #0f1720; --panel: #17212c; --ink: #e6edf3; --muted: #9fb0c0; --line: #273545;
-  --brand: #7fb3e0; --brand-2: #5a9bd4; --chip: #203040; --shadow: none;
+  --brand: #7fb3e0; --brand-2: #5a9bd4; --chip: #203040; --shadow: none; --warn-bg: #3a2f10;
 }
 * { box-sizing: border-box; }
 body { margin: 0; font: 14px/1.5 "Segoe UI", system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--ink); }
@@ -59,6 +59,7 @@ tr.clickable:hover { background: var(--chip); }
 .steps span { padding: 4px 10px; border-radius: 999px; background: var(--chip); font-size: 12px; }
 .steps span.on { background: var(--brand-2); color: #fff; }
 .error { color: var(--bad); font-size: 13px; }
+.notice { background: var(--warn-bg); color: var(--warn); border: 1px solid var(--warn); border-radius: 8px; padding: 8px 12px; font-size: 13px; }
 .toast { position: fixed; bottom: 18px; right: 18px; background: var(--brand); color: #fff; padding: 10px 14px; border-radius: 8px; max-width: 420px; z-index: 5; }
 .bar { height: 10px; border-radius: 5px; background: var(--chip); overflow: hidden; }
 .bar > div { height: 100%; }
