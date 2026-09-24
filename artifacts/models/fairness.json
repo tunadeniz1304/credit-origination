@@ -1,0 +1,83 @@
+{
+ "approve_cutoff": 0.05,
+ "overall_approval_rate": 0.5936,
+ "attributes": {
+  "gender": {
+   "selection_rate": {
+    "E": 0.5971,
+    "K": 0.5894
+   },
+   "air": {
+    "E": 1.0,
+    "K": 0.9871
+   },
+   "min_air": 0.9871,
+   "passes_four_fifths": true,
+   "equalized_odds_difference": 0.0111
+  },
+  "age_band": {
+   "selection_rate": {
+    "21-29": 0.6037,
+    "30-39": 0.5891,
+    "40-49": 0.5982,
+    "50+": 0.5873
+   },
+   "air": {
+    "21-29": 1.0,
+    "30-39": 0.9758,
+    "40-49": 0.9909,
+    "50+": 0.9728
+   },
+   "min_air": 0.9728,
+   "passes_four_fifths": true,
+   "equalized_odds_difference": 0.0308
+  },
+  "province": {
+   "selection_rate": {
+    "Ankara": 0.6082,
+    "Antalya": 0.6217,
+    "Bursa": 0.581,
+    "Diyarbakır": 0.5799,
+    "Konya": 0.6171,
+    "Samsun": 0.5757,
+    "İstanbul": 0.5799,
+    "İzmir": 0.6066
+   },
+   "air": {
+    "Ankara": 0.9783,
+    "Antalya": 1.0,
+    "Bursa": 0.9345,
+    "Diyarbakır": 0.9328,
+    "Konya": 0.9926,
+    "Samsun": 0.926,
+    "İstanbul": 0.9328,
+    "İzmir": 0.9757
+   },
+   "min_air": 0.926,
+   "passes_four_fifths": true,
+   "equalized_odds_difference": 0.1016
+  }
+ },
+ "alerts": [],
+ "alternatives": [
+  {
+   "model": "Kısıtsız lojistik",
+   "auc": 0.8945,
+   "approval_rate": 0.7,
+   "min_air": 0.9886
+  },
+  {
+   "model": "Demografik eşitlik kısıtlı (ε=0.05)",
+   "auc": 0.7141,
+   "approval_rate": 0.9281,
+   "min_air": 0.9934
+  },
+  {
+   "model": "Demografik eşitlik kısıtlı (ε=0.02)",
+   "auc": 0.7141,
+   "approval_rate": 0.9281,
+   "min_air": 0.9934
+  }
+ ],
+ "test_rows": 8208
+}
