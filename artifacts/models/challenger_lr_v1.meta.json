@@ -1,0 +1,33 @@
+{
+ "version": "challenger_lr_v1",
+ "kind": "logistic_regression",
+ "created_at": "2026-09-24T16:32:27+00:00",
+ "features": [
+  "bureau_score",
+  "bureau_hit",
+  "delinquency_count_24m",
+  "max_dpd_24m",
+  "inquiries_6m",
+  "active_loans",
+  "bureau_utilisation",
+  "dsr",
+  "loan_to_income",
+  "term_months",
+  "log_income",
+  "employment_months",
+  "income_cv",
+  "negative_balance_days",
+  "nsf_count",
+  "gambling_share",
+  "savings_rate",
+  "avg_balance_to_income"
+ ],
+ "metrics": {
+  "auc": 0.8957,
+  "gini": 0.7914,
+  "ks": 0.6184,
+  "brier": 0.06254,
+  "default_rate": 0.1081,
+  "n": 8208
+ }
+}

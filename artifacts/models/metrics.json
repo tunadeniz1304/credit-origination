@@ -1,0 +1,88 @@
+{
+ "rows": 50000,
+ "models": {
+  "pd": "pd_lgbm_v1",
+  "scorecard": "scorecard_woe_v1",
+  "challenger": "challenger_lr_v1"
+ },
+ "metrics": {
+  "pd": {
+   "auc": 0.8949,
+   "gini": 0.7898,
+   "ks": 0.6251,
+   "brier": 0.06282,
+   "default_rate": 0.1081,
+   "n": 8208,
+   "raw_auc": 0.8963,
+   "calibration": [
+    {
+     "predicted": 0.0031,
+     "observed": 0.0062,
+     "count": 1601
+    },
+    {
+     "predicted": 0.0037,
+     "observed": 0.0082,
+     "count": 1576
+    },
+    {
+     "predicted": 0.0117,
+     "observed": 0.0104,
+     "count": 1638
+    },
+    {
+     "predicted": 0.0142,
+     "observed": 0.0106,
+     "count": 1979
+    },
+    {
+     "predicted": 0.0194,
+     "observed": 0.0156,
+     "count": 1216
+    },
+    {
+     "predicted": 0.0395,
+     "observed": 0.038,
+     "count": 1315
+    },
+    {
+     "predicted": 0.0925,
+     "observed": 0.08,
+     "count": 937
+    },
+    {
+     "predicted": 0.1265,
+     "observed": 0.114,
+     "count": 1535
+    },
+    {
+     "predicted": 0.1764,
+     "observed": 0.1877,
+     "count": 1257
+    },
+    {
+     "predicted": 0.569,
+     "observed": 0.5813,
+     "count": 886
+    }
+   ],
+   "best_iteration": 119
+  },
+  "scorecard": {
+   "auc": 0.8917,
+   "gini": 0.7834,
+   "ks": 0.6193,
+   "brier": 0.06388,
+   "default_rate": 0.1081,
+   "n": 8208
+  },
+  "challenger": {
+   "auc": 0.8957,
+   "gini": 0.7914,
+   "ks": 0.6184,
+   "brier": 0.06254,
+   "default_rate": 0.1081,
+   "n": 8208
+  }
+ }
+}
