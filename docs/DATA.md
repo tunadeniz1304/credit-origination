@@ -28,7 +28,7 @@ Checksums (SHA-256):
 | `uci_taiwan` normalised `data.csv` | `c48c2416b5d0759b40e4b7dbd0540bc4ff93ce7222dca78176fce7d01e58ebd8` |
 | `german_credit` archive (`statlog+german+credit+data.zip`) | `e12d9d5def6845c0622634a1cd2ab87fa470668c4298f1ec52a4e403376a435b` |
 | `german_credit` normalised `data.csv` | `724c4911af23247abe8acf6d6dfe67d2dfb9143907c26707955eefcf5f9fbfc2` |
-| `tests/fixtures/uci_taiwan_sample.csv` | `d36516c999a2913f8d8385477db9d36b8a505a1a9d59996c3c8c9648d0f6db1c` |
+| `tests/fixtures/uci_taiwan_sample.csv` | `603a4c51260b0c02d6b3b4c75a29f698c761cc966f00b5d746152f4864d2b479` |
 
 Attribution:
 
@@ -50,7 +50,7 @@ prints their values. In the run recorded here they were **not** defined, so thes
 ### Offline fixture
 
 `tests/fixtures/uci_taiwan_sample.csv` is a 3,000-row sample of the Taiwan set, stratified by
-target and `SEX` (seed `20260925`), 265 KB, with the CC BY 4.0 attribution in its first lines
+target and `SEX` (seed `20260925`), 262 KB, with the CC BY 4.0 attribution in its first lines
 (read it with `pandas.read_csv(path, comment="#")`). Tests that need the full data are marked
 `@pytest.mark.external_data` and are skipped when `data/external/` is absent. Pre-computed
 validation metrics are committed under `artifacts/validation/`, so the application and the test

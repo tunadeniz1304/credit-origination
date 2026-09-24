@@ -183,7 +183,10 @@ def build_fixture(source: Path, rows: int = FIXTURE_ROWS) -> Path:
         "Column 'ID' dropped; target renamed to 'default'.\n"
     )
     FIXTURE.parent.mkdir(parents=True, exist_ok=True)
-    FIXTURE.write_text(header + sample.to_csv(index=False, lineterminator="\n"), encoding="utf-8")
+    # newline="\n": keep LF on Windows so the checksum matches the committed blob.
+    FIXTURE.write_text(
+        header + sample.to_csv(index=False, lineterminator="\n"), encoding="utf-8", newline="\n"
+    )
     return FIXTURE
 
 
