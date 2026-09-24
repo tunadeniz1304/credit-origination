@@ -1,4 +1,4 @@
-"""Browser E2E fixtures: one uvicorn server per session, one browser context per test.
+"""Browser E2E fixtures: one uvicorn server per module, one browser context per test.
 
 The tests skip cleanly when Playwright or its Chromium build is missing
 (``python -m playwright install chromium``).
@@ -19,7 +19,7 @@ playwright_api = pytest.importorskip("playwright.sync_api", reason="playwright i
 EXPECTED_HTTP_ERRORS: tuple[tuple[str, str], ...] = ()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def e2e_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
     proc, base = start_server(tmp_path_factory.mktemp("e2e-server"))
     try:
@@ -28,8 +28,10 @@ def e2e_server(tmp_path_factory: pytest.TempPathFactory) -> Iterator[str]:
         stop_server(proc)
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def e2e_browser() -> Iterator[object]:
+    # Module scope on purpose: the sync Playwright driver keeps an asyncio loop
+    # running on this thread until stop(), which would break later asyncio tests.
     manager = playwright_api.sync_playwright().start()
     try:
         try:
