@@ -7,9 +7,9 @@
   <link rel="stylesheet" href="/static/app.css">
   <script defer src="/static/vendor/chart.umd.min.js"></script>
   <script defer src="/static/app.js"></script>
-  <script defer src="/static/vendor/alpine.min.js"></script>
+  <script defer src="/static/vendor/alpine-csp-3.17.4.min.js"></script>
 </head>
-<body x-data="platform()" x-init="init()" :data-theme="theme">
+<body x-data="platform" :data-theme="theme">
 <header>
   <h1>Anil2 · Kredi Tahsis Platformu</h1>
   <nav x-show="user" aria-label="Ana menü">
@@ -36,7 +36,7 @@
     <h3>Demo kullanıcılar (parola: Demo123!)</h3>
     <div class="row">
       <template x-for="d in demoUsers" :key="d[0]">
-        <button @click="loginForm.username = d[0]; loginForm.password = 'Demo123!'; login()" x-text="d[1]"></button>
+        <button @click="demoLogin(d[0])" x-text="d[1]"></button>
       </template>
     </div>
   </section>
@@ -92,8 +92,8 @@
       </div>
       <p class="error" x-text="error"></p>
       <div class="row">
-        <button @click="wizard.step > 1 ? wizard.step-- : wizard.open = false" x-text="wizard.step > 1 ? 'Geri' : 'Vazgeç'"></button>
-        <button class="primary" x-show="wizard.step < 3" @click="wizard.step++; if (wizard.step === 3) loadQuote()">İleri</button>
+        <button @click="wizardBack()" x-text="wizard.step > 1 ? 'Geri' : 'Vazgeç'"></button>
+        <button class="primary" x-show="wizard.step < 3" @click="wizardNext()">İleri</button>
         <button class="primary" x-show="wizard.step === 3" @click="submitApplication()" :disabled="busy">Başvuruyu gönder</button>
       </div>
     </div>
@@ -111,7 +111,7 @@
           <div class="card" x-show="current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI'">
             <h2>Belgelerim</h2>
             <div class="row"><select x-model="upload.code"><template x-for="d in current.required_documents"><option :value="d.code" x-text="d.description + (current.missing_documents.includes(d.code) ? ' (eksik)' : ' ✓')"></option></template></select></div>
-            <div class="drop" :class="{over: upload.over}" @dragover.prevent="upload.over = true" @dragleave="upload.over = false" @drop.prevent="upload.over = false; uploadFile($event.dataTransfer.files[0])">
+            <div class="drop" :class="{over: upload.over}" @dragover.prevent="upload.over = true" @dragleave="upload.over = false" @drop.prevent="onDrop($event)">
               Dosyayı buraya sürükleyin veya <input type="file" style="width:auto" @change="uploadFile($event.target.files[0])" accept=".pdf,.png,.jpg,.jpeg">
             </div>
             <p class="muted" x-text="'Eksik: ' + (current.missing_documents.join(', ') || 'yok')"></p>
@@ -185,7 +185,7 @@
 
         <div x-show="staff.tab === 'ozet'" class="grid">
           <div><div class="muted">Talep</div><div class="kpi" x-text="tl(staff.detail.requested_amount)"></div><div class="muted" x-text="staff.detail.requested_term_months + ' ay · beyan gelir ' + tl(staff.detail.declared_income)"></div></div>
-          <div x-show="staff.decision"><div class="muted">PD / bant / skor</div><div class="kpi" x-text="staff.decision ? pct(staff.decision.pd) + ' · ' + staff.decision.risk_band : ''"></div><div class="muted" x-text="staff.decision ? 'Skor kartı ' + Math.round(staff.decision.score_points) + ' · challenger ' + pct(staff.decision.challenger.pd) : ''"></div></div>
+          <div x-show="staff.decision"><div class="muted">PD / bant / skor</div><div class="kpi" x-text="staff.decision ? pct(staff.decision.pd) + ' · ' + staff.decision.risk_band : ''"></div><div class="muted" x-text="staff.decision ? 'Skor kartı ' + round(staff.decision.score_points) + ' · challenger ' + pct(staff.decision.challenger.pd) : ''"></div></div>
           <div><div class="muted">KYC</div><div x-text="staff.detail.kyc ? ('Yaptırım: ' + (staff.detail.kyc.sanctions_match ? 'OLASI EŞLEŞME' : 'yok') + ' · velocity ' + staff.detail.kyc.velocity_30d + ' · halka ' + staff.detail.kyc.fraud_ring_size + ' · anomali ' + staff.detail.kyc.anomaly_score) : '—'"></div></div>
           <div style="grid-column:1/-1"><h3>Zaman çizelgesi</h3><ul class="timeline"><template x-for="e in staff.detail.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor + ' · ' + e.reason"></span></li></template></ul></div>
         </div>
@@ -205,18 +205,18 @@
         <div x-show="staff.tab === 'karar'"><template x-if="staff.decision"><div class="grid-2">
           <div><h3>SHAP katkıları (log-odds)</h3><div class="chart-box"><canvas id="shapChart"></canvas></div></div>
           <div><h3>Gerekçe kodları</h3><ul><template x-for="r in staff.decision.reason_codes"><li><b x-text="r.code"></b> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
-            <h3>Politika kuralları</h3><ul><template x-for="r in staff.decision.rule_results.filter(x => x.fired)"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="r.action"></span> <span x-text="r.id + ' — ' + r.description"></span></li></template></ul>
+            <h3>Politika kuralları</h3><ul><template x-for="r in firedRules()"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="r.action"></span> <span x-text="r.id + ' — ' + r.description"></span></li></template></ul>
             <h3>Karşı-olgusal</h3><ul><template x-for="c in staff.decision.counterfactuals"><li x-text="c"></li></template></ul>
             <p class="muted" x-text="'Kural seti ' + staff.decision.rule_set_version + ' · model ' + staff.decision.model_version + ' · özet ' + staff.decision.feature_hash.slice(0,12)"></p>
             <button @click="replay()">Kararı yeniden üret (replay)</button> <span x-text="staff.replay"></span></div>
         </div></template></div>
 
-        <div x-show="staff.tab === 'fiyat'"><template x-if="staff.decision && staff.decision.pricing"><table><tbody><template x-for="k in pricingKeys"><tr><td x-text="k[1]"></td><td x-text="k[2](staff.decision.pricing[k[0]])"></td></tr></template></tbody></table></template></div>
+        <div x-show="staff.tab === 'fiyat'"><template x-if="staff.decision && staff.decision.pricing"><table><tbody><template x-for="k in pricingKeys"><tr><td x-text="k[1]"></td><td x-text="pricingValue(k)"></td></tr></template></tbody></table></template></div>
 
         <div x-show="staff.tab === 'halka'"><p class="muted" x-text="staff.network ? ('Halka büyüklüğü ' + staff.network.ring_size + ' · ortak tanımlayıcılar: ' + (staff.network.shared_identifiers || []).join(', ')) : ''"></p><svg id="ringSvg" width="100%" height="320" viewBox="0 0 600 320" role="img" aria-label="Başvuru halkası grafiği"></svg></div>
 
         <div x-show="staff.tab === 'memo'"><button class="primary" @click="generateMemo()" :disabled="busy">AI kredi memorandumu üret</button>
-          <template x-if="staff.memo"><div><p class="muted" x-text="'Mod: ' + staff.memo.mode + ' · adımlar: ' + staff.memo.steps.map(s => s.tool).join(' → ')"></p>
+          <template x-if="staff.memo"><div><p class="muted" x-text="'Mod: ' + staff.memo.mode + ' · adımlar: ' + memoSteps()"></p>
             <template x-for="s in staff.memo.sections"><div><h3 x-text="s.title"></h3><p x-text="s.text"></p></div></template><h3>Öneri</h3><p x-text="staff.memo.recommendation"></p></div></template></div>
 
         <div x-show="staff.tab === 'politika'"><label>Politika / mevzuat sorusu</label><input x-model="policyQ" @keydown.enter="askPolicy()"><button @click="askPolicy()">Sor</button>

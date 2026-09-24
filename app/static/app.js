@@ -1,5 +1,8 @@
-/* Anil2 SPA — Alpine.js component. User data is rendered only through
-   x-text / textContent (never innerHTML), which prevents stored XSS. */
+/* Anil2 SPA — Alpine.js (CSP build) component. User data is rendered only
+   through x-text / textContent (never innerHTML), which prevents stored XSS.
+   The CSP build evaluates directive expressions without eval/new Function, so
+   templates may only use simple expressions: anything with arrow functions,
+   globals (Math, window) or several statements lives in a method below. */
 "use strict";
 
 const EMPTY_FORM = () => ({
@@ -10,7 +13,8 @@ const EMPTY_FORM = () => ({
   consents: { kvkk_aydinlatma: false, acik_riza: false, kkb_sorgu: false, edevlet_sorgu: true, acik_bankacilik: true },
 });
 
-// eslint-disable-next-line no-unused-vars
+document.addEventListener("alpine:init", () => { window.Alpine.data("platform", platform); });
+
 function platform() {
   return {
     user: null, token: null, view: "portal", theme: "light", llm: null, error: "", toast: "", busy: false,
@@ -37,6 +41,10 @@ function platform() {
       const t = (v) => this.tl(v), p = (v) => this.pct(v), n = (v) => v;
       return [["amount", "Tutar", t], ["term_months", "Vade (ay)", n], ["annual_rate", "Yıllık akdi faiz", p], ["instalment", "Aylık taksit", t], ["apr", "Yıllık maliyet oranı", p], ["total_payment", "Toplam geri ödeme", t], ["total_taxes", "BSMV + KKDF", t], ["upfront_fee", "Tahsis ücreti", t], ["expected_loss_annual", "Beklenen kayıp", t], ["capital_ratio", "Ekonomik sermaye oranı", p], ["raroc", "RAROC", p], ["legal_cap_annual", "Yasal tavan", p]];
     },
+    round(v) { return Math.round(Number(v) || 0); },
+    pricingValue(k) { return k[2](this.staff.decision.pricing[k[0]]); },
+    firedRules() { return ((this.staff && this.staff.decision && this.staff.decision.rule_results) || []).filter((x) => x.fired); },
+    memoSteps() { return ((this.staff && this.staff.memo && this.staff.memo.steps) || []).map((s) => s.tool).join(" → "); },
     notify(msg) { this.toast = msg; setTimeout(() => { this.toast = ""; }, 4000); },
     async api(path, opts = {}) {
       const headers = Object.assign({}, opts.headers || {});
@@ -79,6 +87,7 @@ function platform() {
         await this.afterLogin();
       } catch (e) { this.error = e.message; }
     },
+    demoLogin(username) { this.loginForm = { username, password: "Demo123!" }; return this.login(); },
     logout() { this.user = null; this.token = null; this.current = null; this.staff = null; sessionStorage.removeItem("anil2-session"); },
     views() {
       if (!this.user) return [];
@@ -106,6 +115,9 @@ function platform() {
     // ------------------------------------------------------------ applicant
     async loadApplications() { this.applications = (await this.api("/api/v1/applications?limit=100")).applications; },
     startWizard() { this.form = EMPTY_FORM(); this.wizard = { open: true, step: 1 }; this.current = null; this.error = ""; },
+    wizardBack() { if (this.wizard.step > 1) this.wizard.step--; else this.wizard.open = false; },
+    wizardNext() { this.wizard.step++; if (this.wizard.step === 3) this.loadQuote(); },
+    onDrop(event) { this.upload.over = false; this.uploadFile(event.dataTransfer.files[0]); },
     pickDemo(key) { if (key) { this.form.identity_no = this.demoTckn[key]; } },
     async loadQuote() {
       try { this.quote = await this.api("/api/v1/pricing/quote", { method: "POST", json: { amount: this.form.requested_amount, term_months: this.form.requested_term_months, product: this.form.product, risk_band: "B" } }); } catch (e) { this.quote = null; }

@@ -215,7 +215,6 @@ def test_f11_single_pending_review_per_application():
 
 
 # ------------------------------------------------------------------ E. security
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f13_csp_without_unsafe_eval():
     from fastapi.testclient import TestClient
 

@@ -24,7 +24,7 @@ from app.core.metrics import HTTP_REQUESTS
 
 _STATIC_DIR = Path(__file__).resolve().parent / "static"
 CSP = (
-    "default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; "
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
     "img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
 )
 
