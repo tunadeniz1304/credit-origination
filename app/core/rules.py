@@ -133,10 +133,19 @@ class WorkflowConfig(BaseModel):
     income_tolerance: float = 0.15
 
 
+class ReasonMateriality(BaseModel):
+    min_shap: float = 0.0
+    min_points_lost: float = 0.0
+    max_codes: int = 4
+
+
 class ReasonCatalog(BaseModel):
     version: str
     codes: dict[str, str]
     feature_reasons: dict[str, str] = Field(default_factory=dict)
+    materiality: ReasonMateriality = Field(default_factory=ReasonMateriality)
+    adverse_when: dict[str, str] = Field(default_factory=dict)
+    improvements: dict[str, str] = Field(default_factory=dict)
 
 
 class SanctionEntry(BaseModel):

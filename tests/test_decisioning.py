@@ -172,7 +172,10 @@ def test_delinquent_declined_with_model_reasons():
     assert result.outcome == "OTOMATIK_RET"
     assert result.pd >= 0.2
     assert all(r.source == "model" for r in result.reason_codes)
-    assert "R03_GECIKME_GECMISI" in result.reason_code_list
+    # Arrears reach the model through the real-data behaviour sub-score (lane B), whose
+    # reason (R26) names the payment history; the raw count may still surface as R03.
+    assert {"R03_GECIKME_GECMISI", "R26_KKB_DAVRANIS"} & set(result.reason_code_list)
+    assert len(result.reason_codes) <= 4
 
 
 # ------------------------------------------------------------------ determinism / monotonicity
