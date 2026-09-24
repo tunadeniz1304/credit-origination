@@ -25,9 +25,9 @@ Checksums (SHA-256):
 | File | SHA-256 |
 |---|---|
 | `uci_taiwan` archive (`default+of+credit+card+clients.zip`) | `56c885f84457f6680f8438f02bfcdac9579323d8a94465ee5f26e32baa727602` |
-| `uci_taiwan` normalised `data.csv` | `c48c2416b5d0759b40e4b7dbd0540bc4ff93ce7222dca78176fce7d01e58ebd8` |
+| `uci_taiwan` normalised `data.csv` | `e28803eec99215182faffbced63edd940d5034ed240443084ae72d254f147f89` |
 | `german_credit` archive (`statlog+german+credit+data.zip`) | `e12d9d5def6845c0622634a1cd2ab87fa470668c4298f1ec52a4e403376a435b` |
-| `german_credit` normalised `data.csv` | `724c4911af23247abe8acf6d6dfe67d2dfb9143907c26707955eefcf5f9fbfc2` |
+| `german_credit` normalised `data.csv` | `2a98ed3725ae530f43792c54870d7a3a424953f6baec5dcc707c8135a93a1f80` |
 | `tests/fixtures/uci_taiwan_sample.csv` | `603a4c51260b0c02d6b3b4c75a29f698c761cc966f00b5d746152f4864d2b479` |
 
 Attribution:

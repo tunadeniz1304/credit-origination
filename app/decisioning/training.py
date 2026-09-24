@@ -315,40 +315,105 @@ def _splits(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
     return train, calib, test
 
 
-def train_pd_model(df: pd.DataFrame, out_dir: Path, version: str = "pd_lgbm_v1") -> dict[str, Any]:
-    import lightgbm as lgb
-    from sklearn.isotonic import IsotonicRegression
+LGBM_PARAMS: dict[str, Any] = {
+    "objective": "binary",
+    "learning_rate": 0.05,
+    "num_leaves": 15,
+    "min_data_in_leaf": 80,
+    "feature_fraction": 0.9,
+    "bagging_fraction": 0.9,
+    "bagging_freq": 1,
+    "lambda_l2": 1.0,
+    "monotone_constraints_method": "advanced",
+    "verbose": -1,
+    "seed": SEED,
+    "deterministic": True,
+    "num_threads": 1,
+}
+MAX_BOOST_ROUNDS = 600
+EARLY_STOPPING_ROUNDS = 40
 
-    train, calib, test = _splits(df)
-    features = list(MODEL_FEATURES)
-    params = {
-        "objective": "binary",
-        "learning_rate": 0.05,
-        "num_leaves": 15,
-        "min_data_in_leaf": 80,
-        "feature_fraction": 0.9,
-        "bagging_fraction": 0.9,
-        "bagging_freq": 1,
-        "lambda_l2": 1.0,
-        "monotone_constraints": [MONOTONE[f] for f in features],
-        "monotone_constraints_method": "advanced",
-        "verbose": -1,
-        "seed": SEED,
-        "deterministic": True,
-        "num_threads": 1,
-    }
-    dtrain = lgb.Dataset(train[features], label=train.target)
-    dvalid = lgb.Dataset(calib[features], label=calib.target, reference=dtrain)
-    booster = lgb.train(
+
+def fit_lightgbm(
+    X_train: pd.DataFrame,
+    y_train: Any,
+    X_valid: pd.DataFrame,
+    y_valid: Any,
+    monotone: dict[str, int],
+) -> Any:
+    """Monotone-constrained LightGBM with early stopping (shared by production and lane A)."""
+    import lightgbm as lgb
+
+    features = list(X_train.columns)
+    params = {**LGBM_PARAMS, "monotone_constraints": [monotone.get(f, 0) for f in features]}
+    dtrain = lgb.Dataset(X_train, label=y_train)
+    dvalid = lgb.Dataset(X_valid, label=y_valid, reference=dtrain)
+    return lgb.train(
         params,
         dtrain,
-        num_boost_round=600,
+        num_boost_round=MAX_BOOST_ROUNDS,
         valid_sets=[dvalid],
-        callbacks=[lgb.early_stopping(40, verbose=False)],
+        callbacks=[lgb.early_stopping(EARLY_STOPPING_ROUNDS, verbose=False)],
+    )
+
+
+def fit_isotonic(raw: Any, y: Any) -> Any:
+    from sklearn.isotonic import IsotonicRegression
+
+    iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0005, y_max=0.9995)
+    iso.fit(raw, y)
+    return iso
+
+
+def make_logistic() -> Any:
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.pipeline import make_pipeline
+    from sklearn.preprocessing import StandardScaler
+
+    return make_pipeline(
+        SimpleImputer(strategy="median", add_indicator=True),
+        StandardScaler(),
+        LogisticRegression(max_iter=2000, C=0.5),
+    )
+
+
+def make_scorecard(features: list[str], monotone: dict[str, int]) -> Any:
+    from optbinning import BinningProcess, Scorecard
+    from sklearn.linear_model import LogisticRegression
+
+    # optbinning's monotonic_trend refers to the event rate: PD rises with +1 features.
+    trends = {
+        f: (
+            "ascending"
+            if monotone.get(f, 0) > 0
+            else "descending"
+            if monotone.get(f, 0) < 0
+            else "auto"
+        )
+        for f in features
+    }
+    binning = BinningProcess(
+        variable_names=features,
+        binning_fit_params={f: {"monotonic_trend": trends[f], "max_n_bins": 6} for f in features},
+        selection_criteria={"iv": {"min": 0.01}},
+    )
+    return Scorecard(
+        binning_process=binning,
+        estimator=LogisticRegression(max_iter=1000),
+        scaling_method="pdo_odds",
+        scaling_method_params={"pdo": 40, "odds": 50, "scorecard_points": 600},
+    )
+
+
+def train_pd_model(df: pd.DataFrame, out_dir: Path, version: str = "pd_lgbm_v1") -> dict[str, Any]:
+    train, calib, test = _splits(df)
+    features = list(MODEL_FEATURES)
+    booster = fit_lightgbm(
+        train[features], train.target, calib[features], calib.target, dict(MONOTONE)
     )
     raw_calib = booster.predict(calib[features], num_iteration=booster.best_iteration)
-    iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0005, y_max=0.9995)
-    iso.fit(raw_calib, calib.target)
+    iso = fit_isotonic(raw_calib, calib.target)
     raw_test = booster.predict(test[features], num_iteration=booster.best_iteration)
     p_test = np.asarray(iso.predict(raw_test))
     metrics = evaluate_scores(test.target.to_numpy(), p_test)
@@ -391,27 +456,10 @@ def train_scorecard(
     df: pd.DataFrame, out_dir: Path, version: str = "scorecard_woe_v1"
 ) -> dict[str, Any]:
     import joblib
-    from optbinning import BinningProcess, Scorecard
-    from sklearn.linear_model import LogisticRegression
 
     train, _calib, test = _splits(df)
     features = list(MODEL_FEATURES)
-    # optbinning's monotonic_trend refers to the event rate: PD rises with +1 features.
-    trends = {
-        f: ("ascending" if MONOTONE[f] > 0 else "descending" if MONOTONE[f] < 0 else "auto")
-        for f in features
-    }
-    binning = BinningProcess(
-        variable_names=features,
-        binning_fit_params={f: {"monotonic_trend": trends[f], "max_n_bins": 6} for f in features},
-        selection_criteria={"iv": {"min": 0.01}},
-    )
-    scorecard = Scorecard(
-        binning_process=binning,
-        estimator=LogisticRegression(max_iter=1000),
-        scaling_method="pdo_odds",
-        scaling_method_params={"pdo": 40, "odds": 50, "scorecard_points": 600},
-    )
+    scorecard = make_scorecard(features, dict(MONOTONE))
     scorecard.fit(train[features], train.target)
     test_scores = scorecard.score(test[features])
     p_test = scorecard.predict_proba(test[features])[:, 1]
@@ -455,10 +503,6 @@ def train_challenger(
     df: pd.DataFrame, out_dir: Path, version: str = "challenger_lr_v1"
 ) -> dict[str, Any]:
     import joblib
-    from sklearn.impute import SimpleImputer
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.pipeline import make_pipeline
-    from sklearn.preprocessing import StandardScaler
 
     train, _calib, test = _splits(df)
     features = list(MODEL_FEATURES)
@@ -470,11 +514,7 @@ def train_challenger(
         kind = "ebm"
         version = version.replace("lr", "ebm")
     except ImportError:
-        model = make_pipeline(
-            SimpleImputer(strategy="median", add_indicator=True),
-            StandardScaler(),
-            LogisticRegression(max_iter=2000, C=0.5),
-        )
+        model = make_logistic()
     model.fit(train[features], train.target)
     p_test = model.predict_proba(test[features])[:, 1]
     metrics = evaluate_scores(test.target.to_numpy(), p_test)

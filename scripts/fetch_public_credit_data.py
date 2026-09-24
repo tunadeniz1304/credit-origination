@@ -143,7 +143,7 @@ def fetch(name: str, force: bool = False) -> dict[str, object]:
     archive_path.write_bytes(archive)
     frame = NORMALISERS[name](archive)
     csv_path = target / "data.csv"
-    frame.to_csv(csv_path, index=False)
+    frame.to_csv(csv_path, index=False, lineterminator="\n")  # platform-independent checksum
     return {
         "title": spec["title"],
         "url": spec["url"],

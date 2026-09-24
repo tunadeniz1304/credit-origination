@@ -1,0 +1,1186 @@
+{
+ "dataset": "german_credit",
+ "generated_at": "2026-09-24T22:27:15+00:00",
+ "config_version": "validation_v1",
+ "design": {
+  "rows": 1000,
+  "train_rows": 800,
+  "holdout_rows": 200,
+  "cv_folds": 5,
+  "holdout_fraction": 0.2,
+  "seed": 20260925,
+  "default_rate": 0.3,
+  "features": [
+   "duration_months",
+   "credit_amount",
+   "installment_rate",
+   "residence_since",
+   "existing_credits",
+   "people_liable",
+   "checking_status_A11",
+   "checking_status_A12",
+   "checking_status_A13",
+   "checking_status_A14",
+   "credit_history_A30",
+   "credit_history_A31",
+   "credit_history_A32",
+   "credit_history_A33",
+   "credit_history_A34",
+   "purpose_A40",
+   "purpose_A41",
+   "purpose_A410",
+   "purpose_A42",
+   "purpose_A43",
+   "purpose_A44",
+   "purpose_A45",
+   "purpose_A46",
+   "purpose_A48",
+   "purpose_A49",
+   "savings_status_A61",
+   "savings_status_A62",
+   "savings_status_A63",
+   "savings_status_A64",
+   "savings_status_A65",
+   "employment_since_A71",
+   "employment_since_A72",
+   "employment_since_A73",
+   "employment_since_A74",
+   "employment_since_A75",
+   "other_debtors_A101",
+   "other_debtors_A102",
+   "other_debtors_A103",
+   "property_A121",
+   "property_A122",
+   "property_A123",
+   "property_A124",
+   "other_installment_plans_A141",
+   "other_installment_plans_A142",
+   "other_installment_plans_A143",
+   "housing_A151",
+   "housing_A152",
+   "housing_A153",
+   "job_A171",
+   "job_A172",
+   "job_A173",
+   "job_A174",
+   "telephone_A191",
+   "telephone_A192"
+  ],
+  "protected_attributes": [
+   "SEX",
+   "AGE_BAND",
+   "FOREIGN_WORKER"
+  ],
+  "notes": [
+   "Kategorik alanlar tek-sıcak (one-hot) kodlandı; cinsiyet/medeni durum, yaş ve yabancı işçi alanları model dışı.",
+   "1.000 kayıt: güven aralıkları geniştir, ikincil kontrol olarak yorumlanmalıdır."
+  ]
+ },
+ "models": {
+  "lightgbm": "Monotonik LightGBM + izotonik kalibrasyon",
+  "logistic": "Lojistik regresyon",
+  "scorecard": "WoE skor kartı (optbinning + lojistik)"
+ },
+ "cv": {
+  "lightgbm": {
+   "fold_auc": [
+    0.7638,
+    0.8289,
+    0.7547,
+    0.8034,
+    0.7247
+   ],
+   "mean_auc": 0.7751,
+   "std_auc": 0.0412
+  },
+  "logistic": {
+   "fold_auc": [
+    0.761,
+    0.7896,
+    0.7654,
+    0.803,
+    0.7537
+   ],
+   "mean_auc": 0.7746,
+   "std_auc": 0.0208
+  },
+  "scorecard": {
+   "fold_auc": [
+    0.8108,
+    0.8426,
+    0.7619,
+    0.8162,
+    0.7494
+   ],
+   "mean_auc": 0.7962,
+   "std_auc": 0.0392
+  }
+ },
+ "holdout": {
+  "lightgbm": {
+   "auc": 0.7701,
+   "auc_ci": [
+    0.69762,
+    0.83796
+   ],
+   "auc_ci_delong": [
+    0.69902,
+    0.84122
+   ],
+   "gini": 0.5402,
+   "gini_ci": [
+    0.3952,
+    0.6759
+   ],
+   "ks": 0.4619,
+   "brier": 0.16812,
+   "log_loss": 0.51263,
+   "default_rate": 0.3,
+   "n": 200
+  },
+  "logistic": {
+   "auc": 0.7581,
+   "auc_ci": [
+    0.68428,
+    0.82679
+   ],
+   "auc_ci_delong": [
+    0.68474,
+    0.83145
+   ],
+   "gini": 0.5162,
+   "gini_ci": [
+    0.3686,
+    0.6536
+   ],
+   "ks": 0.431,
+   "brier": 0.17678,
+   "log_loss": 0.54141,
+   "default_rate": 0.3,
+   "n": 200
+  },
+  "scorecard": {
+   "auc": 0.7788,
+   "auc_ci": [
+    0.7069,
+    0.84716
+   ],
+   "auc_ci_delong": [
+    0.7083,
+    0.84932
+   ],
+   "gini": 0.5576,
+   "gini_ci": [
+    0.4138,
+    0.6943
+   ],
+   "ks": 0.4714,
+   "brier": 0.16605,
+   "log_loss": 0.50427,
+   "default_rate": 0.3,
+   "n": 200
+  }
+ },
+ "calibration": {
+  "lightgbm_uncalibrated": {
+   "deciles": [
+    {
+     "decile": 1,
+     "n": 20,
+     "pd_min": 0.01199,
+     "pd_max": 0.04795,
+     "predicted": 0.03762,
+     "observed": 0.1,
+     "defaults": 2,
+     "ratio_observed_to_predicted": 2.658
+    },
+    {
+     "decile": 2,
+     "n": 20,
+     "pd_min": 0.04832,
+     "pd_max": 0.0814,
+     "predicted": 0.0662,
+     "observed": 0.05,
+     "defaults": 1,
+     "ratio_observed_to_predicted": 0.755
+    },
+    {
+     "decile": 3,
+     "n": 20,
+     "pd_min": 0.08194,
+     "pd_max": 0.1032,
+     "predicted": 0.0928,
+     "observed": 0.25,
+     "defaults": 5,
+     "ratio_observed_to_predicted": 2.694
+    },
+    {
+     "decile": 4,
+     "n": 20,
+     "pd_min": 0.10383,
+     "pd_max": 0.15497,
+     "predicted": 0.12734,
+     "observed": 0.1,
+     "defaults": 2,
+     "ratio_observed_to_predicted": 0.785
+    },
+    {
+     "decile": 5,
+     "n": 20,
+     "pd_min": 0.15896,
+     "pd_max": 0.21224,
+     "predicted": 0.1862,
+     "observed": 0.15,
+     "defaults": 3,
+     "ratio_observed_to_predicted": 0.806
+    },
+    {
+     "decile": 6,
+     "n": 20,
+     "pd_min": 0.21864,
+     "pd_max": 0.30149,
+     "predicted": 0.25487,
+     "observed": 0.2,
+     "defaults": 4,
+     "ratio_observed_to_predicted": 0.785
+    },
+    {
+     "decile": 7,
+     "n": 20,
+     "pd_min": 0.306,
+     "pd_max": 0.37875,
+     "predicted": 0.34011,
+     "observed": 0.35,
+     "defaults": 7,
+     "ratio_observed_to_predicted": 1.029
+    },
+    {
+     "decile": 8,
+     "n": 20,
+     "pd_min": 0.38365,
+     "pd_max": 0.49206,
+     "predicted": 0.43841,
+     "observed": 0.55,
+     "defaults": 11,
+     "ratio_observed_to_predicted": 1.255
+    },
+    {
+     "decile": 9,
+     "n": 20,
+     "pd_min": 0.49382,
+     "pd_max": 0.61372,
+     "predicted": 0.53538,
+     "observed": 0.55,
+     "defaults": 11,
+     "ratio_observed_to_predicted": 1.027
+    },
+    {
+     "decile": 10,
+     "n": 20,
+     "pd_min": 0.63051,
+     "pd_max": 0.85878,
+     "predicted": 0.736,
+     "observed": 0.7,
+     "defaults": 14,
+     "ratio_observed_to_predicted": 0.951
+    }
+   ],
+   "ece": 0.05263,
+   "hosmer_lemeshow": {
+    "statistic": 9.901,
+    "dof": 8,
+    "p_value": 0.272078
+   },
+   "mean_predicted": 0.28149,
+   "observed_rate": 0.3,
+   "low_risk": {
+    "deciles": 3,
+    "predicted": 0.06554,
+    "observed": 0.13333,
+    "ratio_observed_to_predicted": 2.034
+   }
+  },
+  "lightgbm": {
+   "deciles": [
+    {
+     "decile": 1,
+     "n": 20,
+     "pd_min": 0.0005,
+     "pd_max": 0.11538,
+     "predicted": 0.03948,
+     "observed": 0.1,
+     "defaults": 2,
+     "ratio_observed_to_predicted": 2.533
+    },
+    {
+     "decile": 2,
+     "n": 20,
+     "pd_min": 0.11538,
+     "pd_max": 0.11628,
+     "predicted": 0.11606,
+     "observed": 0.05,
+     "defaults": 1,
+     "ratio_observed_to_predicted": 0.431
+    },
+    {
+     "decile": 3,
+     "n": 20,
+     "pd_min": 0.11628,
+     "pd_max": 0.13393,
+     "predicted": 0.12721,
+     "observed": 0.15,
+     "defaults": 3,
+     "ratio_observed_to_predicted": 1.179
+    },
+    {
+     "decile": 4,
+     "n": 20,
+     "pd_min": 0.13393,
+     "pd_max": 0.13393,
+     "predicted": 0.13393,
+     "observed": 0.15,
+     "defaults": 3,
+     "ratio_observed_to_predicted": 1.12
+    },
+    {
+     "decile": 5,
+     "n": 20,
+     "pd_min": 0.13393,
+     "pd_max": 0.21429,
+     "predicted": 0.20744,
+     "observed": 0.25,
+     "defaults": 5,
+     "ratio_observed_to_predicted": 1.205
+    },
+    {
+     "decile": 6,
+     "n": 20,
+     "pd_min": 0.21429,
+     "pd_max": 0.3125,
+     "predicted": 0.27126,
+     "observed": 0.15,
+     "defaults": 3,
+     "ratio_observed_to_predicted": 0.553
+    },
+    {
+     "decile": 7,
+     "n": 20,
+     "pd_min": 0.34615,
+     "pd_max": 0.37179,
+     "predicted": 0.36154,
+     "observed": 0.5,
+     "defaults": 10,
+     "ratio_observed_to_predicted": 1.383
+    },
+    {
+     "decile": 8,
+     "n": 20,
+     "pd_min": 0.37179,
+     "pd_max": 0.41509,
+     "predicted": 0.38976,
+     "observed": 0.45,
+     "defaults": 9,
+     "ratio_observed_to_predicted": 1.155
+    },
+    {
+     "decile": 9,
+     "n": 20,
+     "pd_min": 0.41509,
+     "pd_max": 0.55556,
+     "predicted": 0.46694,
+     "observed": 0.45,
+     "defaults": 9,
+     "ratio_observed_to_predicted": 0.964
+    },
+    {
+     "decile": 10,
+     "n": 20,
+     "pd_min": 0.55556,
+     "pd_max": 0.76923,
+     "predicted": 0.71393,
+     "observed": 0.75,
+     "defaults": 15,
+     "ratio_observed_to_predicted": 1.051
+    }
+   ],
+   "ece": 0.0581,
+   "hosmer_lemeshow": {
+    "statistic": 6.745,
+    "dof": 8,
+    "p_value": 0.564351
+   },
+   "mean_predicted": 0.28275,
+   "observed_rate": 0.3,
+   "low_risk": {
+    "deciles": 3,
+    "predicted": 0.09425,
+    "observed": 0.1,
+    "ratio_observed_to_predicted": 1.061
+   }
+  },
+  "logistic": {
+   "deciles": [
+    {
+     "decile": 1,
+     "n": 20,
+     "pd_min": 0.00396,
+     "pd_max": 0.03635,
+     "predicted": 0.02277,
+     "observed": 0.1,
+     "defaults": 2,
+     "ratio_observed_to_predicted": 4.392
+    },
+    {
+     "decile": 2,
+     "n": 20,
+     "pd_min": 0.04239,
+     "pd_max": 0.06641,
+     "predicted": 0.05419,
+     "observed": 0.15,
+     "defaults": 3,
+     "ratio_observed_to_predicted": 2.768
+    },
+    {
+     "decile": 3,
+     "n": 20,
+     "pd_min": 0.06983,
+     "pd_max": 0.11551,
+     "predicted": 0.08995,
+     "observed": 0.05,
+     "defaults": 1,
+     "ratio_observed_to_predicted": 0.556
+    },
+    {
+     "decile": 4,
+     "n": 20,
+     "pd_min": 0.11764,
+     "pd_max": 0.15179,
+     "predicted": 0.13643,
+     "observed": 0.2,
+     "defaults": 4,
+     "ratio_observed_to_predicted": 1.466
+    },
+    {
+     "decile": 5,
+     "n": 20,
+     "pd_min": 0.15322,
+     "pd_max": 0.22962,
+     "predicted": 0.19356,
+     "observed": 0.2,
+     "defaults": 4,
+     "ratio_observed_to_predicted": 1.033
+    },
+    {
+     "decile": 6,
+     "n": 20,
+     "pd_min": 0.23147,
+     "pd_max": 0.28639,
+     "predicted": 0.25806,
+     "observed": 0.25,
+     "defaults": 5,
+     "ratio_observed_to_predicted": 0.969
+    },
+    {
+     "decile": 7,
+     "n": 20,
+     "pd_min": 0.28842,
+     "pd_max": 0.42246,
+     "predicted": 0.34849,
+     "observed": 0.4,
+     "defaults": 8,
+     "ratio_observed_to_predicted": 1.148
+    },
+    {
+     "decile": 8,
+     "n": 20,
+     "pd_min": 0.43382,
+     "pd_max": 0.55695,
+     "predicted": 0.50335,
+     "observed": 0.35,
+     "defaults": 7,
+     "ratio_observed_to_predicted": 0.695
+    },
+    {
+     "decile": 9,
+     "n": 20,
+     "pd_min": 0.55818,
+     "pd_max": 0.70141,
+     "predicted": 0.63407,
+     "observed": 0.6,
+     "defaults": 12,
+     "ratio_observed_to_predicted": 0.946
+    },
+    {
+     "decile": 10,
+     "n": 20,
+     "pd_min": 0.70554,
+     "pd_max": 0.94461,
+     "predicted": 0.81223,
+     "observed": 0.7,
+     "defaults": 14,
+     "ratio_observed_to_predicted": 0.862
+    }
+   ],
+   "ece": 0.06422,
+   "hosmer_lemeshow": {
+    "statistic": 13.898,
+    "dof": 8,
+    "p_value": 0.084465
+   },
+   "mean_predicted": 0.30531,
+   "observed_rate": 0.3,
+   "low_risk": {
+    "deciles": 3,
+    "predicted": 0.05564,
+    "observed": 0.1,
+    "ratio_observed_to_predicted": 1.797
+   }
+  },
+  "scorecard": {
+   "deciles": [
+    {
+     "decile": 1,
+     "n": 20,
+     "pd_min": 0.00967,
+     "pd_max": 0.05583,
+     "predicted": 0.03426,
+     "observed": 0.05,
+     "defaults": 1,
+     "ratio_observed_to_predicted": 1.46
+    },
+    {
+     "decile": 2,
+     "n": 20,
+     "pd_min": 0.05601,
+     "pd_max": 0.07975,
+     "predicted": 0.06621,
+     "observed": 0.1,
+     "defaults": 2,
+     "ratio_observed_to_predicted": 1.51
+    },
+    {
+     "decile": 3,
+     "n": 20,
+     "pd_min": 0.08234,
+     "pd_max": 0.11793,
+     "predicted": 0.09974,
+     "observed": 0.2,
+     "defaults": 4,
+     "ratio_observed_to_predicted": 2.005
+    },
+    {
+     "decile": 4,
+     "n": 20,
+     "pd_min": 0.11835,
+     "pd_max": 0.15845,
+     "predicted": 0.13833,
+     "observed": 0.1,
+     "defaults": 2,
+     "ratio_observed_to_predicted": 0.723
+    },
+    {
+     "decile": 5,
+     "n": 20,
+     "pd_min": 0.1591,
+     "pd_max": 0.22088,
+     "predicted": 0.18953,
+     "observed": 0.15,
+     "defaults": 3,
+     "ratio_observed_to_predicted": 0.791
+    },
+    {
+     "decile": 6,
+     "n": 20,
+     "pd_min": 0.22313,
+     "pd_max": 0.30882,
+     "predicted": 0.25833,
+     "observed": 0.25,
+     "defaults": 5,
+     "ratio_observed_to_predicted": 0.968
+    },
+    {
+     "decile": 7,
+     "n": 20,
+     "pd_min": 0.30933,
+     "pd_max": 0.39695,
+     "predicted": 0.35354,
+     "observed": 0.4,
+     "defaults": 8,
+     "ratio_observed_to_predicted": 1.131
+    },
+    {
+     "decile": 8,
+     "n": 20,
+     "pd_min": 0.40134,
+     "pd_max": 0.51161,
+     "predicted": 0.46646,
+     "observed": 0.5,
+     "defaults": 10,
+     "ratio_observed_to_predicted": 1.072
+    },
+    {
+     "decile": 9,
+     "n": 20,
+     "pd_min": 0.51651,
+     "pd_max": 0.66585,
+     "predicted": 0.59136,
+     "observed": 0.55,
+     "defaults": 11,
+     "ratio_observed_to_predicted": 0.93
+    },
+    {
+     "decile": 10,
+     "n": 20,
+     "pd_min": 0.66941,
+     "pd_max": 0.91526,
+     "predicted": 0.78352,
+     "observed": 0.7,
+     "defaults": 14,
+     "ratio_observed_to_predicted": 0.893
+    }
+   ],
+   "ece": 0.04409,
+   "hosmer_lemeshow": {
+    "statistic": 4.459,
+    "dof": 8,
+    "p_value": 0.813553
+   },
+   "mean_predicted": 0.29813,
+   "observed_rate": 0.3,
+   "low_risk": {
+    "deciles": 3,
+    "predicted": 0.06674,
+    "observed": 0.11667,
+    "ratio_observed_to_predicted": 1.748
+   }
+  }
+ },
+ "delong": {
+  "lightgbm_vs_logistic": {
+   "auc_a": 0.77012,
+   "auc_b": 0.7581,
+   "auc_diff": 0.01202,
+   "diff_ci": [
+    -0.02955,
+    0.0536
+   ],
+   "z": 0.5669,
+   "p_value": 0.570814
+  },
+  "lightgbm_vs_scorecard": {
+   "auc_a": 0.77012,
+   "auc_b": 0.77881,
+   "auc_diff": -0.00869,
+   "diff_ci": [
+    -0.04362,
+    0.02624
+   ],
+   "z": -0.4877,
+   "p_value": 0.625787
+  },
+  "logistic_vs_scorecard": {
+   "auc_a": 0.7581,
+   "auc_b": 0.77881,
+   "auc_diff": -0.02071,
+   "diff_ci": [
+    -0.05414,
+    0.01271
+   ],
+   "z": -1.2145,
+   "p_value": 0.224555
+  }
+ },
+ "champion": {
+  "model": "scorecard",
+  "label": "WoE skor kartı (optbinning + lojistik)",
+  "alpha": 0.05,
+  "min_auc_gain": 0.005,
+  "simplicity_order": [
+   "scorecard",
+   "logistic",
+   "lightgbm"
+  ],
+  "comparisons": [
+   {
+    "challenger": "logistic",
+    "incumbent": "scorecard",
+    "auc_diff": -0.02071,
+    "p_value": 0.224555,
+    "verdict": "not_significant"
+   },
+   {
+    "challenger": "lightgbm",
+    "incumbent": "scorecard",
+    "auc_diff": -0.00869,
+    "p_value": 0.625787,
+    "verdict": "not_significant"
+   }
+  ],
+  "steps": [
+   "Lojistik regresyon vs WoE skor kartı (optbinning + lojistik): ΔAUC=-0.0207, DeLong p=0.225 → anlamlı değil",
+   "Monotonik LightGBM + izotonik kalibrasyon vs WoE skor kartı (optbinning + lojistik): ΔAUC=-0.0087, DeLong p=0.626 → anlamlı değil"
+  ]
+ },
+ "fairness": {
+  "approval_rate": 0.7,
+  "min_group_size": 20,
+  "by_model": {
+   "lightgbm": {
+    "SEX": {
+     "selection_rate": {
+      "Erkek": 0.7172,
+      "Kadın": 0.6545
+     },
+     "air": {
+      "Erkek": 1.0,
+      "Kadın": 0.9126
+     },
+     "min_air": 0.9126,
+     "passes_four_fifths": true,
+     "group_size": {
+      "Erkek": 145,
+      "Kadın": 55
+     },
+     "tpr_good_approved": {
+      "Erkek": 0.8286,
+      "Kadın": 0.7429
+     },
+     "fpr_bad_approved": {
+      "Erkek": 0.425,
+      "Kadın": 0.5
+     },
+     "tpr_gap": 0.0857,
+     "fpr_gap": 0.075
+    },
+    "AGE_BAND": {
+     "selection_rate": {
+      "21-29": 0.6154,
+      "30-39": 0.7576,
+      "40-49": 0.7647,
+      "50+": 0.7273
+     },
+     "air": {
+      "21-29": 0.8048,
+      "30-39": 0.9907,
+      "40-49": 1.0,
+      "50+": 0.9511
+     },
+     "min_air": 0.8048,
+     "passes_four_fifths": true,
+     "group_size": {
+      "21-29": 78,
+      "30-39": 66,
+      "40-49": 34,
+      "50+": 22
+     },
+     "tpr_good_approved": {
+      "21-29": 0.8,
+      "30-39": 0.8235,
+      "40-49": 0.8077,
+      "50+": 0.7778
+     },
+     "fpr_bad_approved": {
+      "21-29": 0.3636,
+      "30-39": 0.5333,
+      "40-49": 0.625,
+      "50+": 0.5
+     },
+     "tpr_gap": 0.0457,
+     "fpr_gap": 0.2614
+    },
+    "FOREIGN_WORKER": {
+     "selection_rate": {
+      "Evet": 0.6911
+     },
+     "air": {
+      "Evet": 1.0
+     },
+     "min_air": 1.0,
+     "passes_four_fifths": true,
+     "group_size": {
+      "Evet": 191
+     },
+     "tpr_good_approved": {
+      "Evet": 0.8015
+     },
+     "fpr_bad_approved": {
+      "Evet": 0.45
+     },
+     "tpr_gap": 0.0,
+     "fpr_gap": 0.0
+    }
+   },
+   "logistic": {
+    "SEX": {
+     "selection_rate": {
+      "Erkek": 0.7172,
+      "Kadın": 0.6545
+     },
+     "air": {
+      "Erkek": 1.0,
+      "Kadın": 0.9126
+     },
+     "min_air": 0.9126,
+     "passes_four_fifths": true,
+     "group_size": {
+      "Erkek": 145,
+      "Kadın": 55
+     },
+     "tpr_good_approved": {
+      "Erkek": 0.8286,
+      "Kadın": 0.7429
+     },
+     "fpr_bad_approved": {
+      "Erkek": 0.425,
+      "Kadın": 0.5
+     },
+     "tpr_gap": 0.0857,
+     "fpr_gap": 0.075
+    },
+    "AGE_BAND": {
+     "selection_rate": {
+      "21-29": 0.5897,
+      "30-39": 0.7273,
+      "40-49": 0.8235,
+      "50+": 0.8182
+     },
+     "air": {
+      "21-29": 0.7161,
+      "30-39": 0.8832,
+      "40-49": 1.0,
+      "50+": 0.9936
+     },
+     "min_air": 0.7161,
+     "passes_four_fifths": false,
+     "group_size": {
+      "21-29": 78,
+      "30-39": 66,
+      "40-49": 34,
+      "50+": 22
+     },
+     "tpr_good_approved": {
+      "21-29": 0.7556,
+      "30-39": 0.8039,
+      "40-49": 0.8462,
+      "50+": 0.8889
+     },
+     "fpr_bad_approved": {
+      "21-29": 0.3636,
+      "30-39": 0.4667,
+      "40-49": 0.75,
+      "50+": 0.5
+     },
+     "tpr_gap": 0.1333,
+     "fpr_gap": 0.3864
+    },
+    "FOREIGN_WORKER": {
+     "selection_rate": {
+      "Evet": 0.6859
+     },
+     "air": {
+      "Evet": 1.0
+     },
+     "min_air": 1.0,
+     "passes_four_fifths": true,
+     "group_size": {
+      "Evet": 191
+     },
+     "tpr_good_approved": {
+      "Evet": 0.7939
+     },
+     "fpr_bad_approved": {
+      "Evet": 0.45
+     },
+     "tpr_gap": 0.0,
+     "fpr_gap": 0.0
+    }
+   },
+   "scorecard": {
+    "SEX": {
+     "selection_rate": {
+      "Erkek": 0.7241,
+      "Kadın": 0.6364
+     },
+     "air": {
+      "Erkek": 1.0,
+      "Kadın": 0.8789
+     },
+     "min_air": 0.8789,
+     "passes_four_fifths": true,
+     "group_size": {
+      "Erkek": 145,
+      "Kadın": 55
+     },
+     "tpr_good_approved": {
+      "Erkek": 0.8476,
+      "Kadın": 0.7429
+     },
+     "fpr_bad_approved": {
+      "Erkek": 0.4,
+      "Kadın": 0.45
+     },
+     "tpr_gap": 0.1047,
+     "fpr_gap": 0.05
+    },
+    "AGE_BAND": {
+     "selection_rate": {
+      "21-29": 0.6026,
+      "30-39": 0.7121,
+      "40-49": 0.7941,
+      "50+": 0.8636
+     },
+     "air": {
+      "21-29": 0.6978,
+      "30-39": 0.8246,
+      "40-49": 0.9195,
+      "50+": 1.0
+     },
+     "min_air": 0.6978,
+     "passes_four_fifths": false,
+     "group_size": {
+      "21-29": 78,
+      "30-39": 66,
+      "40-49": 34,
+      "50+": 22
+     },
+     "tpr_good_approved": {
+      "21-29": 0.8222,
+      "30-39": 0.7843,
+      "40-49": 0.8077,
+      "50+": 0.9444
+     },
+     "fpr_bad_approved": {
+      "21-29": 0.303,
+      "30-39": 0.4667,
+      "40-49": 0.75,
+      "50+": 0.5
+     },
+     "tpr_gap": 0.1601,
+     "fpr_gap": 0.447
+    },
+    "FOREIGN_WORKER": {
+     "selection_rate": {
+      "Evet": 0.6911
+     },
+     "air": {
+      "Evet": 1.0
+     },
+     "min_air": 1.0,
+     "passes_four_fifths": true,
+     "group_size": {
+      "Evet": 191
+     },
+     "tpr_good_approved": {
+      "Evet": 0.8168
+     },
+     "fpr_bad_approved": {
+      "Evet": 0.4167
+     },
+     "tpr_gap": 0.0,
+     "fpr_gap": 0.0
+    }
+   }
+  }
+ },
+ "lda": {
+  "approval_rate": 0.7,
+  "proxy_strength": {
+   "residence_since": 0.7026,
+   "employment_since_A75": 0.6427,
+   "property_A124": 0.6082,
+   "housing_A153": 0.6055,
+   "credit_history_A32": 0.6015,
+   "telephone_A191": 0.6011,
+   "telephone_A192": 0.6011,
+   "housing_A151": 0.5959
+  },
+  "rows": [
+   {
+    "model": "Champion: WoE skor kartı (optbinning + lojistik)",
+    "auc": 0.7788,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.1786,
+    "min_air": 0.6978,
+    "selection_rate": {
+     "21-29": 0.6026,
+     "30-39": 0.7121,
+     "40-49": 0.7941,
+     "50+": 0.8636
+    },
+    "tpr_gap": 0.1601,
+    "fpr_gap": 0.447,
+    "passes_four_fifths": false,
+    "kind": "champion"
+   },
+   {
+    "model": "Kısıtsız lojistik",
+    "auc": 0.7581,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.1929,
+    "min_air": 0.7161,
+    "selection_rate": {
+     "21-29": 0.5897,
+     "30-39": 0.7273,
+     "40-49": 0.8235,
+     "50+": 0.8182
+    },
+    "tpr_gap": 0.1333,
+    "fpr_gap": 0.3864,
+    "passes_four_fifths": false,
+    "kind": "baseline"
+   },
+   {
+    "model": "Proxy zayıflatılmış lojistik",
+    "auc": 0.7583,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.1857,
+    "min_air": 0.7318,
+    "selection_rate": {
+     "21-29": 0.6026,
+     "30-39": 0.7121,
+     "40-49": 0.8235,
+     "50+": 0.8182
+    },
+    "tpr_gap": 0.1111,
+    "fpr_gap": 0.3864,
+    "passes_four_fifths": false,
+    "kind": "proxy_removal",
+    "dropped_features": [
+     "residence_since",
+     "employment_since_A75",
+     "property_A124",
+     "housing_A153",
+     "credit_history_A32",
+     "telephone_A191",
+     "telephone_A192"
+    ]
+   },
+   {
+    "model": "ExponentiatedGradient (demografik eşitlik, ε=0.05)",
+    "auc": 0.759,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.1929,
+    "min_air": 0.7161,
+    "selection_rate": {
+     "21-29": 0.5897,
+     "30-39": 0.7273,
+     "40-49": 0.8235,
+     "50+": 0.8182
+    },
+    "tpr_gap": 0.1333,
+    "fpr_gap": 0.3864,
+    "passes_four_fifths": false,
+    "kind": "exponentiated_gradient",
+    "epsilon": 0.05
+   },
+   {
+    "model": "ExponentiatedGradient (demografik eşitlik, ε=0.02)",
+    "auc": 0.76,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.1929,
+    "min_air": 0.7274,
+    "selection_rate": {
+     "21-29": 0.6282,
+     "30-39": 0.697,
+     "40-49": 0.7647,
+     "50+": 0.8636
+    },
+    "tpr_gap": 0.1752,
+    "fpr_gap": 0.4167,
+    "passes_four_fifths": false,
+    "kind": "exponentiated_gradient",
+    "epsilon": 0.02
+   },
+   {
+    "model": "Grup bazlı eşik (demografik eşitlik, ThresholdOptimizer yaklaşımı)",
+    "auc": 0.7788,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.2071,
+    "min_air": 0.9659,
+    "selection_rate": {
+     "21-29": 0.7051,
+     "30-39": 0.697,
+     "40-49": 0.7059,
+     "50+": 0.6818
+    },
+    "tpr_gap": 0.1136,
+    "fpr_gap": 0.375,
+    "passes_four_fifths": true,
+    "kind": "group_threshold",
+    "legal_caveat": "Grup bazlı eşik, korunan özelliğin karar anında kullanılması demektir; ayrımcılık yasağı (Anayasa m.10, 6701 sayılı Kanun, AB/ABD mevzuatı) altında doğrudan ayrımcılık sayılabilir. Yalnızca ödünleşimi göstermek için raporlanır, üretimde kullanılmaz."
+   }
+  ],
+  "reference_rows": [
+   {
+    "model": "fairlearn ThresholdOptimizer (kendi çalışma noktası)",
+    "auc": 0.7581,
+    "approval_rate": 0.595,
+    "bad_rate_approved": 0.1597,
+    "min_air": 0.7279,
+    "selection_rate": {
+     "21-29": 0.5641,
+     "30-39": 0.6212,
+     "40-49": 0.5294,
+     "50+": 0.7273
+    },
+    "tpr_gap": 0.2948,
+    "fpr_gap": 0.25,
+    "passes_four_fifths": false,
+    "kind": "threshold_optimizer_reference",
+    "legal_caveat": "Grup bazlı eşik, korunan özelliğin karar anında kullanılması demektir; ayrımcılık yasağı (Anayasa m.10, 6701 sayılı Kanun, AB/ABD mevzuatı) altında doğrudan ayrımcılık sayılabilir. Yalnızca ödünleşimi göstermek için raporlanır, üretimde kullanılmaz.",
+    "comparable": false
+   }
+  ],
+  "attribute": "AGE_BAND",
+  "recommendation": {
+   "anchor": "Champion: WoE skor kartı (optbinning + lojistik)",
+   "max_auc_loss": 0.01,
+   "recommended": null,
+   "kind": null,
+   "reason": "İzin verilen AUC kaybı (0.010) içinde Champion: WoE skor kartı (optbinning + lojistik) modelinden daha yüksek AIR veren alternatif yok."
+  }
+ },
+ "shap_top_features": [
+  {
+   "feature": "checking_status_A14",
+   "mean_abs_shap": 0.6715
+  },
+  {
+   "feature": "duration_months",
+   "mean_abs_shap": 0.509
+  },
+  {
+   "feature": "credit_history_A34",
+   "mean_abs_shap": 0.3045
+  },
+  {
+   "feature": "credit_amount",
+   "mean_abs_shap": 0.2702
+  },
+  {
+   "feature": "purpose_A40",
+   "mean_abs_shap": 0.2358
+  },
+  {
+   "feature": "checking_status_A11",
+   "mean_abs_shap": 0.1834
+  },
+  {
+   "feature": "employment_since_A73",
+   "mean_abs_shap": 0.1522
+  },
+  {
+   "feature": "employment_since_A74",
+   "mean_abs_shap": 0.1361
+  },
+  {
+   "feature": "savings_status_A65",
+   "mean_abs_shap": 0.1296
+  },
+  {
+   "feature": "property_A121",
+   "mean_abs_shap": 0.1173
+  }
+ ],
+ "source": "full"
+}
