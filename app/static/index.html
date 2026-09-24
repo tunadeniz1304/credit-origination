@@ -33,11 +33,23 @@
       <p class="error" x-text="error"></p>
       <button class="primary" type="submit">Giriş yap</button>
     </form>
-    <h3>Demo kullanıcılar (parola: Demo123!)</h3>
-    <div class="row">
-      <template x-for="d in demoUsers" :key="d[0]">
-        <button @click="demoLogin(d[0])" x-text="d[1]"></button>
-      </template>
+    <div x-show="authConfig.demo_mode">
+      <h3>Demo kullanıcılar (parola: Demo123!)</h3>
+      <div class="row">
+        <template x-for="d in demoUsers" :key="d[0]">
+          <button type="button" @click="demoLogin(d[0])" x-text="d[1]"></button>
+        </template>
+      </div>
+    </div>
+    <div x-show="authConfig.registration_enabled">
+      <h3>Hesabınız yok mu?</h3>
+      <form @submit.prevent="register()">
+        <label for="reg-user">Kullanıcı adı</label><input id="reg-user" x-model="registerForm.username" autocomplete="username" minlength="3" required>
+        <label for="reg-name">Ad Soyad</label><input id="reg-name" x-model="registerForm.full_name" autocomplete="name" minlength="3" required>
+        <label for="reg-pass">Parola (en az 6 karakter)</label><input id="reg-pass" type="password" x-model="registerForm.password" autocomplete="new-password" minlength="6" required>
+        <div x-show="authConfig.captcha"><label for="reg-captcha">Güvenlik doğrulama kodu</label><input id="reg-captcha" x-model="registerForm.captcha_token" autocomplete="off"></div>
+        <button type="submit">Başvuran olarak kaydol</button>
+      </form>
     </div>
   </section>
 

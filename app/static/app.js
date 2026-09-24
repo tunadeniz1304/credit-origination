@@ -17,7 +17,8 @@ document.addEventListener("alpine:init", () => { window.Alpine.data("platform", 
 
 function platform() {
   return {
-    user: null, token: null, view: "portal", theme: "light", llm: null, error: "", toast: "", busy: false,
+    user: null, view: "portal", authConfig: { demo_mode: false, registration_enabled: false, captcha: false },
+    registerForm: { username: "", full_name: "", password: "", captcha_token: "" }, theme: "light", llm: null, error: "", toast: "", busy: false,
     loginForm: { username: "", password: "" },
     demoUsers: [["basvuran", "Başvuran"], ["uzman", "Uzman"], ["kidemli", "Kıdemli uzman"], ["komite", "Komite"], ["modelyon", "Model yöneticisi"], ["admin", "Admin"]],
     demoTckn: { temiz: "68846908942", ince_dosya: "29551411288", gri: "24377158546", gecikmeli: "21134086364" },
@@ -46,12 +47,20 @@ function platform() {
     firedRules() { return ((this.staff && this.staff.decision && this.staff.decision.rule_results) || []).filter((x) => x.fired); },
     memoSteps() { return ((this.staff && this.staff.memo && this.staff.memo.steps) || []).map((s) => s.tool).join(" → "); },
     notify(msg) { this.toast = msg; setTimeout(() => { this.toast = ""; }, 4000); },
+    csrfToken() {
+      // The session itself lives in an HttpOnly cookie the page cannot read; only
+      // the CSRF double-submit value is readable and echoed on unsafe requests.
+      const hit = document.cookie.split("; ").find((c) => c.startsWith("anil2_csrf="));
+      return hit ? decodeURIComponent(hit.slice("anil2_csrf=".length)) : "";
+    },
     async api(path, opts = {}) {
+      const method = opts.method || "GET";
       const headers = Object.assign({}, opts.headers || {});
-      if (this.token) headers.Authorization = "Bearer " + this.token;
-      if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(opts.json); }
-      const res = await fetch(path, { method: opts.method || "GET", headers, body: opts.body });
-      if (res.status === 401 && this.user) { this.logout(); throw new Error("Oturum süresi doldu"); }
+      if (method !== "GET" && method !== "HEAD") headers["X-CSRF-Token"] = this.csrfToken();
+      let body = opts.body;
+      if (opts.json !== undefined) { headers["Content-Type"] = "application/json"; body = JSON.stringify(opts.json); }
+      const res = await fetch(path, { method, headers, body, credentials: "same-origin" });
+      if (res.status === 401 && this.user && !opts.quiet401) { this.clearSession(); throw new Error("Oturum süresi doldu, lütfen yeniden giriş yapın."); }
       const data = res.headers.get("content-type")?.includes("json") ? await res.json() : await res.text();
       if (!res.ok) {
         const detail = data && data.detail;
@@ -61,7 +70,7 @@ function platform() {
     },
     async download(path, name) {
       try {
-        const res = await fetch(path, { headers: { Authorization: "Bearer " + this.token } });
+        const res = await fetch(path, { credentials: "same-origin" });
         if (!res.ok) throw new Error("dosya alınamadı");
         const url = URL.createObjectURL(await res.blob());
         const a = document.createElement("a"); a.href = url; a.download = name; a.click();
@@ -72,23 +81,42 @@ function platform() {
     // ------------------------------------------------------------ session
     async init() {
       try { this.theme = localStorage.getItem("anil2-theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"); } catch (e) { /* ignore */ }
+      this.api("/api/v1/auth/config").then((c) => { this.authConfig = c; }).catch(() => {});
+      if (!this.csrfToken()) return; // no session cookie pair: show the login form
       try {
-        const saved = sessionStorage.getItem("anil2-session");
-        if (saved) { const s = JSON.parse(saved); this.token = s.token; this.user = s.user; await this.afterLogin(); }
-      } catch (e) { this.logout(); }
+        const me = await this.api("/api/v1/auth/me", { quiet401: true });
+        this.user = { full_name: me.full_name, role: me.role, role_label: me.role_label, username: me.username };
+        await this.afterLogin();
+      } catch (e) { this.user = null; }
     },
     toggleTheme() { this.theme = this.theme === "dark" ? "light" : "dark"; try { localStorage.setItem("anil2-theme", this.theme); } catch (e) { /* ignore */ } },
     async login() {
       this.error = "";
       try {
         const r = await this.api("/api/v1/auth/login", { method: "POST", json: this.loginForm });
-        this.token = r.access_token; this.user = { full_name: r.full_name, role: r.role, role_label: r.role_label, username: r.username };
-        sessionStorage.setItem("anil2-session", JSON.stringify({ token: this.token, user: this.user }));
+        // r.access_token is for API clients; the browser relies on the HttpOnly cookie only.
+        this.user = { full_name: r.full_name, role: r.role, role_label: r.role_label, username: r.username };
+        this.loginForm = { username: "", password: "" };
+        await this.afterLogin();
+      } catch (e) { this.error = e.message; }
+    },
+    async register() {
+      this.error = "";
+      const body = { username: this.registerForm.username, full_name: this.registerForm.full_name, password: this.registerForm.password };
+      if (this.authConfig.captcha) body.captcha_token = this.registerForm.captcha_token;
+      try {
+        const r = await this.api("/api/v1/auth/register", { method: "POST", json: body });
+        this.user = { full_name: r.full_name, role: r.role, role_label: r.role_label, username: r.username };
+        this.registerForm = { username: "", full_name: "", password: "", captcha_token: "" };
         await this.afterLogin();
       } catch (e) { this.error = e.message; }
     },
     demoLogin(username) { this.loginForm = { username, password: "Demo123!" }; return this.login(); },
-    logout() { this.user = null; this.token = null; this.current = null; this.staff = null; sessionStorage.removeItem("anil2-session"); },
+    clearSession() { this.user = null; this.current = null; this.staff = null; this.applications = []; this.queue = []; this.reviews = []; this.dash = {}; },
+    async logout() {
+      try { await this.api("/api/v1/auth/logout", { method: "POST" }); } catch (e) { /* cookies may already be gone */ }
+      this.clearSession();
+    },
     views() {
       if (!this.user) return [];
       const r = this.user.role;
