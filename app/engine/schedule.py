@@ -43,6 +43,18 @@ def _money(value: Decimal) -> float:
     return float(value.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
+def monthly_instalment(
+    principal: float, term_months: int, annual_rate: float = DEFAULT_ANNUAL_RATE
+) -> float:
+    """Annuity instalment for ``principal`` over ``term_months`` (float helper)."""
+    months = max(1, term_months)
+    i = annual_rate / MONTHS_PER_YEAR
+    if i == 0:
+        return principal / months
+    factor = (1 + i) ** months
+    return principal * i * factor / (factor - 1)
+
+
 def build_schedule(
     application_id: str,
     principal: float,

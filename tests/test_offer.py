@@ -31,7 +31,9 @@ def _approved_decision():
         requested_amount=100_000.0,
         requested_term_months=36,
     )
-    return CreditCommitteeAgent().decide(application, financial)
+    import asyncio
+
+    return asyncio.run(CreditCommitteeAgent().decide(application, financial, "APP-X"))
 
 
 def test_build_offer_for_approved_decision():
@@ -40,7 +42,7 @@ def test_build_offer_for_approved_decision():
     scorecard = build_scorecard("APP-X", decision.factors)
     offer = build_offer("APP-X", decision, scorecard)
     assert offer.status == ApplicationStatus.APPROVED
-    assert offer.proposed_amount == 1_800_000.0
+    assert offer.proposed_amount == 100_000.0
     assert offer.proposed_term_months == 36
     assert offer.instalment > 0
     assert offer.total_payment > offer.proposed_amount

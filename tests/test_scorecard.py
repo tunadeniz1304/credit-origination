@@ -21,7 +21,7 @@ def _factor(
 def _all_pass() -> list[CommitteeFactor]:
     return [
         _factor("Kredi Skoru (KKB)", 1200, 1100, ">=", True),
-        _factor("Borç/Gelir Oranı", 0.2, 0.6, "<=", True),
+        _factor("Borç Servis Oranı", 0.2, 0.6, "<=", True),
         _factor("Kredi/Gelir Çarpanı", 3.0, 6.0, "<=", True),
         _factor("Vade", 24, 60, "<=", True),
     ]
@@ -30,7 +30,7 @@ def _all_pass() -> list[CommitteeFactor]:
 def _all_fail() -> list[CommitteeFactor]:
     return [
         _factor("Kredi Skoru (KKB)", 0, 1100, ">=", False),
-        _factor("Borç/Gelir Oranı", 2.0, 0.6, "<=", False),
+        _factor("Borç Servis Oranı", 2.0, 0.6, "<=", False),
         _factor("Kredi/Gelir Çarpanı", 50.0, 6.0, "<=", False),
         _factor("Vade", 500, 60, "<=", False),
     ]

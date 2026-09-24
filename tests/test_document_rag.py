@@ -80,5 +80,5 @@ def test_document_control_drafts_turkish_request():
     assert missing_codes == {"EMPLOYMENT", "ADDRESS", "BANK_STATEMENT"}
     draft = result.request_draft
     assert "Ayşe Demir" in draft
-    assert "Son 3 Ay Banka Hesap Ekstresi" in draft  # Turkish description surfaced
+    assert "Son 3 Ay Banka Hesap Özeti" in draft  # Turkish description surfaced
     assert "Kredi Operasyon Birimi" in draft  # template footer

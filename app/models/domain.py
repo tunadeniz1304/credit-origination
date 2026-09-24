@@ -119,9 +119,14 @@ class CommitteeDecision(BaseModel):
     status: ApplicationStatus
     approved: bool
     factors: list[CommitteeFactor] = Field(default_factory=list)
-    rationale: str = ""  # Turkish committee report
-    suggested_amount: float
+    rationale: str = ""  # Turkish committee summary (cited)
+    applicant_letter: str = ""  # plain-Turkish letter to the applicant
+    llm_mode: str = "demo"  # live | demo | fallback
+    llm_error_kind: str | None = None
+    debt_service_ratio: float | None = None
+    suggested_amount: float  # approved amount (0 when rejected)
     suggested_term_months: int
+    counterfactual_amount: float | None = None  # only for rejections
 
 
 class PipelineResult(BaseModel):

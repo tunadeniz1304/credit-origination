@@ -1,18 +1,19 @@
-"""Kredi Tahsis Komitesi: deterministic rule evaluation + Turkish rationale.
+"""Transparent committee factor table + narrated rationale.
 
-CreditCommitteeAgent evaluates the applicant's aggregated financial data
-against the committee thresholds from ``config/config.json``. The verdict is
-fully deterministic (all four factors must pass); the accompanying rationale
-report is produced by a two-step Turkish prompt chain over the active LLM
-provider, so the business decision never depends on model randomness while
-the narrative stays explainable and BDDK-report-shaped.
+The committee factors (bureau score, debt service ratio, loan-to-income and
+term) are the human-readable threshold view of an application. The verdict is
+deterministic; the rationale is produced by :class:`~app.agents.narrator.Narrator`
+(live LLM chain or the deterministic Turkish templates) and never influences
+the outcome.
 """
 
 from __future__ import annotations
 
 from app.agents.base import AgentBase
-from app.agents.llm import LLMProvider, get_provider
+from app.agents.llm_service import LLMService
+from app.agents.narrator import Fact, NarrativeContext, Narrator, ReasonText
 from app.core.config import Settings, get_settings
+from app.engine.schedule import build_schedule, monthly_instalment
 from app.models import (
     AggregatedFinancialData,
     ApplicationStatus,
@@ -21,57 +22,74 @@ from app.models import (
     LoanApplication,
 )
 
-_FACTOR_KBB = "Kredi Skoru (KKB)"
-_FACTOR_DTI = "Borç/Gelir Oranı"
-_FACTOR_LTI = "Kredi/Gelir Çarpanı"
-_FACTOR_TERM = "Vade"
+FACTOR_KBB = "Kredi Skoru (KKB)"
+FACTOR_DSR = "Borç Servis Oranı"
+FACTOR_LTI = "Kredi/Gelir Çarpanı"
+FACTOR_TERM = "Vade"
+# Existing bureau balances are assumed to amortise over this many months when
+# the bureau does not report instalments explicitly.
+EXISTING_DEBT_AMORTISATION_MONTHS = 36
+
+
+def debt_service_ratio(
+    monthly_income: float,
+    existing_monthly_debt_service: float,
+    new_instalment: float,
+) -> float:
+    """DSR = (existing monthly instalments + new instalment) / monthly net income."""
+    if monthly_income <= 0:
+        return float("inf")
+    return (existing_monthly_debt_service + new_instalment) / monthly_income
 
 
 class CreditCommitteeAgent(AgentBase):
-    """Deterministic credit committee: rule gates + prompt-chained rationale."""
+    """Deterministic threshold gates + narrated (never deciding) rationale."""
 
-    def __init__(self, settings: Settings | None = None) -> None:
+    def __init__(self, settings: Settings | None = None, llm: LLMService | None = None) -> None:
         super().__init__("committee")
-        self._settings = settings
+        self._settings = settings or get_settings()
+        self._llm = llm
 
-    def decide(
-        self,
-        application: LoanApplication,
-        financial: AggregatedFinancialData,
-        llm: LLMProvider | None = None,
-    ) -> CommitteeDecision:
-        """Evaluate the four committee gates and build the Turkish report."""
+    def evaluate(
+        self, application: LoanApplication, financial: AggregatedFinancialData
+    ) -> tuple[list[CommitteeFactor], float, float]:
+        """Return (factors, dsr, max approvable amount)."""
         committee = self.rules.committee
-        provider = llm or get_provider(self._settings or get_settings())
-
+        income = financial.monthly_income
+        term = min(application.requested_term_months, committee.max_term_months)
+        existing = monthly_instalment(financial.total_debt, EXISTING_DEBT_AMORTISATION_MONTHS)
+        new_instalment = monthly_instalment(application.requested_amount, term)
+        dsr = debt_service_ratio(income, existing, new_instalment)
+        lti = application.requested_amount / income
+        capacity = max(0.0, committee.max_debt_service_ratio * income - existing)
+        per_unit = monthly_instalment(1.0, term)
+        max_amount = min(capacity / per_unit, income * committee.max_loan_to_income_multiplier)
         factors = [
             CommitteeFactor(
-                name=_FACTOR_KBB,
+                name=FACTOR_KBB,
                 value=float(financial.kbb_score),
-                threshold=float(max(0, committee.min_kbb_score)),
+                threshold=float(committee.min_kbb_score),
                 operator=">=",
                 passed=financial.kbb_score >= committee.min_kbb_score,
                 unit=" puan",
             ),
             CommitteeFactor(
-                name=_FACTOR_DTI,
-                value=financial.total_debt / financial.monthly_income,
-                threshold=committee.max_debt_to_income_ratio,
+                name=FACTOR_DSR,
+                value=round(dsr, 4),
+                threshold=committee.max_debt_service_ratio,
                 operator="<=",
-                passed=financial.total_debt / financial.monthly_income
-                <= committee.max_debt_to_income_ratio,
+                passed=dsr <= committee.max_debt_service_ratio,
             ),
             CommitteeFactor(
-                name=_FACTOR_LTI,
-                value=application.requested_amount / financial.monthly_income,
+                name=FACTOR_LTI,
+                value=round(lti, 4),
                 threshold=committee.max_loan_to_income_multiplier,
                 operator="<=",
-                passed=application.requested_amount / financial.monthly_income
-                <= committee.max_loan_to_income_multiplier,
+                passed=lti <= committee.max_loan_to_income_multiplier,
                 unit="x",
             ),
             CommitteeFactor(
-                name=_FACTOR_TERM,
+                name=FACTOR_TERM,
                 value=float(application.requested_term_months),
                 threshold=float(committee.max_term_months),
                 operator="<=",
@@ -79,91 +97,139 @@ class CreditCommitteeAgent(AgentBase):
                 unit=" ay",
             ),
         ]
+        return factors, dsr, round(max_amount, 2)
 
-        all_passed = all(factor.passed for factor in factors)
-        status = ApplicationStatus.APPROVED if all_passed else ApplicationStatus.REJECTED
-        suggested_amount = financial.monthly_income * committee.max_loan_to_income_multiplier
-        suggested_term = min(
-            application.requested_term_months,
-            committee.max_term_months,
+    async def decide(
+        self,
+        application: LoanApplication,
+        financial: AggregatedFinancialData,
+        application_id: str = "",
+    ) -> CommitteeDecision:
+        factors, dsr, max_amount = self.evaluate(application, financial)
+        approved = all(f.passed for f in factors)
+        status = ApplicationStatus.APPROVED if approved else ApplicationStatus.REJECTED
+        term = min(application.requested_term_months, self.rules.committee.max_term_months)
+        # Approved: never more than requested. Rejected: the capacity figure is
+        # only a counterfactual hint, never an approved amount.
+        suggested = min(application.requested_amount, max_amount) if approved else 0.0
+        counterfactual = round(max(0.0, max_amount), -3) if not approved else None
+
+        ctx = self._context(
+            application,
+            financial,
+            application_id,
+            status,
+            dsr,
+            factors,
+            suggested,
+            term,
+            counterfactual,
         )
-
-        rationale = self._build_rationale(
-            provider=provider,
-            application=application,
-            financial=financial,
-            factors=factors,
-            status=status,
-        )
-
+        bundle = await Narrator(self._llm or LLMService(self._settings)).run_chain(ctx)
         self.logger.info(
-            "Committee decision for %s: %s (all_passed=%s)",
-            application.applicant.identity_no,
+            "Committee decision for %s: %s (llm=%s)",
+            application_id,
             status.value,
-            all_passed,
+            bundle.overall_mode,
         )
         return CommitteeDecision(
             status=status,
-            approved=all_passed,
+            approved=approved,
             factors=factors,
-            rationale=rationale,
-            suggested_amount=suggested_amount,
-            suggested_term_months=suggested_term,
+            rationale=bundle.committee_summary,
+            applicant_letter=bundle.applicant_letter,
+            llm_mode=bundle.overall_mode,
+            llm_error_kind=next(iter(bundle.errors.values()), None),
+            debt_service_ratio=round(dsr, 4),
+            suggested_amount=suggested,
+            suggested_term_months=term,
+            counterfactual_amount=counterfactual,
         )
 
-    def _build_rationale(
+    def _context(
         self,
-        provider: LLMProvider,
         application: LoanApplication,
         financial: AggregatedFinancialData,
-        factors: list[CommitteeFactor],
+        application_id: str,
         status: ApplicationStatus,
-    ) -> str:
-        """Two-step Turkish prompt chain; both steps overridable by the provider."""
-        factor_lines = "\n".join(f"- {factor.summary}" for factor in factors)
-        applicant = application.applicant
-
-        step_one = provider.complete(
-            system=(
-                "Sen Türkiye'de faaliyet gösteren bir bankada Kredi Tahsis Komitesi "
-                "raporlama uzmanısın. Raporu resmi, nesnel ve gerekçeli şekilde Türkçe yaz."
+        dsr: float,
+        factors: list[CommitteeFactor],
+        suggested: float,
+        term: int,
+        counterfactual: float | None,
+    ) -> NarrativeContext:
+        committee = self.rules.committee
+        facts = [
+            Fact(
+                id="f:income.monthly",
+                label="Aylık net gelir",
+                value=financial.monthly_income,
+                unit="TL",
             ),
-            user=(
-                "Aşağıdaki kredi başvurusu ve KKB/e-Devlet verileri doğrultusunda "
-                "derin ve gerekçeli bir değerlendirme raporu yaz.\n\n"
-                f"Başvuru Sahibi: {applicant.name} (T.C. No: {applicant.identity_no})\n"
-                f"Aylık Gelir: {financial.monthly_income:,.2f} TRY\n"
-                f"Talep Edilen Kredi: {application.requested_amount:,.2f} {application.currency}\n"
-                f"Vade: {application.requested_term_months} ay\n"
-                f"KKB Skoru: {financial.kbb_score} ({financial.risk_class})\n"
-                f"Toplam Borç: {financial.total_debt:,.2f} TRY\n"
-                f"İşveren: {financial.employer} ({financial.employment_years} yıl, "
-                f"doğrulanmış={financial.employment_verified})\n\n"
-                "Komite Eşik Değerlendirmeleri:\n"
-                f"{factor_lines}\n\n"
-                "Rapor; başvuru sahibinin ödeme gücü, kaldıraç ve vade uygunluğunu tartışsın, "
-                "her eşiği tek tek yorumlasın ve nihai öneriyi gerekçeleriyle desteklesin."
+            Fact(
+                id="f:loan.amount",
+                label="Talep edilen tutar",
+                value=application.requested_amount,
+                unit="TL",
             ),
-            temperature=0.0,
-        ).strip()
-
-        step_two = provider.complete(
-            system=(
-                "Sen Türkiye'de bir bankanın Kredi Tahsis Komitesi sekreterisin. "
-                "Öneriyi kısa, resmi ve öz bir biçimde Türkçe yaz."
+            Fact(
+                id="f:loan.term", label="Vade", value=application.requested_term_months, unit="ay"
             ),
-            user=(
-                f"Komite kararı: {status.value}.\n"
-                f"Başvuru Sahibi: {applicant.name} (T.C. No: {applicant.identity_no}).\n"
-                "Komite önerisini iki ila üç cümleyle özetle ve gerekçeyi belirt."
+            Fact(id="f:dsr", label="Borç servis oranı", value=round(dsr, 4), unit="%"),
+            Fact(
+                id="f:policy.max_dsr",
+                label="DSR sınırı",
+                value=committee.max_debt_service_ratio,
+                unit="%",
             ),
-            temperature=0.0,
-        ).strip()
-
-        if not step_one and not step_two:
-            # Absolute fallback so rationale is never empty even with a stubbed LLM.
-            step_two = (
-                f"Komite değerlendirmesi tamamlandı. "
-                f"{applicant.name} başvurusu için nihai karar: {status.value}."
+            Fact(
+                id="f:bureau.score", label="KKB kredi notu", value=financial.kbb_score, unit="puan"
+            ),
+            Fact(
+                id="f:employment.months",
+                label="Çalışma süresi",
+                value=financial.employment_years * 12,
+                unit="ay",
+            ),
+        ]
+        if status == ApplicationStatus.APPROVED:
+            schedule = build_schedule(application_id, principal=suggested, term_months=term)
+            facts += [
+                Fact(id="f:offer.amount", label="Teklif tutarı", value=suggested, unit="TL"),
+                Fact(id="f:offer.term", label="Teklif vadesi", value=term, unit="ay"),
+                Fact(
+                    id="f:offer.instalment",
+                    label="Aylık taksit",
+                    value=schedule.instalment,
+                    unit="TL",
+                ),
+                Fact(
+                    id="f:pricing.annual_rate",
+                    label="Yıllık faiz",
+                    value=schedule.annual_rate,
+                    unit="%",
+                ),
+            ]
+        reasons = [
+            ReasonText(code=f"K{i + 1:02d}", text=f"{f.name} eşiği karşılanmadı: {f.summary}.")
+            for i, f in enumerate(factors)
+            if not f.passed
+        ]
+        counterfactuals = []
+        if counterfactual:
+            facts.append(
+                Fact(id="f:limit.max_amount", label="Azami tutar", value=counterfactual, unit="TL")
             )
-        return f"{step_one}\n\nKurul Kararı: {step_two}" if step_one else step_two
+            counterfactuals.append(
+                f"Talep tutarını {Fact(id='x', label='', value=counterfactual, unit='TL').display} "
+                "veya altına düşürmeniz borç servis oranınızı politika sınırına çeker."
+            )
+        return NarrativeContext(
+            application_id=application_id or "BASVURU",
+            applicant_name=application.applicant.name,
+            outcome="OTOMATIK_ONAY" if status == ApplicationStatus.APPROVED else "OTOMATIK_RET",
+            facts=facts,
+            reason_codes=reasons,
+            counterfactuals=counterfactuals,
+            redactor_fields={"identity_no": application.applicant.identity_no},
+        )

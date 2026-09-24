@@ -58,44 +58,51 @@ def _application(
     )
 
 
+def _decide(application, financial):
+    import asyncio
+
+    return asyncio.run(CreditCommitteeAgent().decide(application, financial, "APP-TEST0001"))
+
+
 def test_committee_approves_when_all_factors_pass():
-    decision = CreditCommitteeAgent().decide(
-        _application(300_000, 100_000, 36), _financial("12345678901")
-    )
+    decision = _decide(_application(300_000, 100_000, 36), _financial("12345678901"))
     assert isinstance(decision, CommitteeDecision)
     assert decision.status == ApplicationStatus.APPROVED
     assert decision.approved is True
     assert len(decision.factors) == 4
     assert all(factor.passed for factor in decision.factors)
-    assert decision.suggested_amount == 300_000 * 6
+    # Approved amount never exceeds the request (bug #5 regression).
+    assert decision.suggested_amount == 100_000
     assert decision.suggested_term_months == 36
-    assert "Kurul Kararı" in decision.rationale
+    assert "KREDİ KOMİTESİ ÖZETİ" in decision.rationale
+    assert "[mock-llm]" not in decision.rationale + decision.applicant_letter
+    assert decision.llm_mode == "demo"
 
 
 def test_committee_rejects_and_flags_primary_failing_factor():
-    decision = CreditCommitteeAgent().decide(
-        _application(30_000, 50_000, 24), _financial("34567890123")
-    )
+    decision = _decide(_application(30_000, 50_000, 24), _financial("34567890123"))
     assert decision.status == ApplicationStatus.REJECTED
     assert decision.approved is False
     kbb = next(f for f in decision.factors if f.name == "Kredi Skoru (KKB)")
     assert kbb.passed is False
     assert kbb.value == 619
     assert kbb.operator == ">="
-    dti = next(f for f in decision.factors if f.name == "Borç/Gelir Oranı")
-    assert dti.passed is False  # 176116 / 30000 = 5.87 > 0.5
+    # DSR is instalments / income (bug #4): existing debt amortised + new instalment.
+    dsr = next(f for f in decision.factors if f.name == "Borç Servis Oranı")
+    assert 0.3 < dsr.value < 0.4
+    assert decision.suggested_amount == 0.0  # rejected: no approved amount
+    assert "itiraz" in decision.applicant_letter.lower()
     assert decision.rationale
 
 
 def test_committee_term_over_max_rejects():
-    decision = CreditCommitteeAgent().decide(
-        _application(100_000, 40_000, 72), _financial("12345678901")
-    )
+    decision = _decide(_application(100_000, 40_000, 72), _financial("12345678901"))
     assert decision.status == ApplicationStatus.REJECTED
     term = next(f for f in decision.factors if f.name == "Vade")
     assert term.passed is False
     assert decision.suggested_term_months == 60
-    assert decision.suggested_amount == 300_000 * 6
+    assert decision.suggested_amount == 0.0
+    assert decision.counterfactual_amount is not None
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -107,9 +114,7 @@ def _settings(tmp_path: Path) -> Settings:
 
 
 def _approved_payload() -> PipelineResult:
-    decision = CreditCommitteeAgent().decide(
-        _application(300_000, 100_000, 36), _financial("12345678901")
-    )
+    decision = _decide(_application(300_000, 100_000, 36), _financial("12345678901"))
     return PipelineResult(
         application=_application(300_000, 100_000, 36),
         status=decision.status,
@@ -126,7 +131,7 @@ def test_generate_report_files_writes_json_and_pdf(tmp_path):
     assert Path(pdf_path).is_file()
     data = json.loads(Path(json_path).read_text(encoding="utf-8"))
     assert data["status"] == "APPROVED"
-    assert data["decision"]["suggested_amount"] == 1_800_000.0
+    assert data["decision"]["suggested_amount"] == 100_000.0
     assert data["decision"]["factors"][0]["name"] == "Kredi Skoru (KKB)"
     pdf_text = pdf_to_text(pdf_path)
     assert "RAPORU" in pdf_text  # Turkish diacritics are not pypdf-extractable

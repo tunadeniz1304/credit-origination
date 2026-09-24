@@ -7,7 +7,7 @@ from pathlib import Path
 from app.agents.api_agent import ApiIntegrationAgent
 from app.agents.committee_agent import CreditCommitteeAgent
 from app.agents.document_agent import DocumentControlAgent, RAGDocumentAnalyzer
-from app.agents.llm import LLMProvider
+from app.agents.llm_service import LLMService
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.engine.reports import generate_report_files
@@ -25,7 +25,7 @@ class ApplicationPipeline:
     async def run(
         self,
         application: LoanApplication,
-        llm: LLMProvider | None = None,
+        llm: LLMService | None = None,
         application_id: str | None = None,
     ) -> PipelineResult:
         """Execute the full pipeline for a single application."""
@@ -39,10 +39,10 @@ class ApplicationPipeline:
 
         financial = await ApiIntegrationAgent(self.settings).collect(application.applicant)
 
-        decision = CreditCommitteeAgent(self.settings).decide(
+        decision = await CreditCommitteeAgent(self.settings, llm=llm).decide(
             application=application,
             financial=financial,
-            llm=llm,
+            application_id=application_id or "",
         )
         payload = PipelineResult(
             application=application,

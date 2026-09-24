@@ -37,7 +37,7 @@ class RiskScorecard(BaseModel):
 # Fixed BDDK-style weights keyed by the Turkish committee factor names.
 FACTOR_WEIGHTS: dict[str, float] = {
     "Kredi Skoru (KKB)": 0.40,
-    "Borç/Gelir Oranı": 0.30,
+    "Borç Servis Oranı": 0.30,
     "Kredi/Gelir Çarpanı": 0.20,
     "Vade": 0.10,
 }
