@@ -26,14 +26,15 @@ def main() -> int:
     errors: list[str] = []
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_page(viewport={"width": 1400, "height": 900})
+        context = browser.new_context(viewport={"width": 1400, "height": 900})
+        page = context.new_page()
         page.on("console", lambda m: errors.append(m.text) if m.type == "error" else None)
         page.goto(args.base + "/")
         page.wait_for_selector("text=Demo kullanıcılar")
         page.screenshot(path=str(OUT / "login.png"))
 
         def login(label: str) -> None:
-            page.evaluate("sessionStorage.clear()")
+            context.clear_cookies()  # the session lives in an HttpOnly cookie
             page.goto(args.base + "/")
             page.get_by_role("button", name=label, exact=True).click()
             page.wait_for_timeout(1500)
@@ -48,11 +49,11 @@ def main() -> int:
 
         login("Uzman")
         page.wait_for_selector("text=İnceleme kuyruğu")
-        queue = page.locator("tbody tr.clickable:visible")
+        queue = page.locator("button.queue-open:visible")
         if queue.count():
             queue.first.click()
             page.wait_for_timeout(1500)
-            page.get_by_role("button", name="Karar + SHAP").click()
+            page.get_by_role("tab", name="Karar + SHAP").click()
             page.wait_for_timeout(1200)
             page.locator("text=SHAP katkıları").first.scroll_into_view_if_needed()
             page.mouse.wheel(0, -250)
@@ -63,6 +64,10 @@ def main() -> int:
         page.wait_for_selector("text=Toplam başvuru")
         page.wait_for_timeout(1500)
         page.screenshot(path=str(OUT / "dashboard.png"))
+        page.get_by_role("tab", name="Model doğrulama").click()
+        page.wait_for_selector("#val-set")
+        page.wait_for_timeout(1000)
+        page.screenshot(path=str(OUT / "model_validation.png"), full_page=True)
         browser.close()
     real = [e for e in errors if "favicon" not in e and "404" not in e]
     for e in real:
