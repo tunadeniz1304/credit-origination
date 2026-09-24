@@ -11,9 +11,12 @@ bounding box (for the reviewer's document viewer).
 from __future__ import annotations
 
 import re
+from functools import lru_cache
 from pathlib import Path
 
 from pydantic import BaseModel, Field
+
+OCR_LANGUAGE = "tur"
 
 
 class PageText(BaseModel):
@@ -40,12 +43,25 @@ class FieldValue(BaseModel):
     source: str = "regex"
 
 
-def _ocr_available() -> bool:
+@lru_cache(maxsize=1)
+def ocr_status() -> dict[str, object]:
+    """OCR capability: the Python wrapper *and* the Tesseract binary with ``tur``."""
     try:
-        import pytesseract  # noqa: F401
+        import pytesseract
     except ImportError:
-        return False
-    return True
+        return {"available": False, "reason": "pytesseract kurulu değil"}
+    try:
+        version = str(pytesseract.get_tesseract_version())
+        languages = set(pytesseract.get_languages(config=""))
+    except Exception:  # binary missing or not on PATH
+        return {"available": False, "reason": "tesseract ikili dosyası bulunamadı"}
+    if OCR_LANGUAGE not in languages:
+        return {"available": False, "reason": f"tesseract '{OCR_LANGUAGE}' dil paketi yok"}
+    return {"available": True, "reason": "", "version": version}
+
+
+def _ocr_available() -> bool:
+    return bool(ocr_status()["available"])
 
 
 def extract_text(path: Path, mime: str) -> ExtractionResult:
@@ -85,7 +101,7 @@ def _ocr(path: Path, mime: str) -> ExtractionResult:  # pragma: no cover - optio
     else:
         images.append(Image.open(path))
     pages = [
-        PageText(page=i, text=pytesseract.image_to_string(img, lang="tur"))
+        PageText(page=i, text=pytesseract.image_to_string(img, lang=OCR_LANGUAGE))
         for i, img in enumerate(images, start=1)
     ]
     return ExtractionResult(pages=pages, source="ocr", ocr_available=True)
