@@ -59,7 +59,11 @@ testpaths = ["tests"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 addopts = "-p no:cacheprovider"
-markers = ["slow: long-running tests (model training)"]
+markers = [
+    "slow: long-running tests (model training)",
+    "external_data: needs the full public datasets under data/external (skipped otherwise)",
+    "e2e: browser end-to-end tests (need Playwright browsers)",
+]
 filterwarnings = ["ignore::DeprecationWarning", "ignore::UserWarning"]
 
 [tool.coverage.run]
