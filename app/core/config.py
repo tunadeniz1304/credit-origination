@@ -28,7 +28,7 @@ CONFIG_PATH = PROJECT_ROOT / "config" / "config.json"
 # project-local ``.env`` wins over the parent directory's ``.env``.
 _ENV_FILES = (str(PROJECT_ROOT.parent / ".env"), str(PROJECT_ROOT / ".env"))
 
-DEFAULT_LLM_BASE_URL = "https://llm-gateway.example.org/v1"
+DEFAULT_LLM_BASE_URL = "https://api.deepseek.com"
 DEFAULT_LLM_MODEL = "deepseek-v4-flash"
 DEV_JWT_FALLBACK = "dev-only-insecure-jwt-secret-change-me"
 

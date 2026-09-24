@@ -99,7 +99,7 @@ def test_key_aliases_first_match_wins(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "fake-openai-key")
     settings = Settings(_env_file=None)
     assert settings.llm_api_key.get_secret_value() == "fake-deepseek-key"
-    assert settings.llm_base_url == "https://llm-gateway.example.org/v1"
+    assert settings.llm_base_url == "https://api.deepseek.com"  # generic public default
     assert settings.llm_model == "deepseek-v4-flash"
 
 
