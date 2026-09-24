@@ -23,6 +23,7 @@ const UI_LABELS = {
   model_role: { champion: "Şampiyon", challenger: "Aday (challenger)" },
   model_family: { lightgbm: "Monotonik LightGBM", logistic: "Lojistik regresyon", scorecard: "WoE skor kartı", lightgbm_uncalibrated: "LightGBM (kalibrasyonsuz)" },
   llm_mode: { live: "canlı", demo: "demo" },
+  node_kind: { application: "Başvuru", phone: "Telefon", iban: "IBAN", device: "Cihaz", address: "Adres" },
   persona: { temiz: "Temiz dosya", ince_dosya: "İnce dosya", yuksek_dsr: "Yüksek borç/gelir", asiri_borclu: "Aşırı borçlu", kurcalanmis: "Kurcalanmış belge", halka: "Olası dolandırıcılık halkası", halka_2: "Olası dolandırıcılık halkası", halka_3: "Olası dolandırıcılık halkası", gri: "Gri bölge", gecikmeli: "Gecikme geçmişi", takipte: "Takipte kayıt" },
   dataset: { uci_taiwan: "UCI Tayvan kredi kartı verisi", german_credit: "German Credit verisi" },
 };
@@ -38,7 +39,9 @@ function platform() {
     demoTckn: { temiz: "68846908942", ince_dosya: "29551411288", gri: "24377158546", gecikmeli: "21134086364" },
     applications: [], current: null, wizard: { open: false, step: 1 }, form: EMPTY_FORM(), quote: null,
     upload: { code: "IDENTITY", over: false }, objection: "",
-    queue: [], reviews: [], staff: null, decisionForm: { action: "ONAY", justification: "", amount: null, term_months: null },
+    queue: [], queuePage: { total: 0, limit: 25, offset: 0, sla_breached: 0 }, queueLoading: false, queueSeq: 0, searchTimer: null,
+    queueFilter: { q: "", state: "", product: "", sla: "", mine: false, limit: 25, offset: 0 }, fieldEdit: null,
+    reviews: [], staff: null, decisionForm: { action: "ONAY", justification: "", amount: null, term_months: null },
     policyQ: "Borç servis oranı sınırı nedir?", policyA: null, dash: {}, seedResult: "", charts: {},
     staffTabs: [["ozet", "Özet"], ["belgeler", "Belgeler"], ["kkb", "KKB"], ["nakit", "Nakit akışı"], ["karar", "Karar + SHAP"], ["fiyat", "Fiyatlama"], ["halka", "Halka"], ["memo", "AI memorandum"], ["politika", "Politika sor"], ["karar_ver", "Karar ver"]],
     bureauKeys: [["bureau_score", "KKB notu"], ["bureau_hit", "KKB kaydı"], ["active_loans", "Aktif kredi"], ["bureau_utilisation", "Limit kullanımı"], ["delinquency_count_24m", "24 ay gecikme"], ["max_dpd_24m", "Azami gecikme günü"], ["inquiries_6m", "6 ay sorgu"], ["existing_debt_service", "Mevcut aylık taksit"], ["existing_dsr", "Mevcut DSR"], ["dsr", "DSR (talep)"], ["employment_months", "Çalışma süresi (ay)"]],
@@ -209,17 +212,81 @@ function platform() {
     },
 
     // ------------------------------------------------------------ workbench
-    async loadQueue() {
-      this.queue = (await this.api("/api/v1/workbench/queue")).items;
-      this.reviews = (await this.api("/api/v1/workbench/reviews")).reviews;
+    queueQuery() {
+      const f = this.queueFilter;
+      const params = new URLSearchParams({ limit: String(f.limit), offset: String(f.offset) });
+      const q = (f.q || "").trim();
+      if (q) params.set("q", q.slice(0, 64));
+      if (f.state) params.set("state", f.state);
+      if (f.product) params.set("product", f.product);
+      if (f.sla) params.set("sla_breached", f.sla);
+      if (f.mine) params.set("mine", "true");
+      return params.toString();
     },
+    async loadQueue() {
+      const seq = ++this.queueSeq;
+      this.queueLoading = true;
+      try {
+        const [page, reviews] = await Promise.all([
+          this.api("/api/v1/workbench/queue?" + this.queueQuery()),
+          this.api("/api/v1/workbench/reviews"),
+        ]);
+        if (seq !== this.queueSeq) return; // a newer filter/page request superseded this one
+        if (page.total > 0 && page.offset >= page.total) { this.queueFilter.offset = Math.max(0, page.total - this.queueFilter.limit); return this.loadQueue(); }
+        this.queue = page.items;
+        this.queuePage = { total: page.total, limit: page.limit, offset: page.offset, sla_breached: page.sla_breached || 0 };
+        this.reviews = reviews.reviews;
+      } finally { if (seq === this.queueSeq) this.queueLoading = false; }
+    },
+    applyFilters() { this.queueFilter.offset = 0; return this.loadQueue().catch((e) => this.notify(e.message)); },
+    onSearchInput() {
+      clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(() => this.applyFilters(), 300);
+    },
+    pageQueue(direction) {
+      const f = this.queueFilter;
+      f.offset = Math.max(0, f.offset + direction * f.limit);
+      return this.loadQueue().catch((e) => this.notify(e.message));
+    },
+    hasPrevPage() { return this.queuePage.offset > 0; },
+    hasNextPage() { return this.queuePage.offset + this.queue.length < this.queuePage.total; },
+    pageRange() {
+      const p = this.queuePage;
+      if (!p.total) return "0 / 0";
+      return (p.offset + 1) + "–" + (p.offset + this.queue.length) + " / " + p.total;
+    },
+    queueStatus() { return this.queueLoading ? "Kuyruk yükleniyor" : "Kuyruk: " + this.pageRange() + " başvuru gösteriliyor"; },
+    isSelected(id) { return !!(this.staff && this.staff.detail.application_id === id); },
+    slaClass(q) { return q.sla_breached ? "bad" : (q.sla_remaining_hours !== null && q.sla_remaining_hours < 4 ? "warn" : "ok"); },
+    slaText(q) {
+      if (q.sla_remaining_hours === null || q.sla_remaining_hours === undefined) return "—";
+      return q.sla_breached ? "aşıldı (" + Math.abs(q.sla_remaining_hours) + " sa)" : q.sla_remaining_hours + " sa";
+    },
+    focusRow(event, direction) {
+      const buttons = Array.from(event.target.closest("tbody").querySelectorAll("button.queue-open"));
+      const next = buttons[buttons.indexOf(event.target) + direction];
+      if (next) next.focus();
+    },
+    tabKey(direction) {
+      const ids = this.staffTabs.map((t) => t[0]);
+      const next = ids[(ids.indexOf(this.staff.tab) + direction + ids.length) % ids.length];
+      this.staffTab(next);
+      this.$nextTick(() => { const el = document.getElementById("tab-" + next); if (el) el.focus(); });
+    },
+    shapRows() { return ((this.staff && this.staff.decision && this.staff.decision.shap) || []).slice(0, 10).map((x) => ({ label: x.label, value: Number(x.value).toFixed(3) })); },
     async openStaff(id) {
+      try { await this.loadStaff(id); } catch (e) { this.notify(e.message); }
+    },
+    async loadStaff(id) {
       const base = "/api/v1/applications/" + id;
-      const detail = await this.api(base);
-      const [docs, cash, net] = await Promise.all([this.api(base + "/documents"), this.api(base + "/cashflow"), this.api(base + "/network")]);
-      let memo = null; try { memo = await this.api("/api/v1/agent/" + id + "/memo"); } catch (e) { memo = null; }
-      let authority = null; try { authority = await this.api("/api/v1/workbench/" + id + "/authority"); } catch (e) { authority = null; }
-      this.staff = { detail, decision: detail.decision, documents: docs.documents, cashflow: cash, network: net, memo, authority, tab: "ozet", replay: "" };
+      const [detail, docs, cash, net, authority] = await Promise.all([
+        this.api(base), this.api(base + "/documents"), this.api(base + "/cashflow"), this.api(base + "/network"),
+        this.api("/api/v1/workbench/" + id + "/authority").catch(() => null)]);
+      const memo = (detail.letters && detail.letters.ai_memo) || null; // stored by POST /agent/{id}/memo
+      const tab = this.staff && this.staff.detail.application_id === id ? this.staff.tab : "ozet";
+      this.staff = { detail, decision: detail.decision, documents: docs.documents, cashflow: cash, network: net, memo, authority, tab, replay: "" };
+      this.fieldEdit = null;
+      if (tab !== "ozet") this.staffTab(tab);
       this.decisionForm = { action: "ONAY", justification: "", amount: null, term_months: null };
     },
     staffTab(tab) {
@@ -256,17 +323,24 @@ function platform() {
       nodes.forEach((n, i) => { const a = (2 * Math.PI * i) / Math.max(nodes.length, 1); pos[n.id] = [300 + 120 * Math.cos(a), 160 + 120 * Math.sin(a)]; });
       edges.forEach((e) => { const l = document.createElementNS(ns, "line"); const [x1, y1] = pos[e.source]; const [x2, y2] = pos[e.target]; l.setAttribute("x1", x1); l.setAttribute("y1", y1); l.setAttribute("x2", x2); l.setAttribute("y2", y2); l.setAttribute("stroke", "#9aa5b1"); svg.appendChild(l); });
       nodes.forEach((n) => { const [x, y] = pos[n.id]; const c = document.createElementNS(ns, "circle"); c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", n.kind === "application" ? 14 : 9); c.setAttribute("fill", n.kind === "application" ? "#2f6690" : "#9a6700"); svg.appendChild(c);
-        const t = document.createElementNS(ns, "text"); t.setAttribute("x", x + 16); t.setAttribute("y", y + 4); t.textContent = n.kind + ": " + n.label; svg.appendChild(t); });
+        const t = document.createElementNS(ns, "text"); t.setAttribute("x", x + 16); t.setAttribute("y", y + 4); t.textContent = this.lbl("node_kind", n.kind) + ": " + n.label; svg.appendChild(t); });
       if (!nodes.length) { const t = document.createElementNS(ns, "text"); t.setAttribute("x", 200); t.setAttribute("y", 160); t.textContent = "Ortak tanımlayıcı bulunmadı"; svg.appendChild(t); }
     },
     async assign() { try { await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/assign", { method: "POST" }); this.notify("Başvuru üzerinize atandı."); await this.loadQueue(); } catch (e) { this.notify(e.message); } },
     async replay() {
       try { const r = await this.api("/api/v1/decisions/" + this.staff.decision.decision_id + "/replay", { method: "POST" }); this.staff.replay = r.identical ? "✓ aynı sonuç" : "✗ farklı sonuç"; } catch (e) { this.notify(e.message); }
     },
-    async correctField(f) {
-      const value = window.prompt ? window.prompt("Yeni değer", f.value) : null;
-      if (!value) return;
-      try { await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/fields/" + f.field_id, { method: "POST", json: { value, note: "çalışma masası" } }); await this.openStaff(this.staff.detail.application_id); this.staff.tab = "belgeler"; } catch (e) { this.notify(e.message); }
+    correctField(f) {
+      this.fieldEdit = { field_id: f.field_id, name: f.name, value: f.value || "" };
+      this.$nextTick(() => { const el = document.getElementById("field-value"); if (el) el.focus(); });
+    },
+    async saveField() {
+      const edit = this.fieldEdit;
+      if (!edit || !String(edit.value).trim()) return;
+      try {
+        await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/fields/" + edit.field_id, { method: "POST", json: { value: String(edit.value), note: "çalışma masası" } });
+        this.fieldEdit = null; await this.openStaff(this.staff.detail.application_id); this.notify("Alan düzeltildi.");
+      } catch (e) { this.notify(e.message); }
     },
     async generateMemo() {
       this.busy = true;
@@ -284,7 +358,7 @@ function platform() {
       } catch (e) { this.notify(e.message); }
     },
     async checkReview(r, approve) {
-      try { const res = await this.api("/api/v1/workbench/reviews/" + r.review_id + "/check", { method: "POST", json: { approve, note: approve ? "Uygundur." : "Uygun değildir." } }); this.notify("Durum: " + this.lbl("state", res.state)); await this.loadQueue(); } catch (e) { this.notify(e.message); }
+      try { const res = await this.api("/api/v1/workbench/reviews/" + r.review_id + "/check", { method: "POST", json: { approve, note: approve ? "Uygundur." : "Uygun değildir." } }); this.notify("Durum: " + this.lbl("state", res.state)); await this.loadQueue(); if (this.staff && this.staff.detail.application_id === r.application_id) await this.loadStaff(r.application_id); } catch (e) { this.notify(e.message); }
     },
     async resolveObjection(upheld) {
       try { await this.api("/api/v1/workbench/" + this.staff.detail.application_id + "/objection/resolve", { method: "POST", json: { upheld, note: this.decisionForm.justification || "İnceleme tamamlandı, gerekçe dosyada." } }); await this.loadQueue(); await this.openStaff(this.staff.detail.application_id); } catch (e) { this.notify(e.message); }
