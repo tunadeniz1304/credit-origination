@@ -46,7 +46,6 @@ def _git_grep(pattern: str) -> list[str]:
 
 
 # ------------------------------------------------------------------ A. decisioning / pricing
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f01_offer_dsr_rechecked_with_priced_taxed_instalment():
     """Audit case: 800k / 36 m for a 45k earner; the priced instalment breached the DSR cap."""
     snapshot, result = _decide("temiz", 45_000, 800_000)
@@ -58,7 +57,6 @@ def test_f01_offer_dsr_rechecked_with_priced_taxed_instalment():
     assert result.limits["dsr_offer"] == pytest.approx(real_dsr, abs=1e-3)
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f02_non_material_tenure_does_not_produce_reason():
     """52 months of employment on a PD≈1% file must not read as 'short tenure'."""
     snapshot, result = _decide("temiz", 45_000, 800_000)

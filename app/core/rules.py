@@ -32,6 +32,7 @@ class DecisionThresholds(BaseModel):
     auto_decline_min_pd: float
     min_document_confidence: float
     counter_offer_min_ratio: float = 0.3
+    max_pricing_iterations: int = 6  # limit ↔ price fixed-point iterations (DSR re-check)
 
 
 class RiskBand(BaseModel):
