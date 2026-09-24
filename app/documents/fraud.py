@@ -1,15 +1,25 @@
-"""Document tampering signals.
+"""Document tampering signals — independent of who produced the file.
 
-* Metadata (``pikepdf``): editing-tool producers, producer/creator mismatch,
-  modification long after creation, and **incremental saves** (multiple
-  ``%%EOF`` markers = content appended after issuance).
-* Fonts (PyMuPDF spans): values rendered in a font foreign to the document.
-* Arithmetic: payslip ``gross - deductions == net``; statement
-  ``opening + sum(transactions) == closing``.
-* e-Devlet barcode: presence + checksum verification through the (mock)
-  e-Devlet verification endpoint; QR decoding with ``pyzbar`` when installed.
+v1 flagged ``producer_mismatch`` when a document did not come from *this
+project's own* generator (reportlab), so it only caught its own forgeries and
+flagged genuine files from any other tool. The signals are now generic
+(``rules/fraud.yaml``):
 
-Each signal carries a weight; the document fraud score is their capped sum.
+* **Producer profile** per document type: known PDF editors / image editors are
+  suspicious everywhere; word processors are suspicious for system-issued
+  documents (payslips, statements, e-Devlet). An unknown producer alone is
+  never a signal.
+* **Dates**: ``ModDate`` later than ``CreationDate`` by more than a threshold.
+* **Incremental saves**: more than one revision (``%%EOF`` / ``startxref``).
+* **XMP vs Info**: producer, creator tool or modification date disagree.
+* **Fonts**: amounts in a font foreign to the body text, amount digits in a
+  different font or size, too many font families on one page.
+* **Layers**: text drawn over white filled shapes (white-out), or a text layer
+  patched on top of a scanned page image.
+* **Arithmetic** (payslip ``gross − deductions = net``; statement
+  ``opening + Σ movements = closing``) and **e-Devlet barcode** checks.
+
+Each signal carries a configured weight; the document score is their capped sum.
 """
 
 from __future__ import annotations
@@ -17,34 +27,34 @@ from __future__ import annotations
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 from pydantic import BaseModel
 
+from app.core.rules import FraudConfig, load_fraud
 from app.documents.extraction import (
     ExtractionResult,
     FieldValue,
     parse_amount,
     statement_transactions,
 )
-from app.documents.samples import GENERATOR_CREATORS, verify_barcode
+from app.documents.samples import verify_barcode
 
-EDITING_TOOLS = ("ilovepdf", "smallpdf", "word", "photoshop", "sejda", "pdfescape", "foxit phantom")
-WEIGHTS = {
-    "incremental_update": 0.35,
-    "editing_tool": 0.30,
-    "producer_mismatch": 0.15,
-    "modified_after_creation": 0.15,
-    "font_inconsistency": 0.20,
-    "arithmetic_mismatch": 0.45,
-    "barcode_invalid": 0.50,
-    "barcode_missing": 0.25,
-}
+AMOUNT_RE = re.compile(r"\d+,\d{2}")
+WHITE_FILL = 0.97  # a fill this close to white counts as white-out
 LABELS = {
     "incremental_update": "PDF sonradan artımlı olarak kaydedilmiş (düzenleme izi)",
-    "editing_tool": "Belge bir PDF düzenleme aracıyla işlenmiş",
-    "producer_mismatch": "Üretici yazılım beklenen kaynakla uyumsuz",
+    "editing_tool": "Belge bir PDF düzenleme/görüntü aracıyla işlenmiş",
+    "producer_unexpected": (
+        "Sistem tarafından üretilmesi gereken belge ofis/kelime işlemci aracından çıkmış"
+    ),
     "modified_after_creation": "Değişiklik tarihi oluşturma tarihinden çok sonra",
+    "metadata_inconsistent": "XMP üst verisi ile belge bilgi sözlüğü çelişiyor",
     "font_inconsistency": "Tutar alanlarında belgeye yabancı yazı tipi",
+    "font_mix": "Tek sayfada olağan dışı sayıda yazı tipi ailesi",
+    "digit_font_mismatch": "Tutar rakamları farklı yazı tipi veya boyutta",
+    "whiteout_overlay": "Beyaz dolgulu alanın üzerine sonradan metin yazılmış",
+    "text_over_image": "Taranmış sayfa görüntüsünün üzerine metin katmanı eklenmiş",
     "arithmetic_mismatch": "Belgedeki tutarlar aritmetik olarak tutarsız",
     "barcode_invalid": "e-Devlet barkodu doğrulanamadı",
     "barcode_missing": "e-Devlet belgesinde barkod bulunamadı",
@@ -63,69 +73,163 @@ class FraudReport(BaseModel):
     signals: list[FraudSignal]
 
 
-def _signal(code: str, detail: str = "") -> FraudSignal:
-    return FraudSignal(code=code, label=LABELS[code], weight=WEIGHTS[code], detail=detail)
+def _signal(code: str, detail: str = "", cfg: FraudConfig | None = None) -> FraudSignal:
+    cfg = cfg or load_fraud()
+    return FraudSignal(code=code, label=LABELS[code], weight=cfg.weights[code], detail=detail)
 
 
-def _pdf_date(value: str | None) -> datetime | None:
+def _pdf_date(value: Any) -> datetime | None:
+    """PDF (``D:20260901120000``) or XMP (``2026-09-01T12:00:00``) date → naive datetime."""
     if not value:
         return None
-    match = re.match(r"D:(\d{14})", str(value))
-    if not match:
+    digits = re.sub(r"[^0-9]", "", str(value))
+    if len(digits) < 14:
         return None
-    return datetime.strptime(match.group(1), "%Y%m%d%H%M%S")
+    try:
+        return datetime.strptime(digits[:14], "%Y%m%d%H%M%S")
+    except ValueError:
+        return None
 
 
-def metadata_signals(path: Path, code: str) -> list[FraudSignal]:
+def _matches(value: str, patterns: list[str]) -> str | None:
+    lowered = value.lower()
+    return next((p for p in patterns if p in lowered), None)
+
+
+def revision_count(raw: bytes) -> int:
+    return max(raw.count(b"%%EOF"), raw.count(b"startxref"))
+
+
+def metadata_signals(path: Path, code: str, cfg: FraudConfig | None = None) -> list[FraudSignal]:
     import pikepdf
 
+    cfg = cfg or load_fraud()
     signals: list[FraudSignal] = []
-    raw = path.read_bytes()
-    eof_markers = raw.count(b"%%EOF")
-    if eof_markers > 1:
-        signals.append(_signal("incremental_update", f"{eof_markers} revizyon"))
+    revisions = revision_count(path.read_bytes())
+    if revisions > 1:
+        signals.append(_signal("incremental_update", f"{revisions} revizyon", cfg))
     try:
         with pikepdf.open(str(path)) as pdf:
             info = pdf.docinfo
             producer = str(info.get("/Producer", "") or "")
             creator = str(info.get("/Creator", "") or "")
-            created = _pdf_date(str(info.get("/CreationDate", "") or ""))
-            modified = _pdf_date(str(info.get("/ModDate", "") or ""))
+            created = _pdf_date(info.get("/CreationDate"))
+            modified = _pdf_date(info.get("/ModDate"))
+            meta = pdf.open_metadata()
+            xmp_producer = str(meta.get("pdf:Producer", "") or "")
+            xmp_creator = str(meta.get("xmp:CreatorTool", "") or "")
+            xmp_modified = _pdf_date(meta.get("xmp:ModifyDate"))
     except Exception:  # corrupt/encrypted PDFs are handled by the caller
         return signals
-    lowered = producer.lower()
-    if any(tool in lowered for tool in EDITING_TOOLS):
-        signals.append(_signal("editing_tool", producer))
-    expected = GENERATOR_CREATORS.get(code)
-    if expected and creator == expected and "reportlab" not in lowered:
-        signals.append(_signal("producer_mismatch", f"creator={creator} producer={producer}"))
-    if created and modified and (modified - created).total_seconds() > 86_400:
+    tools = " | ".join(t for t in (producer, creator) if t)
+    editor = _matches(tools, cfg.editing_tools)
+    if editor:
+        signals.append(_signal("editing_tool", tools, cfg))
+    profile = cfg.profiles.get(code)
+    if profile and not editor and _matches(tools, profile.unexpected):
+        signals.append(_signal("producer_unexpected", tools, cfg))
+    limit = cfg.thresholds.modified_after_creation_hours * 3600
+    if created and modified and (modified - created).total_seconds() > limit:
         signals.append(
-            _signal("modified_after_creation", f"{created:%Y-%m-%d} → {modified:%Y-%m-%d}")
+            _signal("modified_after_creation", f"{created:%Y-%m-%d} → {modified:%Y-%m-%d}", cfg)
         )
+    conflicts = []
+    if xmp_producer and producer and xmp_producer != producer:
+        conflicts.append(f"Producer: XMP='{xmp_producer}' Info='{producer}'")
+    if xmp_creator and creator and xmp_creator != creator:
+        conflicts.append(f"Creator: XMP='{xmp_creator}' Info='{creator}'")
+    if xmp_modified and modified and abs((xmp_modified - modified).total_seconds()) > limit:
+        conflicts.append("ModDate farklı")
+    if conflicts:
+        signals.append(_signal("metadata_inconsistent", "; ".join(conflicts), cfg))
     return signals
 
 
-def font_signals(path: Path) -> list[FraudSignal]:
+def _family(font: str) -> str:
+    """``ABCDEF+DejaVuSans-Bold`` → ``dejavusans`` (subset prefix and style dropped)."""
+    base = re.sub(r"^[A-Z]{6}\+", "", font)
+    return base.split("-")[0].split(",")[0].lower()
+
+
+def _overlap(inner: Any, outer: Any) -> float:
+    """Share of ``inner`` covered by ``outer``."""
     import fitz
 
+    a, b = fitz.Rect(inner), fitz.Rect(outer)
+    inter = a & b
+    area = a.get_area()
+    return inter.get_area() / area if area and not inter.is_empty else 0.0
+
+
+def font_signals(path: Path, cfg: FraudConfig | None = None) -> list[FraudSignal]:
+    """Font families and sizes of amounts vs body text; white-out and image patches."""
+    import fitz
+
+    cfg = cfg or load_fraud()
+    th = cfg.thresholds
     fonts_by_kind: dict[str, set[str]] = {"amount": set(), "text": set()}
+    amount_styles: dict[tuple[str, int], int] = {}
+    families_per_page: list[int] = []
+    whiteouts: list[str] = []
+    patched = 0
     with fitz.open(str(path)) as doc:
         for page in doc:
+            families: set[str] = set()
+            white = [
+                d["rect"]
+                for d in page.get_drawings()
+                if d.get("fill") is not None
+                and min(d["fill"]) >= WHITE_FILL
+                and d["rect"].get_area() > 0
+            ]
+            page_area = page.rect.get_area()
+            images = [
+                fitz.Rect(img["bbox"])
+                for img in page.get_image_info()
+                if fitz.Rect(img["bbox"]).get_area() >= th.image_page_coverage * page_area
+            ]
             for block in page.get_text("dict")["blocks"]:
                 for line in block.get("lines", []):
                     for span in line.get("spans", []):
                         text = span.get("text", "").strip()
                         if not text:
                             continue
-                        base = re.sub(r"^[A-Z]{6}\+", "", span.get("font", ""))
-                        family = base.split("-")[0].lower()
-                        kind = "amount" if re.search(r"\d+,\d{2}", text) else "text"
-                        fonts_by_kind[kind].add(family)
+                        family = _family(span.get("font", ""))
+                        families.add(family)
+                        is_amount = bool(AMOUNT_RE.search(text))
+                        fonts_by_kind["amount" if is_amount else "text"].add(family)
+                        if is_amount:
+                            size = round(float(span.get("size", 0)) / th.digit_size_tolerance_pt)
+                            amount_styles[(family, size)] = amount_styles.get((family, size), 0) + 1
+                        bbox = span.get("bbox")
+                        if any(_overlap(bbox, w) >= th.whiteout_min_overlap for w in white):
+                            whiteouts.append(text)
+                        if any(_overlap(bbox, im) >= 1.0 for im in images):
+                            patched += 1
+            families_per_page.append(len(families))
+    signals: list[FraudSignal] = []
     foreign = fonts_by_kind["amount"] - fonts_by_kind["text"]
     if foreign:
-        return [_signal("font_inconsistency", ", ".join(sorted(foreign)))]
-    return []
+        signals.append(_signal("font_inconsistency", ", ".join(sorted(foreign)), cfg))
+    # Same size, different family: an amount re-typed in another font. Size-only
+    # differences (headers, totals, table rows) are ordinary layout.
+    families_by_size: dict[int, set[str]] = {}
+    for family, size in amount_styles:
+        families_by_size.setdefault(size, set()).add(family)
+    mixed = {size: fams for size, fams in families_by_size.items() if len(fams) > 1}
+    if mixed:
+        detail = "; ".join(
+            f"{size * th.digit_size_tolerance_pt:.1f}pt: {', '.join(sorted(fams))}"
+            for size, fams in sorted(mixed.items())
+        )
+        signals.append(_signal("digit_font_mismatch", detail, cfg))
+    if families_per_page and max(families_per_page) > th.max_font_families_per_page:
+        signals.append(_signal("font_mix", f"{max(families_per_page)} aile", cfg))
+    if whiteouts:
+        signals.append(_signal("whiteout_overlay", ", ".join(whiteouts[:3]), cfg))
+    if patched:
+        signals.append(_signal("text_over_image", f"{patched} metin parçası", cfg))
+    return signals
 
 
 def _field(fields: list[FieldValue], name: str) -> float | None:
@@ -210,10 +314,11 @@ def _decode_qr(path: Path) -> str | None:
 def analyse_document(
     path: Path, code: str, mime: str, fields: list[FieldValue], text: ExtractionResult
 ) -> FraudReport:
+    cfg = load_fraud()
     signals: list[FraudSignal] = []
     if mime == "application/pdf":
-        signals += metadata_signals(path, code)
-        signals += font_signals(path)
+        signals += metadata_signals(path, code, cfg)
+        signals += font_signals(path, cfg)
     signals += arithmetic_signals(code, fields, text)
     signals += barcode_signals(code, fields, path)
     score = min(1.0, sum(s.weight for s in signals))

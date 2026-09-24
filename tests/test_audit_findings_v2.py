@@ -88,7 +88,6 @@ def test_f04_user_facing_labels_for_enum_codes():
 
 
 # ------------------------------------------------------------------ B. documents
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f05_genuine_document_from_other_tool_is_not_flagged(tmp_path):
     """A genuine e-Devlet PDF produced by a non-reportlab tool must not score as fraud."""
     import pikepdf

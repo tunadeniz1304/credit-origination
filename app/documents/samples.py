@@ -272,6 +272,23 @@ def tamper_pdf(source: Path, target: Path, *, overlays: list[tuple[str, str]]) -
     doc.close()
 
 
+def make_scanned_pdf(source: Path, target: Path, *, dpi: int = 200) -> Path:
+    """Image-only copy of ``source`` (no text layer), as a scanner would produce."""
+    import fitz
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    out = fitz.open()
+    with fitz.open(str(source)) as doc:
+        for page in doc:
+            pix = page.get_pixmap(dpi=dpi)
+            new = out.new_page(width=page.rect.width, height=page.rect.height)
+            new.insert_image(new.rect, pixmap=pix)
+    out.set_metadata({"producer": "Scanner", "creator": "Scanner"})
+    out.save(str(target))
+    out.close()
+    return target
+
+
 def generate_applicant_bundle(
     directory: Path,
     *,

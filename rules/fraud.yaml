@@ -1,0 +1,66 @@
+# Belge sahteciliği sinyalleri — üretici adından bağımsız, genel sezgiler.
+# Ağırlıklar toplanır (1'de kırpılır); eşikler ve üretici profilleri buradadır.
+version: fraud_v2
+
+weights:
+  incremental_update: 0.35       # belge yayımlandıktan sonra artımlı kayıt (revizyon)
+  editing_tool: 0.30             # bilinen PDF düzenleyici / görüntü editörü izi
+  producer_unexpected: 0.20      # sistem üretimi belge, kelime işlemci/ofis aracından çıkmış
+  modified_after_creation: 0.15  # CreationDate ile ModDate arası eşiği aşıyor
+  metadata_inconsistent: 0.20    # XMP ile Info sözlüğü çelişiyor
+  font_inconsistency: 0.20       # tutarlar metne yabancı yazı tipinde
+  font_mix: 0.10                 # tek sayfada çok sayıda yazı tipi ailesi
+  digit_font_mismatch: 0.20      # tutar rakamları farklı yazı tipi/boyutta
+  whiteout_overlay: 0.35         # beyaz dolgulu şeklin üzerine yazılmış metin
+  text_over_image: 0.15          # görüntü katmanının üstünde metin (taranmış belgede yama)
+  arithmetic_mismatch: 0.45
+  barcode_invalid: 0.50
+  barcode_missing: 0.25
+
+thresholds:
+  modified_after_creation_hours: 24
+  max_font_families_per_page: 3
+  digit_size_tolerance_pt: 0.6
+  whiteout_min_overlap: 0.5      # metin kutusunun en az bu oranı beyaz alanla örtüşmeli
+  image_page_coverage: 0.5       # sayfanın bu oranından büyük görüntü = taranmış sayfa
+
+# Bilinen PDF düzenleyici / görüntü editörü üreticileri: her belge türünde şüpheli.
+editing_tools:
+  - ilovepdf
+  - smallpdf
+  - sejda
+  - pdfescape
+  - foxit phantom
+  - foxit pdf editor
+  - nitro
+  - pdfelement
+  - pdf-xchange editor
+  - adobe acrobat pro
+  - photoshop
+  - gimp
+  - canva
+  - pdf candy
+  - sodapdf
+
+# Belge türüne göre beklenen üretici profilleri. ``unexpected`` listesindekiler, sistemden
+# üretilmesi gereken belgelerde (bordro, hesap özeti, e-Devlet) şüphelidir. ``expected`` yalnızca
+# bilgi amaçlıdır: tanınmayan bir üretici tek başına sinyal üretmez (yanlış pozitifi önler).
+profiles:
+  INCOME:
+    expected: [bordro, payroll, logo, mikro, netsis, sap, jasper, itext, reportlab, crystal]
+    unexpected: [microsoft word, word for, libreoffice writer, openoffice, pages, google docs]
+  BANK_STATEMENT:
+    expected: [internet şubesi, internet banking, itext, jasper, reportlab, pdflib, ibm]
+    unexpected: [microsoft word, word for, excel, libreoffice, openoffice, pages, google docs]
+  ADDRESS:
+    expected: [e-devlet, turkiye.gov.tr, itext, reportlab]
+    unexpected: [microsoft word, word for, excel, libreoffice, openoffice, pages, google docs]
+  EMPLOYMENT:
+    expected: [e-devlet, turkiye.gov.tr, sgk, itext, reportlab]
+    unexpected: [microsoft word, word for, excel, libreoffice, openoffice, pages, google docs]
+  IDENTITY:
+    expected: [nvi, nüfus, itext, reportlab]
+    unexpected: [microsoft word, word for, libreoffice, openoffice, pages, google docs]
+  TAX_PLATE:
+    expected: [gib, interaktif vergi dairesi, itext, reportlab]
+    unexpected: [microsoft word, word for, libreoffice, openoffice, pages, google docs]

@@ -149,6 +149,27 @@ class ReasonCatalog(BaseModel):
     improvements: dict[str, str] = Field(default_factory=dict)
 
 
+class ProducerProfile(BaseModel):
+    expected: list[str] = Field(default_factory=list)
+    unexpected: list[str] = Field(default_factory=list)
+
+
+class FraudThresholds(BaseModel):
+    modified_after_creation_hours: float
+    max_font_families_per_page: int
+    digit_size_tolerance_pt: float
+    whiteout_min_overlap: float
+    image_page_coverage: float
+
+
+class FraudConfig(BaseModel):
+    version: str
+    weights: dict[str, float]
+    thresholds: FraudThresholds
+    editing_tools: list[str]
+    profiles: dict[str, ProducerProfile] = Field(default_factory=dict)
+
+
 class SanctionEntry(BaseModel):
     name: str
     type: str
@@ -257,6 +278,11 @@ def load_reasons() -> ReasonCatalog:
 @lru_cache(maxsize=1)
 def load_validation() -> ValidationConfig:
     return ValidationConfig.model_validate(read_yaml("validation.yaml"))
+
+
+@lru_cache(maxsize=1)
+def load_fraud() -> FraudConfig:
+    return FraudConfig.model_validate(read_yaml("fraud.yaml"))
 
 
 @lru_cache(maxsize=1)
