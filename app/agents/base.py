@@ -1,4 +1,5 @@
 """Shared plumbing for pipeline agents: typed rules access + a logger."""
+
 from __future__ import annotations
 
 from app.core.config import PipelineRules, load_pipeline_rules

@@ -5,12 +5,12 @@ decision as a durable, replayable notification entry. Entries are persisted
 as JSONL (append-only) and can later be dispatched by a webhook/email worker
 that marks each entry delivered.
 """
+
 from __future__ import annotations
 
-import json
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -55,13 +55,12 @@ def enqueue_notification(
         application_id=application_id,
         event=event,
         payload=payload or {},
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
     outbox = _outbox_dir(settings)
     outbox.mkdir(parents=True, exist_ok=True)
-    with _write_lock:
-        with open(outbox / "notifications.jsonl", "a", encoding="utf-8") as fh:
-            fh.write(entry.model_dump_json() + "\n")
+    with _write_lock, open(outbox / "notifications.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(entry.model_dump_json() + "\n")
     return entry
 
 
@@ -77,7 +76,7 @@ def list_notifications(
     if not path.exists():
         return []
     entries: list[NotificationEntry] = []
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -106,7 +105,7 @@ def mark_delivered(
         lines: list[str] = []
         rewrites: list[str] = []
         found = False
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(path, encoding="utf-8") as fh:
             lines = [line.rstrip("\n") for line in fh]
         for line in lines:
             if not line.strip():
@@ -136,8 +135,6 @@ def dispatch_pending(settings: Settings | None = None) -> int:
     settings = settings or get_settings()
     dispatched = 0
     for entry in list_notifications(limit=200, settings=settings):
-        if not entry.delivered:
-            if mark_delivered(entry.id, settings):
-                dispatched += 1
+        if not entry.delivered and mark_delivered(entry.id, settings):
+            dispatched += 1
     return dispatched
-

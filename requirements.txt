@@ -7,6 +7,7 @@ uvicorn[standard]==0.34.0
 gunicorn==23.0.0
 python-multipart==0.0.32
 python-dotenv==1.0.1
+PyYAML==6.0.3
 
 # Validation
 pydantic==2.13.5
@@ -37,3 +38,9 @@ httpx==0.28.1
 respx==0.22.0
 pytest==8.3.4
 pytest-asyncio==0.24.0
+pytest-cov==7.1.0
+
+# Tooling
+ruff==0.15.12
+mypy==2.3.1
+types-PyYAML==6.0.12.20260906

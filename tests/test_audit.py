@@ -1,4 +1,5 @@
 """Audit trail module tests."""
+
 from __future__ import annotations
 
 from app.core.config import Settings

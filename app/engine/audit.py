@@ -5,11 +5,11 @@ audit entry is one JSONL line under ``settings.result_dir / "audit"`` with a
 UTC timestamp, an uppercase machine-readable action and a human detail
 string. Writes are appends under a lock, so the trail stays append-only.
 """
+
 from __future__ import annotations
 
-import json
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -56,14 +56,13 @@ def append_audit(
         application_id=application_id,
         action=action,
         detail=detail,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
     )
     audit_dir = _audit_dir(settings)
     audit_dir.mkdir(parents=True, exist_ok=True)
     path = audit_dir / f"{application_id}.jsonl"
-    with _write_lock:
-        with open(path, "a", encoding="utf-8") as fh:
-            fh.write(entry.model_dump_json() + "\n")
+    with _write_lock, open(path, "a", encoding="utf-8") as fh:
+        fh.write(entry.model_dump_json() + "\n")
     return path
 
 
@@ -76,7 +75,7 @@ def load_audit(application_id: str, settings: Settings | None = None) -> list[Au
     if not path.exists():
         return []
     entries: list[AuditEntry] = []
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         for line in fh:
             line = line.strip()
             if not line:

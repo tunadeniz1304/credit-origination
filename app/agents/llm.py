@@ -6,10 +6,11 @@ used, keeping every pipeline path offline-safe and testable. Prompt
 chaining in the decision engine is expressed only through ``complete()``,
 so a mock subclass can pin any step of the chain for deterministic tests.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Callable
+from collections.abc import Callable
 
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger

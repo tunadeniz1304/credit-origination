@@ -5,6 +5,7 @@ healthy-start ordering, the shared image with distinct commands, and the
 Celery app entrypoint the worker resolves. ``docker compose config`` lint is
 the operational companion check (see README).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -15,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _compose() -> dict:
-    with open(ROOT / "docker-compose.yml", "r", encoding="utf-8") as fh:
+    with open(ROOT / "docker-compose.yml", encoding="utf-8") as fh:
         return yaml.safe_load(fh)
 
 

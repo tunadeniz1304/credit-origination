@@ -1,4 +1,5 @@
 """API router: liveness, application submission and status retrieval."""
+
 from __future__ import annotations
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -58,7 +59,6 @@ def submit_application(payload: ApplicationSubmit) -> dict:
         ACTION_QUEUED,
         ACTION_SUBMITTED,
         append_audit,
-        load_audit,
     )
 
     # Fraud-visibility: flag a repeat application by the same identity number.
@@ -94,7 +94,7 @@ def submit_application(payload: ApplicationSubmit) -> dict:
         receipt = TaskDispatcher().enqueue(
             "app.tasks.process_application", application_id=application_id
         )
-    except Exception as exc:  # noqa: BLE001 - dispatch failure must not 500 the POST
+    except Exception as exc:
         logger.exception("Dispatch failed for %s", application_id)
         update_record_status(
             application_id,
@@ -160,7 +160,9 @@ def application_schedule(application_id: str) -> dict:
     if result is None or result.decision is None:
         raise HTTPException(status_code=404, detail="no decision available yet")
     if result.status != ApplicationStatus.APPROVED:
-        raise HTTPException(status_code=409, detail="schedule available only for approved applications")
+        raise HTTPException(
+            status_code=409, detail="schedule available only for approved applications"
+        )
     schedule = build_schedule(
         application_id,
         principal=result.decision.suggested_amount,
@@ -183,10 +185,7 @@ async def upload_document(
 
     settings = get_settings()
     normalized = code.upper()
-    known = {
-        req.code
-        for req in load_pipeline_rules().document_policy.required_documents
-    }
+    known = {req.code for req in load_pipeline_rules().document_policy.required_documents}
     if normalized not in known:
         raise HTTPException(status_code=400, detail=f"unknown document code: {code}")
 
@@ -201,9 +200,7 @@ async def upload_document(
         raise HTTPException(status_code=404, detail="application not found")
     from app.engine.audit import ACTION_DOCUMENT_DELIVERED, append_audit
 
-    append_audit(
-        application_id, ACTION_DOCUMENT_DELIVERED, f"{normalized} received", settings
-    )
+    append_audit(application_id, ACTION_DOCUMENT_DELIVERED, f"{normalized} received", settings)
 
     check = DocumentControlAgent().check(updated)
     return {
@@ -259,7 +256,6 @@ def application_audit(application_id: str) -> dict:
 @router.get("/api/v1/metrics", tags=["system"])
 def metrics() -> dict:
     """Summarize the processed pipeline (status distribution + totals)."""
-    settings = get_settings()
     from app.api.store import records as _records
 
     status_counts: dict[str, int] = {}
@@ -298,10 +294,8 @@ def queue_status() -> dict:
 
             inspector = _celery.control.inspect()
             active = inspector.active() or {}
-            body["celery_active"] = {
-                worker: len(tasks) for worker, tasks in active.items()
-            }
-        except Exception as exc:  # noqa: BLE001 - broker inspection is best-effort
+            body["celery_active"] = {worker: len(tasks) for worker, tasks in active.items()}
+        except Exception as exc:
             body["celery_active_error"] = str(exc)
     return body
 
@@ -381,7 +375,9 @@ def application_offer(application_id: str) -> dict:
     if result.decision is None:
         raise HTTPException(status_code=404, detail="no decision available")
     if result.status != ApplicationStatus.APPROVED:
-        raise HTTPException(status_code=409, detail="offer available only for approved applications")
+        raise HTTPException(
+            status_code=409, detail="offer available only for approved applications"
+        )
     scorecard = build_scorecard(application_id, result.decision.factors)
     return build_offer(application_id, result.decision, scorecard).model_dump(mode="json")
 

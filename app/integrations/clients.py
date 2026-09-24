@@ -7,6 +7,7 @@ serves deterministic payloads (see ``providers``), so local development,
 tests and Docker need no external service; set ``mock_external=false`` and a
 live ``KKB_BASE_URL`` / ``EDEVLET_BASE_URL`` to hit real endpoints.
 """
+
 from __future__ import annotations
 
 import httpx
@@ -94,7 +95,9 @@ class ExternalAPIClient:
         self.breaker = CircuitBreaker(
             name=self.service,
             failure_threshold=failure_threshold or self.settings.circuit_failure_threshold,
-            reset_timeout=reset_timeout if reset_timeout is not None else self.settings.circuit_reset_timeout_seconds,
+            reset_timeout=reset_timeout
+            if reset_timeout is not None
+            else self.settings.circuit_reset_timeout_seconds,
         )
         self._client: httpx.AsyncClient | None = None
 

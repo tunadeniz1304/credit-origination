@@ -1,4 +1,5 @@
 """ApplicationPipeline: orchestrates the async credit decision pipeline."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -10,7 +11,7 @@ from app.agents.llm import LLMProvider
 from app.core.config import Settings, get_settings
 from app.core.logging import get_logger
 from app.engine.reports import generate_report_files
-from app.models import ApplicationStatus, LoanApplication, PipelineResult
+from app.models import LoanApplication, PipelineResult
 
 
 class ApplicationPipeline:
@@ -66,9 +67,7 @@ class ApplicationPipeline:
             )
         return payload
 
-    def _report_paths(
-        self, application_id: str
-    ) -> tuple[str, str]:
+    def _report_paths(self, application_id: str) -> tuple[str, str]:
         """Resolve expected report file paths for an application id."""
         report_dir = self.settings.report_dir
         return str(report_dir / f"{application_id}_report.json"), str(

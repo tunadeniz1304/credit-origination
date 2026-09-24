@@ -7,6 +7,7 @@ outcome. Reads fall back from result files to application files, and the API
 layer falls back to the in-memory store, so GET stays coherent in both
 worker topologies.
 """
+
 from __future__ import annotations
 
 import json

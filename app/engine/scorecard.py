@@ -10,9 +10,7 @@ there is no randomness anywhere in the computation.
 
 from __future__ import annotations
 
-from typing import Union
-
-from pydantic import BaseModel, Field, computed_field
+from pydantic import BaseModel
 
 from app.models import CommitteeFactor
 
@@ -58,7 +56,7 @@ def _grade(total_score: float) -> str:
     return "E"
 
 
-def _row_score(factor: Union[CommitteeFactor, object]) -> float:
+def _row_score(factor: CommitteeFactor | object) -> float:
     """Per-row score in 0..100; 100 when the factor passes."""
     if factor.passed:
         return 100.0
@@ -67,9 +65,7 @@ def _row_score(factor: Union[CommitteeFactor, object]) -> float:
     return max(0.0, min(100.0, 100.0 * (1.0 - distance / denominator)))
 
 
-def build_scorecard(
-    application_id: str, factors: object
-) -> RiskScorecard:
+def build_scorecard(application_id: str, factors: object) -> RiskScorecard:
     """Build a weighted composite scorecard from a sequence of committee factors.
 
     ``factors`` accepts any iterable of objects exposing ``name``, ``passed``,

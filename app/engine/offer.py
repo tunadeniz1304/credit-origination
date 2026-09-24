@@ -4,6 +4,7 @@ Deterministic offer generator producing a compact, BDDK-style offer summary:
 the committee's suggested amount and term, the composite risk grade from the
 scorecard and the first-instalment details from the amortization schedule.
 """
+
 from __future__ import annotations
 
 from pydantic import BaseModel

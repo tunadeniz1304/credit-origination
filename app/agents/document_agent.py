@@ -6,6 +6,7 @@ RAGDocumentAnalyzer loads applicant documents with LangChain loaders
 (``TextLoader`` / ``PyMuPDFLoader``), chunks them and offers deterministic
 lexical retrieval for the RAG step of the decision pipeline.
 """
+
 from __future__ import annotations
 
 from collections.abc import Sequence
@@ -66,14 +67,16 @@ class DocumentControlAgent(AgentBase):
         lines = [
             f"Sayın {application.applicant.name},",
             "",
-            "Kredi başvurunuzun değerlendirmesine devam edebilmek için aşağıdaki belgeleri eksiksiz iletmeniz gerekmektedir:",
+            "Kredi başvurunuzun değerlendirmesine devam edebilmek için aşağıdaki "
+            "belgeleri eksiksiz iletmeniz gerekmektedir:",
             "",
         ]
         lines.extend(f"- {req.code}: {req.description}" for req in missing)
         lines.extend(
             [
                 "",
-                "Lütfen belgelerinizi en geç 10 iş günü içinde şubemize veya müşteri hizmetlerimize iletiniz.",
+                "Lütfen belgelerinizi en geç 10 iş günü içinde şubemize veya "
+                "müşteri hizmetlerimize iletiniz.",
                 "Saygılarımızla,",
                 "Kredi Operasyon Birimi",
             ]

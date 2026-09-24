@@ -4,6 +4,7 @@ Each client is exercised over an in-process ``httpx.MockTransport``, so no
 network is required and all behaviour (retry backoff, circuit trip) is fully
 deterministic.
 """
+
 from __future__ import annotations
 
 import asyncio

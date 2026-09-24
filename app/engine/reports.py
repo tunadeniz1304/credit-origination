@@ -1,4 +1,5 @@
 """Kredi Tahsis Raporu generation: JSON (machine) + PDF (human)."""
+
 from __future__ import annotations
 
 from reportlab.lib import colors
@@ -46,19 +47,41 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
     decision = payload.decision
 
     styles = getSampleStyleSheet()
-    styles.add(ParagraphStyle(name="ReportTitle", parent=styles["Title"], fontSize=18,
-                              alignment=TA_CENTER, spaceAfter=22,
-                              textColor=colors.HexColor("#1F3B57")))
-    styles.add(ParagraphStyle(name="SectionHeading", parent=styles["Heading2"],
-                              textColor=colors.HexColor("#1F3B57"),
-                              spaceBefore=14, spaceAfter=6))
-    styles.add(ParagraphStyle(name="BodyJustified", parent=styles["BodyText"],
-                              alignment=TA_JUSTIFY, leading=14))
-    styles.add(ParagraphStyle(
-        name="Verdict", parent=styles["BodyText"], alignment=TA_CENTER, fontSize=14,
-        fontName="Helvetica-Bold",
-        textColor=_GREEN if payload.status.value == "APPROVED" else _RED, spaceBefore=10,
-    ))
+    styles.add(
+        ParagraphStyle(
+            name="ReportTitle",
+            parent=styles["Title"],
+            fontSize=18,
+            alignment=TA_CENTER,
+            spaceAfter=22,
+            textColor=colors.HexColor("#1F3B57"),
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="SectionHeading",
+            parent=styles["Heading2"],
+            textColor=colors.HexColor("#1F3B57"),
+            spaceBefore=14,
+            spaceAfter=6,
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="BodyJustified", parent=styles["BodyText"], alignment=TA_JUSTIFY, leading=14
+        )
+    )
+    styles.add(
+        ParagraphStyle(
+            name="Verdict",
+            parent=styles["BodyText"],
+            alignment=TA_CENTER,
+            fontSize=14,
+            fontName="Helvetica-Bold",
+            textColor=_GREEN if payload.status.value == "APPROVED" else _RED,
+            spaceBefore=10,
+        )
+    )
 
     story = [
         Paragraph("KREDİ TAHSİS RAPORU", styles["ReportTitle"]),
@@ -73,7 +96,10 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
                 ["Başvuru Sahibi", applicant.name],
                 ["T.C. Kimlik No", applicant.identity_no],
                 ["Aylık Gelir", f"{applicant.monthly_income:,.2f} TRY"],
-                ["Talep Edilen Kredi", f"{application.requested_amount:,.2f} {application.currency}"],
+                [
+                    "Talep Edilen Kredi",
+                    f"{application.requested_amount:,.2f} {application.currency}",
+                ],
                 ["Vade", f"{application.requested_term_months} ay"],
             ],
             colWidths=[6 * cm, 10 * cm],
@@ -141,7 +167,7 @@ def _build_pdf(payload: PipelineResult, application_id: str, path) -> None:
     )
     try:
         doc.build(story)
-    except Exception as exc:  # noqa: BLE001 - surface writer failures loudly
+    except Exception as exc:
         logger.exception("PDF build failed for %s: %s", application_id, exc)
         raise
 
@@ -203,4 +229,3 @@ def pdf_to_text(path: str) -> str:
         return ""
     reader = pypdf.PdfReader(path)
     return "\n".join(page.extract_text() or "" for page in reader.pages)
-

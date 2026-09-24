@@ -1,11 +1,14 @@
 """Scorecard module tests."""
+
 from __future__ import annotations
 
 from app.engine.scorecard import build_scorecard
 from app.models import CommitteeFactor
 
 
-def _factor(name: str, value: float, threshold: float, operator: str, passed: bool) -> CommitteeFactor:
+def _factor(
+    name: str, value: float, threshold: float, operator: str, passed: bool
+) -> CommitteeFactor:
     return CommitteeFactor(
         name=name,
         value=value,

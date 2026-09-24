@@ -5,6 +5,7 @@ application is side-effect free: no connection is opened here, so imports
 succeed even without a live Redis (tests and local demos use the inline
 task dispatcher instead).
 """
+
 from __future__ import annotations
 
 from celery import Celery

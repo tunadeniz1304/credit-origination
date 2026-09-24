@@ -1,0 +1,71 @@
+[project]
+name = "anil2-credit-platform"
+version = "2.0.0"
+description = "Explainable, human-in-the-loop hybrid credit origination platform (BDDK / KVKK aligned)."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+
+[project.optional-dependencies]
+# Heavy, optional capabilities. The platform degrades gracefully without them.
+ocr = ["pytesseract>=0.3.10"]
+barcode = ["pyzbar>=0.1.9"]
+layout = ["docling>=2.0"]
+explain = ["dice-ml>=0.11"]
+challenger = ["interpret>=0.6"]
+drift = ["evidently>=0.4"]
+embeddings = ["sentence-transformers>=3.0"]
+survival = ["lifelines>=0.29"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["data", "logs", "artifacts", "frontend/vendor", "app/static/vendor"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "SIM", "RUF"]
+ignore = [
+    "S101",   # assert is fine in tests
+    "B008",   # FastAPI Depends() in defaults
+    "RUF001", # Turkish characters in strings are intentional
+    "RUF002",
+    "RUF003",
+    "S311",   # pseudo-random generators are used only for synthetic data
+    "RUF012",
+    "UP042",  # str-based Enum is intentional (JSON friendly)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B", "E501", "E402", "F841"]
+"scripts/**" = ["S", "E501"]
+"alembic/**" = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = false
+check_untyped_defs = false
+disallow_untyped_defs = false
+no_implicit_optional = true
+plugins = ["pydantic.mypy"]
+exclude = ["^tests/", "^scripts/", "^alembic/"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+addopts = "-p no:cacheprovider"
+markers = ["slow: long-running tests (model training)"]
+filterwarnings = ["ignore::DeprecationWarning", "ignore::UserWarning"]
+
+[tool.coverage.run]
+source = ["app"]
+omit = ["app/worker/celery_app.py"]
+
+[tool.coverage.report]
+show_missing = false
+skip_covered = true
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]

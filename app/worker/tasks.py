@@ -5,9 +5,11 @@ both as a Celery task (``@celery_app.task``) and in ``INLINE_TASKS`` so the
 :class:`TaskDispatcher` can run the exact same body synchronously when no
 Redis broker is available (local development and the test suite).
 """
+
 from __future__ import annotations
 
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from app.api.store import update_record_status
 from app.core.config import get_settings
@@ -66,15 +68,11 @@ def process_application(application_id: str) -> dict[str, Any]:
     append_audit(application_id, ACTION_PROCESSING, "worker started pipeline", settings)
     try:
         result = run_coroutine_safe(
-            ApplicationPipeline(settings).run(
-                application, application_id=application_id
-            )
+            ApplicationPipeline(settings).run(application, application_id=application_id)
         )
         persist_result(application_id, result, settings)
         update_record_status(application_id, status=result.status, result=result)
-        action = (
-            ACTION_APPROVED if result.status == ApplicationStatus.APPROVED else ACTION_REJECTED
-        )
+        action = ACTION_APPROVED if result.status == ApplicationStatus.APPROVED else ACTION_REJECTED
         append_audit(application_id, action, f"committee verdict: {result.status.value}", settings)
         from app.engine.notifier import enqueue_notification
 
@@ -87,12 +85,10 @@ def process_application(application_id: str) -> dict[str, Any]:
             settings=settings,
         )
         return result.model_dump(mode="json")
-    except Exception as exc:  # noqa: BLE001 - record failure, never crash the caller
+    except Exception as exc:
         persist_error(application_id, str(exc), settings)
         append_audit(application_id, ACTION_FAILED, str(exc), settings)
-        update_record_status(
-            application_id, status=ApplicationStatus.FAILED, error=str(exc)
-        )
+        update_record_status(application_id, status=ApplicationStatus.FAILED, error=str(exc))
         return {
             "application_id": application_id,
             "status": ApplicationStatus.FAILED.value,

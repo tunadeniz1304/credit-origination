@@ -1,4 +1,5 @@
 """Notification outbox module tests."""
+
 from __future__ import annotations
 
 from app.core.config import Settings
@@ -21,8 +22,7 @@ def _settings(tmp_path) -> Settings:
 
 def test_enqueue_then_list_returns_pending_first(tmp_path):
     settings = _settings(tmp_path)
-    entry = enqueue_notification("APP-X", EVENT_APPROVED,
-                                 {"status": "APPROVED"}, settings)
+    entry = enqueue_notification("APP-X", EVENT_APPROVED, {"status": "APPROVED"}, settings)
     entries = list_notifications(settings=settings)
     assert len(entries) == 1
     assert entries[0].id == entry.id

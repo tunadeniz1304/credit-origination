@@ -4,6 +4,7 @@ These types are the single source of truth for every stage of the
 pipeline: document control, RAG analysis, external API integration,
 the credit decision engine and the final reports.
 """
+
 from __future__ import annotations
 
 from enum import Enum

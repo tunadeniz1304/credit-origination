@@ -4,6 +4,7 @@
 while `PipelineRules` is the typed view of the business rules shipped in
 ``config/config.json``. Both are cached process-wide.
 """
+
 from __future__ import annotations
 
 import json
@@ -12,7 +13,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.models import DocumentRequirement
@@ -122,7 +123,7 @@ class PipelineRules(BaseModel):
 
 @lru_cache(maxsize=1)
 def _load_rules_raw(path: Path = CONFIG_PATH) -> dict:
-    with open(path, "r", encoding="utf-8") as fh:
+    with open(path, encoding="utf-8") as fh:
         return json.load(fh)
 
 

@@ -4,6 +4,7 @@ Calls the resilient KKB (credit bureau) and e-Devlet (employment) clients
 and assembles a single :class:`AggregatedFinancialData` picture for the
 decision engine.
 """
+
 from __future__ import annotations
 
 import asyncio

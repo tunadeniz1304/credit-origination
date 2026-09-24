@@ -5,6 +5,7 @@ completed results and for cross-process coherence (Celery worker); this
 in-memory layer carries queue-status metadata and recent submissions within
 the API process.
 """
+
 from __future__ import annotations
 
 import threading

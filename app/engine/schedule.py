@@ -4,9 +4,10 @@ Standard annuity repayment: equal monthly instalments whose present-value
 sum equals the principal at the quoted annual rate. Produces a BDDK-style
 repayment plan (vade planı) for the report and API surface.
 """
+
 from __future__ import annotations
 
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal
 
 from pydantic import BaseModel, Field
 

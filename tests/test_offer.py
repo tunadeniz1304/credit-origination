@@ -1,4 +1,5 @@
 """Loan offer terms module tests."""
+
 from __future__ import annotations
 
 import pytest
@@ -16,14 +17,19 @@ from app.models import (
 
 def _approved_decision():
     financial = AggregatedFinancialData(
-        identity_no="12345678901", kbb_score=1450, risk_class="DÜŞÜK RİSK",
-        total_debt=134070.0, monthly_income=300_000.0,
-        employer="Anadolu Bilişim Ltd.", employment_years=8, employment_verified=True,
+        identity_no="12345678901",
+        kbb_score=1450,
+        risk_class="DÜŞÜK RİSK",
+        total_debt=134070.0,
+        monthly_income=300_000.0,
+        employer="Anadolu Bilişim Ltd.",
+        employment_years=8,
+        employment_verified=True,
     )
     application = LoanApplication(
-        applicant=Applicant(name="Test", identity_no="12345678901",
-                            monthly_income=300_000.0),
-        requested_amount=100_000.0, requested_term_months=36,
+        applicant=Applicant(name="Test", identity_no="12345678901", monthly_income=300_000.0),
+        requested_amount=100_000.0,
+        requested_term_months=36,
     )
     return CreditCommitteeAgent().decide(application, financial)
 
@@ -43,11 +49,15 @@ def test_build_offer_for_approved_decision():
 
 
 def test_build_offer_rejects_unapproved():
-    from app.models import ApplicationStatus as S, CommitteeDecision, CommitteeFactor
+    from app.models import ApplicationStatus as S
+    from app.models import CommitteeDecision
 
     decision = CommitteeDecision(
-        status=S.REJECTED, approved=False, factors=[],
-        suggested_amount=0.0, suggested_term_months=0,
+        status=S.REJECTED,
+        approved=False,
+        factors=[],
+        suggested_amount=0.0,
+        suggested_term_months=0,
     )
     with pytest.raises(ValueError):
         build_offer("APP-X", decision)

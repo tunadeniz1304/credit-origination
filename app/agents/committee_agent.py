@@ -7,6 +7,7 @@ report is produced by a two-step Turkish prompt chain over the active LLM
 provider, so the business decision never depends on model randomness while
 the narrative stays explainable and BDDK-report-shaped.
 """
+
 from __future__ import annotations
 
 from app.agents.base import AgentBase

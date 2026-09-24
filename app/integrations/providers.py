@@ -8,6 +8,7 @@ machines and runs. The sample identities are pinned by the test suite:
     12345678901 -> KBB 1450, debt 134070 (passes min_kbb_score)
     34567890123 -> KBB  619, debt 176116 (fails  min_kbb_score)
 """
+
 from __future__ import annotations
 
 import hashlib

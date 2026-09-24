@@ -8,6 +8,7 @@ exits non-zero when any step fails.
 Usage:
     python scripts/smoke.py [--base http://127.0.0.1:8000]
 """
+
 from __future__ import annotations
 
 import argparse
@@ -67,7 +68,9 @@ def main() -> int:
             failures.append(label)
 
     status, body = request(f"{base}/health")
-    check("health", status == 200 and body["status"] == "ok", f"backend={body.get('queue_backend')}")
+    check(
+        "health", status == 200 and body["status"] == "ok", f"backend={body.get('queue_backend')}"
+    )
 
     up = submit(base, APPROVE_IDENTITY, 300_000, 100_000, 36)
     status, body = request(f"{base}/api/v1/applications/{up}")
@@ -100,7 +103,10 @@ def main() -> int:
     check("metrics", status == 200 and body["total_applications"] >= 2)
 
     status, body = request(f"{base}/api/v1/queue")
-    check("queue status", status == 200 and "app.tasks.process_application" in body["registered_tasks"])
+    check(
+        "queue status",
+        status == 200 and "app.tasks.process_application" in body["registered_tasks"],
+    )
 
     status, _ = request(f"{base}/static/dashboard.html")
     check("dashboard served", status == 200)

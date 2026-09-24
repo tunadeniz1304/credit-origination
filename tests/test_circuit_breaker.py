@@ -1,4 +1,5 @@
 """Circuit breaker lifecycle tests (open / half-open probe / recovery)."""
+
 from __future__ import annotations
 
 import time

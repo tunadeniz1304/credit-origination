@@ -1,4 +1,5 @@
 """Credit committee engine + report generation tests."""
+
 from __future__ import annotations
 
 import json
@@ -19,10 +20,12 @@ from app.models import (
 
 ALL_DOCS = ["IDENTITY", "INCOME", "EMPLOYMENT", "ADDRESS", "BANK_STATEMENT"]
 MOCK_PROVIDER_FINANCIALS = {
-    "12345678901": dict(kbb_score=1450, risk_class="DÜŞÜK RİSK", total_debt=134070.0,
-                        monthly_income=300_000.0),
-    "34567890123": dict(kbb_score=619, risk_class="YÜKSEK RİSK", total_debt=176_116.0,
-                        monthly_income=30_000.0),
+    "12345678901": dict(
+        kbb_score=1450, risk_class="DÜŞÜK RİSK", total_debt=134070.0, monthly_income=300_000.0
+    ),
+    "34567890123": dict(
+        kbb_score=619, risk_class="YÜKSEK RİSK", total_debt=176_116.0, monthly_income=30_000.0
+    ),
 }
 
 
@@ -40,12 +43,16 @@ def _financial(identity: str, monthly_income: float | None = None) -> Aggregated
     )
 
 
-def _application(monthly_income: float, amount: float, term: int,
-                 identity: str = "12345678901") -> LoanApplication:
+def _application(
+    monthly_income: float, amount: float, term: int, identity: str = "12345678901"
+) -> LoanApplication:
     return LoanApplication(
-        applicant=Applicant(name="Test User", identity_no=identity,
-                            monthly_income=monthly_income,
-                            submitted_documents=list(ALL_DOCS)),
+        applicant=Applicant(
+            name="Test User",
+            identity_no=identity,
+            monthly_income=monthly_income,
+            submitted_documents=list(ALL_DOCS),
+        ),
         requested_amount=amount,
         requested_term_months=term,
     )

@@ -1,4 +1,5 @@
 """LLMProvider contract tests (mock path — deterministic and offline)."""
+
 from __future__ import annotations
 
 from app.agents.llm import LLMProvider, MockLLMProvider, get_provider

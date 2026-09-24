@@ -4,6 +4,7 @@ The :func:`get_logger` factory is idempotent: each named logger gets its
 handlers installed exactly once, so repeated imports or agent construction
 never duplicate log lines.
 """
+
 from __future__ import annotations
 
 import logging

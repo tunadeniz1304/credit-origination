@@ -5,11 +5,13 @@ real Celery tasks on a Redis broker; locally (no Redis) and in the test
 suite it runs the identical task body inline. This module hides that
 choice behind one ``enqueue`` call.
 """
+
 from __future__ import annotations
 
 import asyncio
 import uuid
-from typing import Any, Awaitable
+from collections.abc import Awaitable
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -82,9 +84,7 @@ class TaskDispatcher:
         if celery_task is None:
             raise UnknownTaskError(task_name)
         async_result = celery_task.delay(**kwargs)
-        self.logger.info(
-            "Enqueued %s on celery broker -> task_id=%s", task_name, async_result.id
-        )
+        self.logger.info("Enqueued %s on celery broker -> task_id=%s", task_name, async_result.id)
         return TaskReceipt(
             backend="celery",
             task_name=task_name,

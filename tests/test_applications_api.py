@@ -1,4 +1,5 @@
 """Application API tests: submit, fetch, validation (inline backend)."""
+
 from __future__ import annotations
 
 import os
@@ -81,8 +82,13 @@ def test_submit_rejected_application():
 def test_submit_invalid_payload_returns_422():
     response = client.post(
         "/api/v1/applications",
-        json={"name": "x", "identity_no": "1", "monthly_income": 0,
-              "requested_amount": 100, "requested_term_months": 12},
+        json={
+            "name": "x",
+            "identity_no": "1",
+            "monthly_income": 0,
+            "requested_amount": 100,
+            "requested_term_months": 12,
+        },
     )
     assert response.status_code == 422
 
@@ -122,8 +128,10 @@ def test_schedule_endpoint_rejects_unapproved():
     response = client.post(
         "/api/v1/applications",
         json=_payload(
-            identity_no="34567890123", monthly_income=30_000,
-            requested_amount=50_000, requested_term_months=24,
+            identity_no="34567890123",
+            monthly_income=30_000,
+            requested_amount=50_000,
+            requested_term_months=24,
         ),
     )
     application_id = response.json()["application_id"]
@@ -131,9 +139,7 @@ def test_schedule_endpoint_rejects_unapproved():
 
 
 def test_upload_document_updates_completeness():
-    submitted = client.post(
-        "/api/v1/applications", json=_payload(submitted_documents=["IDENTITY"])
-    )
+    submitted = client.post("/api/v1/applications", json=_payload(submitted_documents=["IDENTITY"]))
     application_id = submitted.json()["application_id"]
 
     incomplete = client.post(
@@ -207,9 +213,12 @@ def test_download_report_json_and_pdf():
     assert p.status_code == 200
     assert p.headers["content-type"] == "application/pdf"
     assert p.content[:4] == b"%PDF"
-    assert client.get(
-        f"/api/v1/applications/{application_id}/report", params={"format": "doc"}
-    ).status_code == 400
+    assert (
+        client.get(
+            f"/api/v1/applications/{application_id}/report", params={"format": "doc"}
+        ).status_code
+        == 400
+    )
 
 
 def test_document_status_endpoint():
@@ -236,13 +245,13 @@ def test_scorecard_endpoint_returns_composite_grade():
     rejected = client.post(
         "/api/v1/applications",
         json=_payload(
-            identity_no="34567890123", monthly_income=30_000,
-            requested_amount=50_000, requested_term_months=24,
+            identity_no="34567890123",
+            monthly_income=30_000,
+            requested_amount=50_000,
+            requested_term_months=24,
         ),
     ).json()
-    rej_body = client.get(
-        f"/api/v1/applications/{rejected['application_id']}/scorecard"
-    ).json()
+    rej_body = client.get(f"/api/v1/applications/{rejected['application_id']}/scorecard").json()
     assert rej_body["total_score"] < 100.0
     assert rej_body["grade"] != "A"
 
@@ -258,13 +267,13 @@ def test_offer_endpoint_returns_priced_terms():
     rejected = client.post(
         "/api/v1/applications",
         json=_payload(
-            identity_no="34567890123", monthly_income=30_000,
-            requested_amount=50_000, requested_term_months=24,
+            identity_no="34567890123",
+            monthly_income=30_000,
+            requested_amount=50_000,
+            requested_term_months=24,
         ),
     ).json()
-    assert client.get(
-        f"/api/v1/applications/{rejected['application_id']}/offer"
-    ).status_code == 409
+    assert client.get(f"/api/v1/applications/{rejected['application_id']}/offer").status_code == 409
 
 
 def test_audit_endpoint_returns_lifecycle_events():
@@ -287,12 +296,12 @@ def test_queue_status_reports_backend_and_registered_tasks():
 
 
 def test_document_chunks_retrieval():
-    submitted = client.post(
-        "/api/v1/applications", json=_payload(submitted_documents=["INCOME"])
-    )
+    submitted = client.post("/api/v1/applications", json=_payload(submitted_documents=["INCOME"]))
     application_id = submitted.json()["application_id"]
-    content = ("Aylık gelir 30000 TRY, maaş ödemeleri banka hesap ekstresinden "
-               "doğrulanır. Bu belgede bordro kesintileri ve primler listelenir.\n") * 20
+    content = (
+        "Aylık gelir 30000 TRY, maaş ödemeleri banka hesap ekstresinden "
+        "doğrulanır. Bu belgede bordro kesintileri ve primler listelenir.\n"
+    ) * 20
     client.post(
         f"/api/v1/applications/{application_id}/documents",
         files={"file": ("INCOME.txt", content.encode(), "text/plain")},

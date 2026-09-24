@@ -4,11 +4,13 @@ States: CLOSED (normal) -> OPEN (failures >= threshold; rejects calls until
 ``reset_timeout`` elapses) -> HALF_OPEN (a single probe is admitted) ->
 CLOSED on success or back to OPEN on probe failure.
 """
+
 from __future__ import annotations
 
 import time
+from collections.abc import Awaitable, Callable
 from enum import Enum
-from typing import Any, Awaitable, Callable
+from typing import Any
 
 from app.core.logging import get_logger
 
@@ -50,9 +52,7 @@ class CircuitBreaker:
 
     def _transition_to_open(self) -> None:
         if self._state is not CircuitState.OPEN:
-            self.logger.warning(
-                "Circuit '%s' OPEN (failures=%d)", self.name, self._failure_count
-            )
+            self.logger.warning("Circuit '%s' OPEN (failures=%d)", self.name, self._failure_count)
         self._state = CircuitState.OPEN
         self._opened_at = time.monotonic()
 

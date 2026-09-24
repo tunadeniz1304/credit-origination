@@ -1,4 +1,5 @@
 """RAG document analysis models."""
+
 from __future__ import annotations
 
 from pydantic import BaseModel, Field, computed_field
