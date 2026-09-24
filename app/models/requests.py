@@ -92,7 +92,7 @@ class RegisterRequest(LoginRequest):
 
 
 class OpenBankingConsentRequest(BaseModel):
-    scopes: list[Literal["hesap_bilgisi", "hesap_hareketleri", "bakiye"]] = Field(
+    scopes: list[str] = Field(
         default_factory=lambda: ["hesap_bilgisi", "hesap_hareketleri", "bakiye"]
     )
     days: int = Field(default=90, ge=1, le=180)

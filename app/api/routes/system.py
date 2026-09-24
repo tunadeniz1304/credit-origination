@@ -23,6 +23,10 @@ from app.workflow.states import STATE_LABELS, State
 router = APIRouter(tags=["system"])
 
 
+def _pairs(rows: Any) -> dict[str, int]:
+    return {str(k): int(v) for k, v in rows}
+
+
 @router.get("/health")
 def health() -> dict[str, Any]:
     """Backwards-compatible liveness summary."""
@@ -93,12 +97,12 @@ def summary_metrics(
     session: Session = Depends(db_session), user: Principal = Depends(require_staff)
 ) -> dict[str, Any]:
     """Operational summary computed from the database (not process memory)."""
-    by_state = dict(
+    by_state: dict[str, int] = _pairs(
         session.execute(
             select(Application.state, func.count(Application.id)).group_by(Application.state)
         ).all()
     )
-    outcomes = dict(
+    outcomes: dict[str, int] = _pairs(
         session.execute(
             select(Decision.outcome, func.count(Decision.id))
             .where(Decision.kind == "engine")
@@ -128,7 +132,7 @@ def summary_metrics(
         ).all()
     ]
     latency = session.execute(select(func.avg(Decision.latency_ms))).scalar_one()
-    llm = dict(
+    llm: dict[str, int] = _pairs(
         session.execute(select(LLMCall.mode, func.count(LLMCall.id)).group_by(LLMCall.mode)).all()
     )
     buckets = [0.02, 0.05, 0.1, 0.2, 1.0]

@@ -79,7 +79,7 @@ def queue(
         )
     items.sort(
         key=lambda i: (
-            -i["priority"],
+            -float(i["priority"]),  # type: ignore[arg-type]
             i["sla_remaining_hours"] if i["sla_remaining_hours"] is not None else 1e9,
         )
     )

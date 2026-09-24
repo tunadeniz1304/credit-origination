@@ -213,7 +213,7 @@ def run_scenario(
     }
     if scenario.extra.get("memo") or scenario.extra.get("four_eyes"):
         with session_scope(settings) as session:
-            app = session.get(Application, application_id)
+            app = session.get(Application, application_id)  # type: ignore[assignment]
             if scenario.extra.get("memo"):
                 from app.agents.underwriter.graph import UnderwriterAgent
 

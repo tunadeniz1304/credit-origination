@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from collections.abc import Awaitable
+from collections.abc import Coroutine
 from typing import Any
 
 from pydantic import BaseModel
@@ -51,7 +51,7 @@ def resolve_backend(settings: Settings | None = None) -> str:
         return "inline"
 
 
-def run_coroutine_safe(coro: Awaitable[Any]) -> Any:
+def run_coroutine_safe(coro: Coroutine[Any, Any, Any]) -> Any:
     """Run a coroutine without clashing with an already-running loop."""
     try:
         asyncio.get_running_loop()

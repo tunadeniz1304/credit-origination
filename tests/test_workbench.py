@@ -142,7 +142,10 @@ def test_four_eyes_approval_flow(client, users, grey_id):
     )
     assert approved.status_code == 200 and approved.json()["state"] == "TEKLIF_SUNULDU"
     detail = client.get(f"/api/v1/applications/{grey_id}", headers=users["kidemli"]).json()
-    assert detail["decision"]["kind"] in ("manual", "override") and detail["decision"]["decided_by"] == "kidemli"
+    assert (
+        detail["decision"]["kind"] in ("manual", "override")
+        and detail["decision"]["decided_by"] == "kidemli"
+    )
     assert detail["offer"]["amount"] > 0
 
 

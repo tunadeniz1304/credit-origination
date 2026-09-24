@@ -19,7 +19,9 @@ _TMP = Path(tempfile.mkdtemp(prefix="anil2-docs-"))
 
 
 def login(client: TestClient, username: str) -> dict[str, str]:
-    response = client.post("/api/v1/auth/login", json={"username": username, "password": DEMO_LOGIN})
+    response = client.post(
+        "/api/v1/auth/login", json={"username": username, "password": DEMO_LOGIN}
+    )
     assert response.status_code == 200, response.text
     return {"Authorization": f"Bearer {response.json()['access_token']}"}
 

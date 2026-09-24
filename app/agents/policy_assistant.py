@@ -46,7 +46,7 @@ async def ask(question: str, llm: LLMService | None = None, k: int = 4) -> dict[
             errors.append("no sources cited")
         return errors
 
-    generation = await llm.generate(
+    generation: Any = await llm.generate(
         "policy_answer",
         [
             {

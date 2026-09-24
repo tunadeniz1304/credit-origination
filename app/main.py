@@ -59,8 +59,13 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     from app.db.session import init_db, session_scope
 
     init_db(settings)
-    with session_scope(settings) as session:
-        ensure_demo_users(session, settings)
+    from sqlalchemy.exc import IntegrityError
+
+    try:
+        with session_scope(settings) as session:
+            ensure_demo_users(session, settings)
+    except IntegrityError:  # another worker process seeded them concurrently
+        logger.info("demo users already created by another worker")
     from app.db.session import register_after_commit
 
     register_recorder(_buffer_llm_call)

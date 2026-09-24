@@ -350,9 +350,9 @@ def train_pd_model(df: pd.DataFrame, out_dir: Path, version: str = "pd_lgbm_v1")
     iso = IsotonicRegression(out_of_bounds="clip", y_min=0.0005, y_max=0.9995)
     iso.fit(raw_calib, calib.target)
     raw_test = booster.predict(test[features], num_iteration=booster.best_iteration)
-    p_test = iso.predict(raw_test)
+    p_test = np.asarray(iso.predict(raw_test))
     metrics = evaluate_scores(test.target.to_numpy(), p_test)
-    metrics["raw_auc"] = evaluate_scores(test.target.to_numpy(), raw_test)["auc"]
+    metrics["raw_auc"] = evaluate_scores(test.target.to_numpy(), np.asarray(raw_test))["auc"]
     metrics["calibration"] = calibration_table(test.target.to_numpy(), p_test)
     metrics["best_iteration"] = int(booster.best_iteration)
     importance = dict(zip(features, booster.feature_importance("gain").tolist(), strict=True))

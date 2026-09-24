@@ -147,13 +147,18 @@ def arithmetic_signals(
             _field(fields, "toplam_kesinti"),
             _field(fields, "net_ucret"),
         )
-        if None not in (gross, deductions, net) and abs(gross - deductions - net) > 1.0:  # type: ignore[operator]
+        if (
+            gross is not None
+            and deductions is not None
+            and net is not None
+            and abs(gross - deductions - net) > 1.0
+        ):
             return [
                 _signal(
                     "arithmetic_mismatch",
                     f"brüt−kesinti={gross - deductions:,.2f} ≠ net={net:,.2f}",
                 )
-            ]  # type: ignore[operator]
+            ]
     if code == "BANK_STATEMENT":
         opening, closing = _field(fields, "acilis_bakiyesi"), _field(fields, "kapanis_bakiyesi")
         movements = statement_transactions(text)

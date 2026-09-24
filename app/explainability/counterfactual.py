@@ -108,16 +108,16 @@ def search(
 
     # 4) Combined: moderate amount cut + longer term.
     if not found:
-        for candidate_term in range(term + 12, max_term + 1, 12):
-            for step in (0.1, 0.2, 0.3):
-                candidate = round(amount * (1 - step), -3)
-                if candidate < max(min_amount, amount * min_ratio):
+        for combined_term in range(term + 12, max_term + 1, 12):
+            for cut in (0.1, 0.2, 0.3):
+                combined: float = round(amount * (1 - cut), -3)
+                if combined < max(min_amount, amount * min_ratio):
                     continue
                 ok, pd = approves(
                     with_loan(
                         snapshot,
-                        amount=candidate,
-                        term=candidate_term,
+                        amount=combined,
+                        term=combined_term,
                         reference_rate=reference_rate,
                     )
                 )
@@ -125,9 +125,9 @@ def search(
                     found.append(
                         Counterfactual(
                             kind="amount_term",
-                            changes={"requested_amount": candidate, "term_months": candidate_term},
+                            changes={"requested_amount": combined, "term_months": combined_term},
                             pd=pd,
-                            text=f"Tutarı {_tl(candidate)} ve vadeyi {candidate_term} ay olarak "
+                            text=f"Tutarı {_tl(combined)} ve vadeyi {combined_term} ay olarak "
                             "güncellemeniz halinde onay olasılığı yüksektir.",
                         )
                     )

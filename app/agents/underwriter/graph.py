@@ -353,7 +353,7 @@ class UnderwriterAgent:
                 "koy; bağlamda olmayan sayı yazma. Karar verme, öneri yaz.\n\n" + context,
             },
         ]
-        generation = await self.llm.generate(
+        generation: Any = await self.llm.generate(
             "credit_memo",
             messages,
             fallback=lambda: fallback_text,
