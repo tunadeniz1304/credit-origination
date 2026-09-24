@@ -61,7 +61,20 @@ def submit_application(payload: ApplicationSubmit) -> dict:
         load_audit,
     )
 
-    append_audit(application_id, ACTION_SUBMITTED, "application accepted", settings)
+    # Fraud-visibility: flag a repeat application by the same identity number.
+    previous_id: str | None = None
+    for rec in list_records(limit=200):
+        if (
+            rec["application"]["applicant"]["identity_no"] == payload.identity_no
+            and rec["status"] != "FAILED"
+        ):
+            previous_id = rec["application_id"]
+            break
+
+    detail = "application accepted"
+    if previous_id is not None:
+        detail += f" (repeat identity; previous application {previous_id})"
+    append_audit(application_id, ACTION_SUBMITTED, detail, settings)
 
     record = ApplicationRecord(
         application_id=application_id,
