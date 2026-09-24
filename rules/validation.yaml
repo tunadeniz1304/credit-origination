@@ -1,0 +1,36 @@
+# Gerçek halka açık veriyle model doğrulama parametreleri (kulvar A ve B).
+# Tüm eşikler buradadır; kodda sihirli sayı yoktur.
+version: validation_v1
+seed: 20260925
+holdout_fraction: 0.20          # tabakalı ayrı tutulan test payı
+cv_folds: 5                     # eğitim payında tabakalı çapraz doğrulama
+bootstrap_iterations: 1000      # AUC güven aralığı için
+confidence: 0.95
+calibration_bins: 10
+low_risk_deciles: 3             # düşük risk bölgesi: en düşük PD'li 3 desil
+
+champion_selection:
+  significance_level: 0.05      # DeLong p-değeri eşiği
+  min_auc_gain: 0.005           # pratik önem: en az 0,5 AUC puanı
+  # Fark anlamlı ve önemli değilse daha basit/yorumlanabilir model seçilir.
+  simplicity_order: [scorecard, logistic, lightgbm]
+
+fairness:
+  air_threshold: 0.80           # 4/5 kuralı
+  approval_rate: 0.70           # tüm modeller bu onay oranında karşılaştırılır
+  age_bins: [0, 29, 39, 49, 200]
+  age_labels: ["21-29", "30-39", "40-49", "50+"]
+  min_group_size: 20            # mutlak alt sınır
+  min_group_share: 0.02         # grup, örneklemin en az %2'si değilse AIR'a alınmaz (oran gürültülü)
+
+lda:
+  attribute: auto               # auto = champion'da en düşük AIR'a sahip korunan özellik
+  proxy_auc_threshold: 0.60     # özellik tek başına korunan özelliği bu AUC ile ayırıyorsa proxy
+  eg_epsilons: [0.05, 0.02]     # ExponentiatedGradient demografik eşitlik sınırları
+  max_auc_loss: 0.01            # kabul edilebilir AUC kaybı (LDA önerisi için)
+
+lane_b:
+  # Kulvar B: sentetik üretici ile gerçek veri arasındaki gecikme-bandı temerrüt eğrisi toleransı
+  band_tolerance_abs: 0.05      # bant başına temerrüt oranı farkı (mutlak)
+  low_risk_tolerance_ratio: 0.25  # düşük risk desillerinde gözlenen/tahmin oranının 1'den sapması
+  delinquency_bands: [0, 1, 2, 3]   # son 6 ayda maksimum gecikme (ay), 3 = 3+

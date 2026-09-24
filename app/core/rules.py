@@ -140,6 +140,52 @@ class SanctionsList(BaseModel):
     entries: list[SanctionEntry]
 
 
+class ChampionSelection(BaseModel):
+    significance_level: float
+    min_auc_gain: float
+    simplicity_order: list[str]
+
+
+class FairnessConfig(BaseModel):
+    air_threshold: float
+    approval_rate: float
+    age_bins: list[float]
+    age_labels: list[str]
+    min_group_size: int
+    min_group_share: float = 0.0
+
+    def group_floor(self, n: int) -> int:
+        return max(self.min_group_size, round(self.min_group_share * n))
+
+
+class LDAConfig(BaseModel):
+    attribute: str
+    proxy_auc_threshold: float
+    eg_epsilons: list[float]
+    max_auc_loss: float
+
+
+class LaneBConfig(BaseModel):
+    band_tolerance_abs: float
+    low_risk_tolerance_ratio: float
+    delinquency_bands: list[int]
+
+
+class ValidationConfig(BaseModel):
+    version: str
+    seed: int
+    holdout_fraction: float
+    cv_folds: int
+    bootstrap_iterations: int
+    confidence: float
+    calibration_bins: int
+    low_risk_deciles: int
+    champion_selection: ChampionSelection
+    fairness: FairnessConfig
+    lda: LDAConfig
+    lane_b: LaneBConfig
+
+
 def _rules_dir() -> Path:
     return get_settings().rules_path
 
@@ -186,6 +232,11 @@ def load_workflow() -> WorkflowConfig:
 @lru_cache(maxsize=1)
 def load_reasons() -> ReasonCatalog:
     return ReasonCatalog.model_validate(read_yaml("reason_codes.yaml"))
+
+
+@lru_cache(maxsize=1)
+def load_validation() -> ValidationConfig:
+    return ValidationConfig.model_validate(read_yaml("validation.yaml"))
 
 
 @lru_cache(maxsize=1)
