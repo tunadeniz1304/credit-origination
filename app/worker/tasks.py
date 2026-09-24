@@ -33,13 +33,34 @@ def _process_application(application_id: str) -> dict[str, Any]:
     from app.workflow.pipeline import Pipeline
     from app.workflow.states import State
 
+    lock = _application_lock(application_id)
+    if lock is not None and not lock.acquire(blocking=False):
+        return {"application_id": application_id, "skipped": "already being processed"}
     try:
         state = run_coroutine_safe(Pipeline(get_settings()).run(application_id))
     except KeyError:
         return {"application_id": application_id, "error": "not found"}
+    finally:
+        if lock is not None:
+            try:
+                lock.release()
+            except Exception:  # lock expired
+                logger.debug("application lock already released", exc_info=True)
     if state == State.VERI_TOPLANIYOR.value:
         _schedule_retry(application_id, load_workflow().data_collection_retry_seconds)
     return {"application_id": application_id, "state": state}
+
+
+def _application_lock(application_id: str) -> Any:
+    """Cross-process lock so one application is never processed twice at once."""
+    from app.core.task_dispatcher import resolve_backend
+
+    if resolve_backend() != "celery":
+        return None
+    import redis
+
+    client = redis.Redis.from_url(get_settings().redis_url)
+    return client.lock(f"anil2:process:{application_id}", timeout=900)
 
 
 def _schedule_retry(application_id: str, countdown: int) -> None:
@@ -68,6 +89,7 @@ def _retry_stalled() -> dict[str, Any]:
     """Re-run applications stuck in data collection (provider outages)."""
     from app.db.models import Application
     from app.db.session import session_scope
+    from app.workflow.service import ApplicationService
     from app.workflow.states import State
 
     with session_scope() as session:
@@ -76,6 +98,19 @@ def _retry_stalled() -> dict[str, Any]:
                 select(Application.id).where(Application.state == State.VERI_TOPLANIYOR.value)
             ).scalars()
         )
+        # Documents completed while the gate was writing its letter (upload race).
+        service = ApplicationService(session)
+        for app in session.execute(
+            select(Application).where(Application.state == State.BELGE_BEKLENIYOR.value)
+        ).scalars():
+            if not service.missing_documents(app):
+                ids.append(app.id)
+    from app.core.task_dispatcher import resolve_backend
+
+    if resolve_backend() == "celery":
+        for app_id in ids:  # fan out; never block the beat-driven task on the LLM
+            process_application.delay(application_id=app_id)
+        return {"retried": len(ids), "queued": ids}
     results = [_process_application(app_id) for app_id in ids]
     return {"retried": len(ids), "results": results}
 

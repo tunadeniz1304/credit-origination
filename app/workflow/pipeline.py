@@ -146,6 +146,12 @@ class Pipeline:
                 letter = await self.narrator().missing_documents_letter(
                     missing_docs_context(app, pii["name"], missing, pii)
                 )
+                # Uploads may have completed while the (possibly live) letter was written.
+                service.session.expire_all()
+                missing = service.missing_documents(app)
+                if not missing:
+                    service.transition(app, State.BELGE_INCELEMEDE, "belgeler tamamlandı")
+                    return True
                 service.transition(
                     app, State.BELGE_BEKLENIYOR, "eksik belge: " + ", ".join(c for c, _ in missing)
                 )
