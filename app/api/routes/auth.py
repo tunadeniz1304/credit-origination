@@ -13,6 +13,7 @@ from app.core.config import get_settings
 from app.core.limiter import limiter
 from app.core.security import (
     ROLE_LABELS,
+    AuthError,
     Principal,
     create_access_token,
     csrf_token_for,
@@ -97,7 +98,12 @@ def logout(request: Request, response: Response) -> dict:
     token = header[7:] if header.lower().startswith("bearer ") else None
     token = token or request.cookies.get(settings.session_cookie_name)
     if token:
-        revoke_token(token)  # the JWT stops working now, not at its expiry
+        try:
+            revoke_token(token)  # the JWT stops working now, not at its expiry
+        except AuthError as exc:  # shared revocation list unreachable: say so, do not 500
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE, "oturum şu an kapatılamadı, tekrar deneyin"
+            ) from exc
     for name in (settings.session_cookie_name, settings.csrf_cookie_name):
         response.delete_cookie(name, path="/", secure=settings.cookie_secure, samesite="strict")
     return {"status": "ok"}

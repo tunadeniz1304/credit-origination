@@ -100,6 +100,9 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = SecretStr(DEV_JWT_FALLBACK)
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 480
+    # Where logged-out token ids are kept until they expire. ``redis`` shares them across API
+    # workers (required in prod); ``auto`` uses Redis when reachable, else this process.
+    session_revocation_backend: Literal["auto", "memory", "redis"] = "auto"
     pii_encryption_key: SecretStr = SecretStr("")
     blind_index_key: SecretStr = SecretStr("")
     cors_origins: list[str] = Field(
@@ -188,7 +191,18 @@ class Settings(BaseSettings):
             problems.append("BLIND_INDEX_KEY is empty")
         if self.registration_enabled and self.captcha_provider == "none":
             problems.append("self-registration without CAPTCHA (set CAPTCHA_PROVIDER=hook)")
+        if self.seed_demo_users:
+            problems.append("SEED_DEMO_USERS must be false (demo users have public passwords)")
+        if self.session_revocation_backend != "redis":
+            problems.append(
+                "SESSION_REVOCATION_BACKEND must be redis (logout must hold in every worker)"
+            )
         return problems
+
+    def refuse_unsafe_production(self, component: str) -> None:
+        """Raise if this is prod and any :meth:`production_problems` applies (API and worker)."""
+        if self.app_env == "prod" and (problems := self.production_problems()):
+            raise RuntimeError(f"{component}: unsafe production settings: " + "; ".join(problems))
 
     @property
     def demo_mode(self) -> bool:

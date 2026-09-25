@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.core.security import STAFF_ROLES, AuthError, Principal, csrf_valid, decode_token
-from app.db.models import Application
+from app.db.models import Application, User
 from app.db.session import session_scope
 
 _bearer = HTTPBearer(auto_error=False)
@@ -48,13 +48,24 @@ def current_user(
             headers={"WWW-Authenticate": "Bearer"},
         )
     try:
-        return decode_token(token)
+        principal = decode_token(token)
     except AuthError as exc:
-        raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED,
-            "geçersiz veya süresi dolmuş oturum",
-            headers={"WWW-Authenticate": "Bearer"},
-        ) from exc
+        raise _invalid_session() from exc
+    # A token outlives changes to its user: a deactivated account or a changed role must stop
+    # working now, not when the token expires.
+    with session_scope(readonly=True) as session:
+        user = session.get(User, principal.user_id)
+        if user is None or not user.active or user.role != principal.role:
+            raise _invalid_session()
+    return principal
+
+
+def _invalid_session() -> HTTPException:
+    return HTTPException(
+        status.HTTP_401_UNAUTHORIZED,
+        "geçersiz veya süresi dolmuş oturum",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
 
 
 def require_roles(*roles: str) -> Callable[[Principal], Principal]:

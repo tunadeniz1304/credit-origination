@@ -8,7 +8,10 @@ application retry, the KVKK retention job and the drift monitor.
 
 from __future__ import annotations
 
+from typing import Any
+
 from celery import Celery
+from celery.signals import worker_init
 
 from app.core.config import get_settings
 
@@ -40,6 +43,12 @@ def create_celery_app(broker_url: str | None = None, result_backend: str | None 
     )
     app.autodiscover_tasks(["app.worker"])
     return app
+
+
+@worker_init.connect
+def _refuse_unsafe_production(**_: Any) -> None:
+    """The worker decrypts PII and sends notifications: same production checks as the API."""
+    get_settings().refuse_unsafe_production("worker")
 
 
 celery_app = create_celery_app()

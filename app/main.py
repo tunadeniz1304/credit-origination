@@ -55,8 +55,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     logger = get_logger("app.main")
     validate_llm_settings(settings)
-    if settings.app_env == "prod" and (problems := settings.production_problems()):
-        raise RuntimeError("unsafe production settings: " + "; ".join(problems))
+    settings.refuse_unsafe_production("api")
     from app.core.users import ensure_demo_users
     from app.db.session import init_db, session_scope
 

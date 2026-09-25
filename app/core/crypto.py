@@ -39,12 +39,18 @@ def _fernet(raw_key: str) -> Fernet:
 
 def _blind_key(settings: Settings) -> bytes:
     raw = settings.blind_index_key.get_secret_value()
+    if not raw and settings.app_env == "prod":
+        raise RuntimeError("BLIND_INDEX_KEY is not set")
     return raw.encode() if raw else _derive(b"blind-index")
 
 
 def _cipher(settings: Settings | None = None) -> Fernet:
     settings = settings or get_settings()
-    return _fernet(settings.pii_encryption_key.get_secret_value())
+    raw_key = settings.pii_encryption_key.get_secret_value()
+    if not raw_key and settings.app_env == "prod":
+        # Never fall back to the public development key in production, whatever process this is.
+        raise RuntimeError("PII_ENCRYPTION_KEY is not set")
+    return _fernet(raw_key)
 
 
 def encrypt(value: str | None, settings: Settings | None = None) -> str | None:

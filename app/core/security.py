@@ -101,43 +101,68 @@ class AuthError(Exception):
 
 
 class _RevocationList:
-    """Logged-out token ids until their expiry: Redis when reachable, else this process."""
+    """Logged-out token ids until their expiry (``SESSION_REVOCATION_BACKEND``).
+
+    ``redis`` shares the list across workers and **fails closed**: if Redis cannot be asked,
+    the token is refused (:class:`AuthError`, i.e. 401) rather than a 500 or a silent accept.
+    ``auto`` uses Redis when reachable and re-probes an unreachable one every
+    ``_RETRY_SECONDS`` instead of deciding once for the life of the process. Ids revoked in this
+    process are always also kept locally, so a Redis outage never un-revokes them here.
+    """
+
+    _RETRY_SECONDS = 30.0
 
     def __init__(self) -> None:
         self._local: dict[str, float] = {}
         self._client: Any = None
-        self._resolved = False
+        self._client_for: tuple[str, str] | None = None
+        self._next_probe = 0.0
 
-    def _redis(self) -> Any:
-        if not self._resolved:
-            self._resolved = True
-            settings = get_settings()
-            if settings.circuit_state_backend in ("redis", "auto"):
-                try:
-                    import redis
+    def _redis(self, settings: Settings) -> Any:
+        """Redis client, ``None`` for the in-process list; raises if Redis is required but down."""
+        backend = settings.session_revocation_backend
+        if backend == "memory":
+            return None
+        key = (backend, settings.redis_url)
+        if self._client_for != key:
+            self._client, self._client_for, self._next_probe = None, key, 0.0
+        now = datetime.now(UTC).timestamp()
+        if self._client is None and (backend == "redis" or now >= self._next_probe):
+            try:
+                import redis
 
-                    client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=0.5)
-                    client.ping()
-                    self._client = client
-                except Exception:
-                    self._client = None
+                client = redis.Redis.from_url(settings.redis_url, socket_connect_timeout=0.5)
+                client.ping()
+                self._client = client
+            except Exception as exc:
+                self._next_probe = now + self._RETRY_SECONDS
+                if backend == "redis":
+                    raise AuthError("revocation list unavailable") from exc
         return self._client
 
-    def add(self, jti: str, expires_at: float) -> None:
+    def add(self, jti: str, expires_at: float, settings: Settings) -> None:
         now = datetime.now(UTC).timestamp()
-        ttl = max(1, int(expires_at - now))
-        client = self._redis()
-        if client is not None:
-            client.set(f"anil2:revoked:{jti}", 1, ex=ttl)
-            return
         self._local = {k: v for k, v in self._local.items() if v > now}
         self._local[jti] = expires_at
-
-    def contains(self, jti: str) -> bool:
-        client = self._redis()
+        client = self._redis(settings)
         if client is not None:
+            try:
+                client.set(f"anil2:revoked:{jti}", 1, ex=max(1, int(expires_at - now)))
+            except Exception as exc:
+                self._client = None
+                raise AuthError("revocation list unavailable") from exc
+
+    def contains(self, jti: str, settings: Settings) -> bool:
+        if self._local.get(jti, 0.0) > datetime.now(UTC).timestamp():
+            return True
+        client = self._redis(settings)
+        if client is None:
+            return False
+        try:
             return bool(client.exists(f"anil2:revoked:{jti}"))
-        return self._local.get(jti, 0.0) > datetime.now(UTC).timestamp()
+        except Exception as exc:  # fail closed: an unanswerable check is not a pass
+            self._client = None
+            raise AuthError("revocation list unavailable") from exc
 
 
 _revoked = _RevocationList()
@@ -156,7 +181,7 @@ def revoke_token(token: str, settings: Settings | None = None) -> None:
     except jwt.PyJWTError:
         return
     if claims.get("jti"):
-        _revoked.add(claims["jti"], float(claims["exp"]))
+        _revoked.add(claims["jti"], float(claims["exp"]), settings)
 
 
 def decode_token(token: str, settings: Settings | None = None) -> Principal:
@@ -172,7 +197,7 @@ def decode_token(token: str, settings: Settings | None = None) -> Principal:
         raise AuthError(type(exc).__name__) from exc
     if claims.get("role") not in ROLES:
         raise AuthError("unknown role")
-    if claims.get("jti") and _revoked.contains(claims["jti"]):
+    if claims.get("jti") and _revoked.contains(claims["jti"], settings):
         raise AuthError("revoked")
     return Principal(
         user_id=claims["sub"],

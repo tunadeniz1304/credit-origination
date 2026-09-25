@@ -145,6 +145,7 @@ def test_prod_refuses_unsafe_settings():
         jwt_secret=strong,
         pii_encryption_key=strong,
         blind_index_key=strong,
+        session_revocation_backend="redis",
     )
     assert safe.production_problems() == []
     open_registration = Settings(  # type: ignore[call-arg]
@@ -174,3 +175,134 @@ def test_app_does_not_start_with_unsafe_prod_settings(monkeypatch):
 
     with pytest.raises(RuntimeError, match="unsafe production settings"):
         asyncio.run(start())
+
+
+def _strong_prod(**overrides) -> Settings:
+    strong = "x" * 40
+    values = {
+        "app_env": "prod",
+        "jwt_secret": strong,
+        "pii_encryption_key": strong,
+        "blind_index_key": strong,
+        "session_revocation_backend": "redis",
+    }
+    return Settings(_env_file=None, **{**values, **overrides})  # type: ignore[arg-type]
+
+
+def test_prod_refuses_demo_users_and_a_local_revocation_list():
+    """Audit v2.1 round 2: demo users could be forced on; logout held in one worker only."""
+    assert any(
+        "SEED_DEMO_USERS" in p for p in _strong_prod(SEED_DEMO_USERS=True).production_problems()
+    )
+    local = _strong_prod(session_revocation_backend="auto").production_problems()
+    assert any("SESSION_REVOCATION_BACKEND" in p for p in local)
+
+
+def test_worker_refuses_unsafe_production_settings(monkeypatch):
+    from app.worker import celery_app
+
+    monkeypatch.setattr(
+        celery_app,
+        "get_settings",
+        lambda: Settings(_env_file=None, app_env="prod"),  # type: ignore[call-arg]
+    )
+    with pytest.raises(RuntimeError, match="worker: unsafe production settings"):
+        celery_app._refuse_unsafe_production()
+    monkeypatch.setattr(celery_app, "get_settings", _strong_prod)
+    celery_app._refuse_unsafe_production()  # safe settings start
+
+
+def test_crypto_never_uses_the_development_key_in_prod():
+    from app.core.crypto import blind_index, encrypt
+
+    no_keys = _strong_prod(pii_encryption_key="", blind_index_key="")
+    with pytest.raises(RuntimeError, match="PII_ENCRYPTION_KEY"):
+        encrypt("12345678901", no_keys)
+    with pytest.raises(RuntimeError, match="BLIND_INDEX_KEY"):
+        blind_index("12345678901", no_keys)
+
+
+class _BrokenRedis:
+    def ping(self):
+        return True
+
+    def exists(self, key):
+        raise ConnectionError("redis went away")
+
+    def set(self, *args, **kwargs):
+        raise ConnectionError("redis went away")
+
+
+def test_revocation_list_fails_closed(monkeypatch):
+    from app.core.security import AuthError, _RevocationList
+
+    required = _strong_prod()
+    revoked = _RevocationList()
+
+    def unreachable(*args, **kwargs):
+        raise ConnectionError("no redis")
+
+    monkeypatch.setattr("redis.Redis.from_url", unreachable)
+    with pytest.raises(AuthError, match="unavailable"):  # required Redis down: refuse, not accept
+        revoked.contains("jti-1", required)
+    monkeypatch.setattr("redis.Redis.from_url", lambda *a, **k: _BrokenRedis())
+    with pytest.raises(AuthError, match="unavailable"):  # error mid-check: refuse, not 500
+        revoked.contains("jti-1", required)
+    with pytest.raises(AuthError):
+        revoked.add("jti-2", 9e9, required)
+    monkeypatch.setattr("redis.Redis.from_url", unreachable)
+    assert revoked.contains("jti-2", required) is True  # revoked here: answered without Redis
+    auto = Settings(_env_file=None, session_revocation_backend="auto")  # type: ignore[call-arg]
+    assert revoked.contains("jti-2", auto) is True  # kept locally although Redis failed
+
+
+def test_revocation_list_reprobes_redis_in_auto_mode(monkeypatch):
+    import fakeredis
+
+    from app.core.security import _RevocationList
+
+    auto = Settings(_env_file=None, session_revocation_backend="auto")  # type: ignore[call-arg]
+    revoked = _RevocationList()
+    monkeypatch.setattr(
+        "redis.Redis.from_url", lambda *a, **k: (_ for _ in ()).throw(ConnectionError("down"))
+    )
+    assert revoked.contains("x", auto) is False  # Redis down: local list only
+    shared = fakeredis.FakeRedis()
+    shared.set("anil2:revoked:x", 1)
+    monkeypatch.setattr("redis.Redis.from_url", lambda *a, **k: shared)
+    assert revoked.contains("x", auto) is False  # not re-probed before the retry interval
+    revoked._next_probe = 0.0  # interval elapsed
+    assert revoked.contains("x", auto) is True  # Redis is back: its list counts again
+
+
+def test_token_stops_working_when_the_user_is_deactivated_or_changes_role(client):
+    from sqlalchemy import select, update
+
+    from app.db.models import User
+    from app.db.session import session_scope
+
+    token = _login(client, "uzman2")["access_token"]
+    client.cookies.clear()
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+    with session_scope() as session:
+        user = session.execute(select(User).where(User.username == "uzman2")).scalar_one()
+        original_role = user.role
+        session.execute(update(User).where(User.id == user.id).values(role="basvuran"))
+    try:
+        assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+        with session_scope() as session:
+            session.execute(
+                update(User)
+                .where(User.username == "uzman2")
+                .values(role=original_role, active=False)
+            )
+        assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+    finally:
+        with session_scope() as session:
+            session.execute(
+                update(User)
+                .where(User.username == "uzman2")
+                .values(role=original_role, active=True)
+            )
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
