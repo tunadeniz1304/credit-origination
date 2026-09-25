@@ -56,6 +56,13 @@ def _is_retryable(exception: BaseException) -> bool:
     return False
 
 
+def _counts_against_service(exception: Exception) -> bool:
+    """Circuit breaker verdict: a 4xx is the caller's problem, not an outage of the service."""
+    if isinstance(exception, httpx.HTTPStatusError):
+        return exception.response.status_code >= 500
+    return True
+
+
 def _income(request: httpx.Request) -> float:
     try:
         return float(request.url.params.get("income_hint", "40000"))
@@ -171,7 +178,9 @@ class ExternalAPIClient:
         async def _call() -> dict[str, Any]:
             return await self._get_json(path, params)
 
-        data: dict[str, Any] = await self.breaker.call_async(_call)
+        data: dict[str, Any] = await self.breaker.call_async(
+            _call, is_failure=_counts_against_service
+        )
         return data
 
 

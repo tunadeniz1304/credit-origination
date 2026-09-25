@@ -162,3 +162,69 @@ def test_probe_lease_expires_when_its_process_died(store_index):
     assert breaker._allow_request() is False  # lease still held
     time.sleep(0.08)
     assert breaker._allow_request() is True  # lease expired: a new probe may run
+
+
+@pytest.mark.parametrize("store_index", [0, 1])
+def test_straggler_outcomes_do_not_decide_a_newer_state(store_index):
+    """Audit v2.1 round 2: a call admitted while CLOSED finished after the breaker opened."""
+    store = _stores()[store_index]
+    breaker = CircuitBreaker("late", failure_threshold=1, reset_timeout=60.0, store=store)
+    early_ok, early_bad = breaker._admit(), breaker._admit()
+    assert early_ok.startswith("C:") and early_bad.startswith("C:")
+    breaker._on_failure(breaker._admit())  # a third call fails -> OPEN
+    opened_at = store.load("late").opened_at
+    assert breaker.state == CircuitState.OPEN
+
+    time.sleep(0.01)
+    breaker._on_failure(early_bad)  # late failure must not push the re-open time back
+    assert store.load("late").opened_at == opened_at
+    breaker._on_success(early_ok)  # late success must not close the open breaker
+    assert breaker.state == CircuitState.OPEN
+
+
+@pytest.mark.parametrize("store_index", [0, 1])
+def test_stale_probe_cannot_release_or_decide_the_new_probe(store_index):
+    store = _stores()[store_index]
+    breaker = CircuitBreaker(
+        "stale", failure_threshold=1, reset_timeout=0.0, store=store, probe_lease=0.05
+    )
+    breaker._on_failure()
+    stale = breaker._admit()
+    time.sleep(0.08)  # the stale probe's lease expires
+    fresh = breaker._admit()
+    assert stale.startswith("H:") and fresh.startswith("H:") and stale != fresh
+
+    store.release("stale", stale)  # must not free the fresh probe's slot
+    assert store.load("stale").probes == 1
+    assert breaker._allow_request() is False
+    breaker._on_success(stale)  # nor may its late verdict close the breaker
+    assert breaker.state == CircuitState.HALF_OPEN
+    breaker._on_success(fresh)
+    assert breaker.state == CircuitState.CLOSED
+
+
+def test_client_errors_do_not_open_the_breaker():
+    """Audit v2.1 round 2: every HTTPStatusError, 4xx included, counted as an outage."""
+    import asyncio
+
+    import httpx
+
+    from app.integrations.clients import _counts_against_service
+
+    breaker = CircuitBreaker("http", failure_threshold=1, reset_timeout=60.0)
+    request = httpx.Request("GET", "http://svc/x")
+
+    def status_error(code: int) -> httpx.HTTPStatusError:
+        return httpx.HTTPStatusError("x", request=request, response=httpx.Response(code))
+
+    async def fails_with(code: int):
+        raise status_error(code)
+
+    for code in (400, 404, 422):
+        with pytest.raises(httpx.HTTPStatusError):
+            asyncio.run(breaker.call_async(fails_with, code, is_failure=_counts_against_service))
+    assert breaker.state == CircuitState.CLOSED and breaker.failure_count == 0
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(breaker.call_async(fails_with, 503, is_failure=_counts_against_service))
+    assert breaker.state == CircuitState.OPEN
+    assert _counts_against_service(httpx.ConnectError("down")) is True
