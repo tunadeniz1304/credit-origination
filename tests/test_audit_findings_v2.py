@@ -44,10 +44,14 @@ def _git_grep(pattern: str) -> list[str]:
 
 
 # ------------------------------------------------------------------ A. decisioning / pricing
-def test_f01_offer_dsr_rechecked_with_priced_taxed_instalment():
+@pytest.mark.parametrize(
+    ("persona", "income", "amount"),
+    [("temiz", 45_000, 800_000), ("gri", 40_000, 150_000), ("asiri_borclu", 60_000, 400_000)],
+)
+def test_f01_offer_dsr_rechecked_with_priced_taxed_instalment(persona, income, amount):
     """Audit case: 800k / 36 m for a 45k earner; the priced instalment breached the DSR cap."""
-    snapshot, result = _decide("temiz", 45_000, 800_000)
-    assert result.pricing is not None
+    snapshot, result = _decide(persona, income, amount)
+    assert result.pricing is not None  # every case reaches pricing (offer or grey zone)
     real_dsr = (snapshot["existing_debt_service"] + result.pricing.instalment) / snapshot[
         "monthly_income"
     ]
@@ -106,7 +110,13 @@ def test_f05_genuine_document_from_other_tool_is_not_flagged(tmp_path):
         pdf.docinfo["/Creator"] = "e-Devlet Kapısı"
         pdf.save(path)
     codes = {s.code for s in metadata_signals(path, "ADDRESS")}
-    assert "producer_mismatch" not in codes
+    assert not codes & {"producer_unexpected", "metadata_inconsistent"}, codes
+    # ... while a genuinely suspicious producer on an e-Devlet document still is flagged.
+    with pikepdf.open(path, allow_overwriting_input=True) as pdf:
+        pdf.docinfo["/Producer"] = "Microsoft® Word for Microsoft 365"
+        pdf.docinfo["/Creator"] = "Microsoft® Word for Microsoft 365"
+        pdf.save(path)
+    assert "producer_unexpected" in {s.code for s in metadata_signals(path, "ADDRESS")}
 
 
 def test_f06_ocr_status_reported_in_health():
