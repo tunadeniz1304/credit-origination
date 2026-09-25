@@ -1,5 +1,37 @@
 # Performance and Resilience
 
+## v2.1 — inline mode (SQLite), before / after
+
+Same laptop, `scripts/load_test.py`, LLM in demo mode, `TASK_QUEUE_BACKEND=inline`, a fresh SQLite
+database per run (`loadrun` helper: one uvicorn process, five generated PDFs per application).
+"Before" is tag `v2.0.0`, "after" is `main` at v2.1.0.
+
+| Scenario | v2.0.0 | v2.1.0 |
+|---|---|---|
+| One clean application at a time (10 sequential), end-to-end p50 / p95 | 1.6 s / 1.7 s | **1.6 s / 1.7 s** |
+| 40 applications, 20 concurrent clients | did **not finish** in 12 min (SQLite writer deadlock; client stopped) | **40 / 40** in 35 s, p50 16.1 s / p95 16.8 s, 0 retries |
+
+* **Target (p50 < 5 s for a clean application in inline mode) is met.** The 15.9 s figure in the v1
+  audit was a p50 *under load* (100 applicants, 20 threads, Docker); it measured queueing, not the
+  pipeline. Single-application latency was already ≈ 1.6 s in v2.0.0 and is unchanged.
+* The real v2.1 change is **correctness under concurrency** in inline mode: the pipeline now prepares
+  the decision read-only and writes in one short transaction, and a process-wide SQLite writer lock is
+  taken at the start of every write transaction (avoids `SQLITE_BUSY_SNAPSHOT` upgrade deadlocks);
+  audit appends retry inside a savepoint. Under 20 concurrent clients the latency is queueing behind the
+  single SQLite writer — use the Docker topology (PostgreSQL + Celery) for throughput.
+* `tests/test_concurrency.py` runs 20 applications + 20 workbench actions in parallel against a live
+  server and asserts 0 HTTP 500s and a valid audit chain.
+
+Reproduce (inline):
+
+```bash
+TASK_QUEUE_BACKEND=inline LLM_MODE=demo uvicorn app.main:app --port 8634 &
+python scripts/load_test.py --base http://127.0.0.1:8634 --count 10 --concurrency 1
+python scripts/load_test.py --base http://127.0.0.1:8634 --count 40 --concurrency 20
+```
+
+## v1 — Docker topology
+
 Measured with `scripts/load_test.py` against `docker compose up` on a developer laptop (Windows 11, Docker Desktop, 8 GB VM): 4 gunicorn/uvicorn API workers, one Celery worker with `--concurrency=2`, PostgreSQL 16, Redis 7, LLM in demo mode (to avoid 300 paid API calls). Each application uploads five generated PDFs (identity, payslip, SGK record, e-Devlet residence document, bank statement) that go through extraction and tamper analysis synchronously in the upload request.
 
 ## Throughput run — 100 concurrent applicants (20 client threads)
