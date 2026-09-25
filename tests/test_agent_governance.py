@@ -236,7 +236,7 @@ def test_validation_endpoint_is_for_model_managers(client, users):
     assert client.get("/api/v1/models/validation", headers=users["uzman"]).status_code == 403
 
 
-def test_rule_set_backtest_and_two_approvals(client, users):
+def test_rule_set_backtest_and_two_approvals(client, users, app_id):
     from app.core.rules import policy_file_text
 
     stricter = (
