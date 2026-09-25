@@ -158,3 +158,18 @@ audited the repository; findings were fixed and the next round re-audited the re
 
 New open finding surfaced by the fixes: with tie-aware deciles the lowest PD decile of the anchored
 synthetic population is under-predicted (observed/predicted 1.99, 12 defaults in 752).
+
+### Round 2 — score 8.3 / 10, 9 findings
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | medium | Order-dependent tests (shared grey-zone application; Celery test reaching a real broker) | Function-scoped fixture; dispatcher registry routed to the fake (`7a23f2c`) |
+| 2 | high | Promotion and LDA judged on the hold-out while selection used out-of-fold evidence; scorecard → LightGBM promotion was allowed, German LDA "within limit" only on the hold-out | Promotion refused if significantly worse on either basis; LDA loss must be within 0.010 on both — German now has **no** qualifying alternative (`1b4bc45`) |
+| 3 | high | Policy v2 described as "same risk appetite" although it loosens it on the same model (2.7 % → 4.0 %) | Stated as a risk-appetite change pending credit committee sign-off, with both comparisons (`1b4bc45`) |
+| 4 | medium | Straggler outcomes: a late success closed an OPEN breaker, late failures moved `opened_at` | Every call carries a ticket (closed epoch / probe lease id); outcomes apply only to the state they were admitted under (`9130202`) |
+| 5 | medium | A stale probe could release another probe's slot | Probe slots are per-lease ids; only the matching lease is released (`9130202`) |
+| 6 | medium | HTTP 4xx counted as service failures | Only 5xx, transport and other errors count (`9130202`) |
+| 7 | medium | Revocation list: "no Redis" cached forever, Redis error → 500, no own setting | `SESSION_REVOCATION_BACKEND`, fails closed (401 / logout 503), re-probes Redis, required in prod (`d941ace`) |
+| 8 | medium | Prod gaps: demo users could be forced on, worker skipped the checks, dev Fernet fallback, stale roles in tokens | Prod refuses `SEED_DEMO_USERS`; worker runs the same checks; crypto refuses the dev key in prod; tokens of deactivated users or changed roles stop working (`d941ace`) |
+| 9 | low | Lane B policy table not bound to the policy file or model | `policy_cutoffs` records thresholds and model SHA-256; test compares them with `policy_v2.yaml` and the committed model (`1b4bc45`) |
+

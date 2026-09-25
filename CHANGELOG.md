@@ -27,6 +27,12 @@ Closes the findings of the independent v2 audit (7.5/10) and validates the model
 - Non-atomic circuit breaker with unlimited HALF_OPEN probes (Lua scripts); duplicate pending reviews (partial unique index + migration 0002).
 - KVKK redaction missing Turkish İ/ı and ASCII-folded name variants; internal LLM host in tracked files.
 
+### Audit rounds (v2.1 hardening)
+- Circuit breaker: probe slots released on cancellation and leased; outcomes bound to the admitted state (no straggler closes/re-opens); HTTP 4xx no longer counts as an outage.
+- Prod refuses to start (API and worker) with a weak JWT secret, missing PII/blind-index keys, demo users, registration without CAPTCHA or a non-Redis revocation list; logout revokes the token (fail-closed check); deactivated users and changed roles invalidate existing tokens.
+- Champion chosen out-of-fold; promotion and LDA require evidence on both out-of-fold and hold-out; seeded tie-breaking with AIR ranges; policy v2 documented as a risk-appetite change pending committee sign-off; lane B cut-off table bound to the policy file and model hash.
+- CI enforces 90 % total coverage and per-area floors; tests are order independent.
+
 ## [2.0.0] — 2026-09-24
 
 Transformation of the "Smart Credit Operations Agent" prototype into an end-to-end, explainable credit origination platform.
