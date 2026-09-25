@@ -59,6 +59,8 @@ def test_security_headers_and_request_id(client):
 
 # ------------------------------------------------------------------ auth / RBAC
 def test_endpoints_require_authentication(client):
+    # Earlier logins in this module left an HttpOnly session cookie on the shared client.
+    client.cookies.clear()
     assert client.get("/api/v1/applications").status_code == 401
     assert client.post("/api/v1/applications", json=payload()).status_code == 401
     assert client.get("/api/v1/metrics").status_code == 401

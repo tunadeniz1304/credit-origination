@@ -78,7 +78,7 @@ def grey_id(client, users):
 
 
 def test_queue_lists_grey_zone_with_sla(client, users, grey_id):
-    queue = client.get("/api/v1/workbench/queue", headers=users["uzman"]).json()
+    queue = client.get(f"/api/v1/workbench/queue?q={grey_id}", headers=users["uzman"]).json()
     item = next(i for i in queue["items"] if i["application_id"] == grey_id)
     assert item["sla_remaining_hours"] > 20 and not item["sla_breached"]
     assert item["pd"] > 0.05 and item["reason_codes"]
