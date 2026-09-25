@@ -21,8 +21,6 @@ from app.decisioning.engine import decide
 from app.decisioning.models import get_models
 from tests.test_decisioning import _snapshot
 
-V0 = "V0 reproduction: audit finding not fixed yet"
-
 
 def _decide(persona: str, income: float, amount: float, term: int = 36):
     snapshot = _snapshot(persona, income, amount, term)
@@ -298,7 +296,6 @@ def test_f22_internal_llm_host_not_in_tracked_files():
     assert _git_grep("llm-gateway.example.org") == []
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f23_final_report_v2_exists():
     report = PROJECT_ROOT / "docs" / "FINAL_REPORT_v2.md"
     assert report.is_file()

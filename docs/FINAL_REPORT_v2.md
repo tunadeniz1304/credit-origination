@@ -1,0 +1,110 @@
+# Final Report — v2.1.0
+
+v2 answers the independent audit of v2.0.0 (23 findings, plan in `docs/PLAN_v2.md`). Every finding was
+first reproduced as a strict `xfail` test in `tests/test_audit_findings_v2.py` (commit `219d621`); the
+fixing commit removed the marker, so a regression turns the suite red.
+
+## Findings
+
+| # | Finding | Fix commit(s) | Regression test |
+|---|---|---|---|
+| F01 | DSR not re-checked after pricing | `bd47956` | `test_f01_offer_dsr_rechecked_with_priced_taxed_instalment` |
+| F02 | Reason codes without materiality | `f2ffcb3` | `test_f02_non_material_tenure_does_not_produce_reason` |
+| F03 | Constant asset correlation | `cb50011` | `test_f03_basel_other_retail_correlation` |
+| F04 | Raw enum codes shown to users | `20de2bc`, `86b412b` | `test_f04_user_facing_labels_for_enum_codes` |
+| F05 | Fraud signal tuned to own PDF generator | `2c4dcc4` | `test_f05_genuine_document_from_other_tool_is_not_flagged` |
+| F06 | OCR path not really working | `7dc52e8`, `977512d`, `ed9e23d` | `test_f06_ocr_status_reported_in_health`, OCR test in CI |
+| F07 | Fairness good by construction; LDA table at different approval rates | `cb309f9`, `569ca14`, `41c6f8c` | `test_f07_*`, `tests/test_fairness.py` |
+| F08 | Champion/challenger without statistical evidence | `eb9c0cd`, `e44801b`, `383a843` | `test_f08_champion_challenger_shows_statistical_evidence` |
+| F09 | SQLite "database is locked" 500s | `fec5fb4`, `12cc836` | `test_f09_*`, `tests/test_concurrency.py` |
+| F10 | Circuit breaker not atomic, unbounded HALF_OPEN probes | `009eb45` | `test_f10_half_open_admits_a_single_probe` |
+| F11 | Duplicate pending reviews under a race | `e84dcbb` | `test_f11_single_pending_review_per_application` |
+| F12 | p50 15.9 s | `12cc836` | `docs/PERFORMANCE.md` (before / after) |
+| F13 | CSP `unsafe-eval` | `49ea97a` | `test_f13_csp_without_unsafe_eval` |
+| F14 | JWT in web storage | `0b52b0a`, `be43299` | `test_f14_login_sets_httponly_cookie_and_csrf_is_enforced` |
+| F15 | Demo users / open registration in prod | `0b52b0a` | `test_f15_prod_defaults_disable_demo_users` |
+| F16 | KVKK redaction misses Turkish İ/ı | `30a1452` | `test_f16_redaction_handles_turkish_dotted_i` |
+| F17 | Queue without pagination / search | `09e6f50`, `dbbad92` | `test_f17_queue_is_paginated` |
+| F18 | Accessibility | `f510daf` | `test_f18_every_form_control_is_labelled` |
+| F19 | No browser E2E tests | `5e91536`, `74d103c` | `tests/e2e/` (Playwright) |
+| F20 | "SR 26-2" citation suspected invented | `5eba20b` | `test_f20_regulatory_citations_are_verified_with_sources` |
+| F21 | Vendor parity table in README | `53f2272` | `test_f21_readme_has_limitations_instead_of_vendor_parity_table` |
+| F22 | Internal LLM host in tracked files | `91d73c2` | `test_f22_internal_llm_host_not_in_tracked_files` |
+| F23 | This report | this commit | `test_f23_final_report_v2_exists` |
+
+**F20 note.** The audit assumed SR 26-2 did not exist. It does (Fed SR 26-2 / OCC Bulletin 2026-13,
+17 April 2026, superseding SR 11-7). The citation was kept and every regulatory reference now has an
+official source in `docs/COMPLIANCE.md`; CFPB Circular 2022-03 is marked as withdrawn (12 May 2025).
+
+## Lane A — real-data validation
+
+Public data with pinned checksums (`docs/DATA.md`): UCI Taiwan default of credit card clients (30,000)
+and Statlog German Credit (1,000). Stratified 5-fold CV plus a 20 % hold-out; bootstrap 95 % AUC CIs;
+own DeLong implementation (checked against hand computation and sklearn AUC); ECE, Hosmer–Lemeshow and decile calibration.
+
+| Hold-out AUC [95 % CI] | UCI Taiwan | German Credit |
+|---|---|---|
+| Monotone LightGBM + isotonic | 0.779 [0.765, 0.792] | 0.770 [0.698, 0.838] |
+| WoE scorecard | 0.767 [0.752, 0.781] | 0.779 [0.707, 0.847] |
+| Logistic regression | 0.758 [0.743, 0.773] | 0.758 [0.684, 0.827] |
+
+Full report: `docs/VALIDATION_REPORT.md`; machine-readable: `artifacts/validation/*/metrics.json`,
+served by `GET /api/v1/models/validation` and shown in the UI's model validation tab.
+
+**Lane B.** Taiwan repayment status is mapped onto the platform's bureau features; a behaviour
+sub-score learnt on real defaults feeds the production model; the synthetic generator is anchored so
+that the default rate per delinquency band matches the real curve (11.7 / 25.0 / 43.5 / 62.9 %,
+tolerance test ±5 points). The PD scale therefore moved up and the policy/authority cut-offs were
+recalibrated to keep the realised bad rate of the auto-approved book at or below v1 (4.8 % → 4.0 %).
+
+## Champion
+
+Rule in `rules/validation.yaml`: start from the simplest family; a more complex one wins only with
+DeLong p < 0.05 **and** ΔAUC ≥ 0.005 on the hold-out.
+
+* **UCI Taiwan:** LightGBM beats the scorecard by +0.012 (p = 5.1e-5) → **LightGBM is champion**; its
+  low-risk deciles are well calibrated (observed/predicted 1.04, ECE 0.010, HL p = 0.64).
+* **German Credit:** the scorecard is not beaten (ΔAUC −0.009, p = 0.63) → scorecard. Recorded as a
+  caveat: the boosting advantage depends on sample size.
+* Model promotion through the governance API is refused unless the committed evidence supports it
+  (four-eyes still applies).
+
+## Fairness
+
+Compared at the **same approval rate** for every model (`approve_at_rate`), on real data:
+
+* **UCI Taiwan:** every attribute passes the four-fifths rule (worst: education, AIR 0.878).
+* **German Credit:** the champion **fails for age band (AIR 0.698)**; the less-discriminatory-alternative
+  search finds no model within the allowed AUC loss that passes. This is an **open model-risk finding**,
+  not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
+* The synthetic generator now contains proxy correlations (tenure ↔ age, income ↔ province/gender), so
+  the synthetic fairness results are no longer good by construction.
+
+## Performance
+
+Details in `docs/PERFORMANCE.md`.
+
+| Inline mode (SQLite) | v2.0.0 | v2.1.0 |
+|---|---|---|
+| One clean application, p50 / p95 | 1.6 s / 1.7 s | 1.6 s / 1.7 s |
+| 40 applications, 20 concurrent clients | did not finish in 12 min (writer deadlock) | 40 / 40 in 35 s, 0 errors |
+
+The p50 < 5 s target is met. The audit's 15.9 s was a p50 under load. The v2.1 gain is that inline mode
+no longer deadlocks under concurrency; `tests/test_concurrency.py` (20 applications + 20 logins) has
+0 HTTP 500s.
+
+## Quality gate
+
+`ruff check`, `ruff format --check`, `mypy app`, `pytest --cov=app` (total ≥ 90 %; governance, worker and
+task dispatcher ≥ 80 %), `docker compose build`, GitHub Actions CI (with Tesseract + Turkish model and
+Playwright).
+
+## Remaining limitations
+
+* Production features remain Turkish **synthetic** data; only the methodology, the behaviour sub-score
+  and the calibration level are validated on real (non-Turkish) data.
+* No reject inference and no real out-of-time test (the public sets have no usable time axis).
+* The German Credit age-band fairness finding is open.
+* Inline/SQLite is a single-writer mode; throughput needs the Docker topology.
+
+## Audit rounds

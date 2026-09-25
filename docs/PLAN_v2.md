@@ -57,7 +57,7 @@ Reproduction evidence gathered while writing the tests:
 | F17 | Queue without pagination / search | V7 | `test_f17_queue_is_paginated` |
 | F18 | Accessibility (labels, keyboard, contrast, chart tables) | V7 | `test_f18_every_form_control_is_labelled` |
 | F19 | No browser E2E tests | V7 | `tests/e2e/` (pytest-playwright) |
-| F20 | Unverifiable "SR 26-2" citation | V8 | `test_f20_no_unverified_sr_26_2_citation` |
+| F20 | Unverifiable "SR 26-2" citation | V8 | `test_f20_regulatory_citations_are_verified_with_sources` |
 | F21 | Vendor parity table in README | V8 | `test_f21_readme_has_limitations_instead_of_vendor_parity_table` |
 | F22 | Internal LLM host in tracked files | V8 | `test_f22_internal_llm_host_not_in_tracked_files` |
 | F23 | Final report v2 | V8 | `test_f23_final_report_v2_exists` |
