@@ -216,7 +216,7 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, mon
     assert second["role"] == "champion" and second["status"] == "TERFI_ONAYLANDI"
 
 
-def test_drift_fairness_endpoints(client, users):
+def test_drift_fairness_endpoints(client, users, app_id):  # app_id: at least one decision
     drift = client.get("/api/v1/governance/drift", headers=users["modelyon"]).json()
     assert drift["observations"] >= 1 and "dsr" in drift["features"]
     fairness = client.get("/api/v1/governance/fairness", headers=users["modelyon"]).json()

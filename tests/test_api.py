@@ -331,9 +331,10 @@ def test_listing_is_newest_first(client, specialist):
 
 
 # ------------------------------------------------------------------ observability / governance
-def test_db_metrics_llm_status_and_audit_chain(client, specialist):
+def test_db_metrics_llm_status_and_audit_chain(client, specialist, approved_id):
+    # approved_id guarantees one auto-approved decision whatever the test order.
     metrics = client.get("/api/v1/metrics", headers=specialist).json()
-    assert metrics["total_applications"] >= 3
+    assert metrics["total_applications"] >= 1
     assert metrics["decisions"].get("OTOMATIK_ONAY", 0) >= 1
     status = client.get("/api/v1/llm/status", headers=specialist).json()
     assert status["mode"] == "demo" and status["key_present"] is False and status["calls"] >= 1
@@ -352,20 +353,32 @@ def test_audit_trail_has_actors(client, specialist, approved_id):
 
 
 def test_notifications_outbox(client, specialist):
+    """Self-contained: other tests' inline background work may add messages concurrently."""
+    import uuid
+
+    from app.db.models import OutboxMessage
+    from app.db.outbox import enqueue
+    from app.db.session import session_scope
+
+    tag = uuid.uuid4().hex[:8]
+    with session_scope() as session:
+        ids = [
+            enqueue(
+                session, event="TEST", aggregate_id=f"{tag}-{i}", payload={}, channel="console"
+            ).id
+            for i in range(2)
+        ]
     admin = login(client, "admin")
     listing = client.get("/api/v1/notifications", headers=specialist).json()
-    assert listing["pending"] >= 1
-    first = listing["entries"][0]["id"]
-    assert (
-        client.post(f"/api/v1/notifications/{first}/deliver", headers=admin).json()["delivered"]
-        is True
-    )
-    assert client.post(f"/api/v1/notifications/{first}/deliver", headers=admin).status_code == 404
-    dispatched = client.post("/api/v1/notifications/dispatch", headers=admin).json()
-    assert dispatched["sent"] >= 1
-    assert (
-        client.post("/api/v1/notifications/dispatch", headers=admin).json()["sent"] == 0
-    )  # idempotent
+    assert listing["pending"] >= 2
+    deliver = f"/api/v1/notifications/{ids[0]}/deliver"
+    assert client.post(deliver, headers=admin).json()["delivered"] is True
+    assert client.post(deliver, headers=admin).status_code == 404
+    assert client.post("/api/v1/notifications/dispatch", headers=admin).json()["sent"] >= 1
+    client.post("/api/v1/notifications/dispatch", headers=admin)  # idempotent for sent messages
+    with session_scope(readonly=True) as session:
+        second = session.get(OutboxMessage, ids[1])
+        assert second.status == "SENT" and second.attempts == 1
 
 
 def test_pricing_quote(client, applicant, specialist):
