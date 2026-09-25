@@ -289,7 +289,6 @@ def test_f20_regulatory_citations_are_verified_with_sources():
     assert "successor to SR 11-7" not in text  # the unsourced v1 wording is gone
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f21_readme_has_limitations_instead_of_vendor_parity_table():
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     assert "## Limitations" in readme
@@ -297,7 +296,6 @@ def test_f21_readme_has_limitations_instead_of_vendor_parity_table():
     assert "Ocrolus" not in readme.split("## Inspired-by patterns")[0]
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f22_internal_llm_host_not_in_tracked_files():
     assert _git_grep("llm-gateway.example.org") == []
 
