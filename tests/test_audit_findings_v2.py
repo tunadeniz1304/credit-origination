@@ -151,7 +151,6 @@ def test_f08_champion_challenger_shows_statistical_evidence():
 
 
 # ------------------------------------------------------------------ D. concurrency
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f09_sqlite_uses_wal_and_normal_sync():
     from sqlalchemy import text
 
@@ -177,18 +176,17 @@ def test_f10_half_open_admits_a_single_probe():
 
 
 @pytest.mark.xfail(strict=True, reason=V0)
-def test_f11_single_pending_review_per_application():
-    from sqlalchemy import text
+def test_f11_single_pending_review_per_application(tmp_path):
+    from sqlalchemy import create_engine
     from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session
 
-    from app.db.models import Review
-    from app.db.session import init_db, session_factory
+    from app.db.models import Base, Review
 
-    init_db()
-    session = session_factory()()
-    # Isolate the uniqueness rule from the foreign key to applications.
-    session.execute(text("PRAGMA foreign_keys=OFF"))
-    try:
+    # Plain engine: SQLite leaves foreign keys off, isolating the uniqueness rule.
+    engine = create_engine(f"sqlite:///{tmp_path / 'uniq.db'}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
         for _ in range(2):
             session.add(
                 Review(
@@ -203,10 +201,6 @@ def test_f11_single_pending_review_per_application():
             )
         with pytest.raises(IntegrityError):
             session.flush()
-    finally:
-        session.rollback()
-        session.execute(text("PRAGMA foreign_keys=ON"))
-        session.close()
 
 
 # ------------------------------------------------------------------ E. security

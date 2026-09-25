@@ -14,14 +14,13 @@ from app.db.models import Application
 from app.db.session import session_scope
 
 _bearer = HTTPBearer(auto_error=False)
-
-
-def db_session() -> Iterator[Session]:
-    with session_scope() as session:
-        yield session
-
-
 SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+
+
+def db_session(request: Request) -> Iterator[Session]:
+    # GET requests read; they take the SQLite writer slot only if they end up writing.
+    with session_scope(readonly=request.method in SAFE_METHODS) as session:
+        yield session
 
 
 def current_user(
