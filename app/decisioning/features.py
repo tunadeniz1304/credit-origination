@@ -24,6 +24,7 @@ MODEL_FEATURES: tuple[str, ...] = (
     "inquiries_6m",
     "active_loans",
     "bureau_utilisation",
+    "bureau_behavior_score",
     "dsr",
     "loan_to_income",
     "term_months",
@@ -46,6 +47,7 @@ MONOTONE: dict[str, int] = {
     "inquiries_6m": 1,
     "active_loans": 1,
     "bureau_utilisation": 1,
+    "bureau_behavior_score": 1,
     "dsr": 1,
     "loan_to_income": 1,
     "term_months": 1,
@@ -67,6 +69,7 @@ FEATURE_LABELS: dict[str, str] = {
     "inquiries_6m": "Son 6 ay sorgu sayısı",
     "active_loans": "Aktif kredi sayısı",
     "bureau_utilisation": "Limit kullanım oranı",
+    "bureau_behavior_score": "KKB ödeme davranışı skoru (gerçek veriyle eğitilmiş)",
     "dsr": "Borç servis oranı",
     "loan_to_income": "Tutar / yıllık gelir",
     "term_months": "Vade",
@@ -160,6 +163,7 @@ def build_snapshot(
         "active_loans": int(bureau.get("active_loans") or 0),
         "bureau_utilisation": float(bureau.get("card_utilisation") or 0.0),
         "bureau_legal_followup": 1 if bureau.get("legal_followup") else 0,
+        "bureau_behavior_score": None,
         "employment_months": int((sgk or {}).get("employment_months") or 0),
         "income_cv": float(cashflow.get("income_cv", 0.35)),
         "negative_balance_days": float(cashflow.get("negative_balance_days", 0.0)),
@@ -177,6 +181,10 @@ def build_snapshot(
         "income_mismatch": 1 if documents.get("income_mismatch") else 0,
         "min_field_confidence": float(documents.get("min_field_confidence", 1.0)),
     }
+    if hit:
+        from app.decisioning.public_mapping import behaviour_score_for
+
+        snapshot["bureau_behavior_score"] = behaviour_score_for(snapshot)
     return with_loan(
         snapshot, amount=requested_amount, term=term_months, reference_rate=reference_rate
     )

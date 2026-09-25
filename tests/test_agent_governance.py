@@ -180,20 +180,20 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, mon
     listing = client.get("/api/v1/models", headers=users["modelyon"]).json()["models"]
     ids = {m["model_id"]: m for m in listing}
     assert (
-        ids["pd_lgbm_v1"]["role"] == "champion" and ids["challenger_lr_v1"]["role"] == "challenger"
+        ids["pd_lgbm_v2"]["role"] == "champion" and ids["challenger_lr_v2"]["role"] == "challenger"
     )
-    card = client.get("/api/v1/models/pd_lgbm_v1/card", headers=users["modelyon"]).json()
+    card = client.get("/api/v1/models/pd_lgbm_v2/card", headers=users["modelyon"]).json()
     assert "cinsiyet" in card["excluded_attributes"][0] and card["metrics"]["auc"] > 0.7
-    md = client.get("/api/v1/models/pd_lgbm_v1/card?format=md", headers=users["modelyon"])
+    md = client.get("/api/v1/models/pd_lgbm_v2/card?format=md", headers=users["modelyon"])
     assert md.text.startswith("# Model Kartı")
-    pdf = client.get("/api/v1/models/pd_lgbm_v1/card?format=pdf", headers=users["modelyon"])
+    pdf = client.get("/api/v1/models/pd_lgbm_v2/card?format=pdf", headers=users["modelyon"])
     assert pdf.content.startswith(b"%PDF")
     cc = client.get("/api/v1/governance/champion-challenger", headers=users["modelyon"]).json()
     assert cc["decisions"] >= 1 and 0 <= cc["decision_agreement"] <= 1
     evidence = cc["validation"]
     assert evidence["available"] and evidence["delong_p_value"] < 0.05
     # On real data the LR challenger is significantly weaker: promotion is refused.
-    blocked = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"])
+    blocked = client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon"])
     assert blocked.status_code == 409 and "kanıt" in blocked.json()["detail"]
     from app.governance import inventory
 
@@ -202,16 +202,16 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, mon
         "promotion_evidence",
         lambda champion, challenger: {"allowed": True, "reason": "test: kanıt yeterli"},
     )
-    first = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"]).json()
+    first = client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon"]).json()
     assert first["role"] == "challenger"
-    again = client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon"])
+    again = client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon"])
     assert again.status_code == 403
     assert (
-        client.post("/api/v1/models/challenger_lr_v1/promote", headers=users["uzman"]).status_code
+        client.post("/api/v1/models/challenger_lr_v2/promote", headers=users["uzman"]).status_code
         == 403
     )
     second = client.post(
-        "/api/v1/models/challenger_lr_v1/promote", headers=users["modelyon2"]
+        "/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon2"]
     ).json()
     assert second["role"] == "champion" and second["status"] == "TERFI_ONAYLANDI"
 
@@ -241,12 +241,12 @@ def test_rule_set_backtest_and_two_approvals(client, users):
 
     stricter = (
         policy_file_text()
-        .replace("version: policy_v1", "version: policy_v2")
-        .replace("auto_approve_max_pd: 0.05", "auto_approve_max_pd: 0.01")
+        .replace("version: policy_v2", "version: policy_v3")
+        .replace("auto_approve_max_pd: 0.08", "auto_approve_max_pd: 0.01")
     )
     backtest = client.post(
         "/api/v1/rule-sets/backtest",
-        json={"version": "policy_v2", "content": stricter},
+        json={"version": "policy_v3", "content": stricter},
         headers=users["modelyon"],
     ).json()
     assert (
@@ -255,37 +255,37 @@ def test_rule_set_backtest_and_two_approvals(client, users):
     )
     bad = client.post(
         "/api/v1/rule-sets",
-        json={"version": "policy_v3", "content": stricter},
+        json={"version": "policy_v4", "content": stricter},
         headers=users["modelyon"],
     )
     assert bad.status_code == 422  # version mismatch
     created = client.post(
         "/api/v1/rule-sets",
-        json={"version": "policy_v2", "content": stricter},
+        json={"version": "policy_v3", "content": stricter},
         headers=users["modelyon"],
     ).json()
     assert created["status"] == "TASLAK"
     assert (
-        client.post("/api/v1/rule-sets/policy_v2/approve", headers=users["modelyon"]).json()[
+        client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon"]).json()[
             "status"
         ]
         == "TASLAK"
     )
     assert (
-        client.post("/api/v1/rule-sets/policy_v2/approve", headers=users["modelyon"]).status_code
+        client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon"]).status_code
         == 403
     )
-    active = client.post("/api/v1/rule-sets/policy_v2/approve", headers=users["komite"]).json()
+    active = client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["komite"]).json()
     assert active["status"] == "YURURLUKTE"
     listing = client.get("/api/v1/rule-sets", headers=users["modelyon"]).json()
     assert any(
-        r["version"] == "policy_v2" and r["status"] == "YURURLUKTE" for r in listing["rule_sets"]
+        r["version"] == "policy_v3" and r["status"] == "YURURLUKTE" for r in listing["rule_sets"]
     )
-    # Deactivate again so later tests keep using policy_v1.
+    # Deactivate again so later tests keep using policy_v2.
     with session_scope() as session:
         from app.db.models import RuleSet
 
-        session.get(RuleSet, "policy_v2").status = "ARSIV"
+        session.get(RuleSet, "policy_v3").status = "ARSIV"
 
 
 def test_watchlist_after_disbursal(client, users):

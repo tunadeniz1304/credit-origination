@@ -98,16 +98,18 @@ PERSONAS: dict[str, Persona] = {
     "gri": Persona(
         "gri",
         "Gri bölge",
-        score_range=(1080, 1220),
-        active_loans=(1, 3),
-        existing_dsr=(0.12, 0.20),
-        utilisation=(0.55, 0.75),
-        delinquencies=(0, 1),
-        max_dpd=(0, 15),
+        # Calibrated to the anchored PD scale (pd_lgbm_v2): lands between the
+        # auto-approve and auto-decline cut-offs of policy_v2.
+        score_range=(1130, 1240),
+        active_loans=(1, 2),
+        existing_dsr=(0.12, 0.18),
+        utilisation=(0.55, 0.70),
+        delinquencies=(0, 0),
+        max_dpd=(0, 0),
         inquiries=(2, 4),
         income_noise=0.18,
         spend_ratio=(0.80, 0.92),
-        negative_days=(3, 10),
+        negative_days=(3, 8),
         employment_months=(8, 20),
     ),
     "takipte": Persona(

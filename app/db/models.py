@@ -25,6 +25,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -235,6 +236,16 @@ class Review(TimestampMixin, Base):
     """Specialist review / override with maker-checker support."""
 
     __tablename__ = "reviews"
+    # At most one decision awaiting the checker per application (maker-checker race).
+    __table_args__ = (
+        Index(
+            "uq_reviews_one_pending",
+            "application_id",
+            unique=True,
+            sqlite_where=text("status = 'ONAY_BEKLIYOR'"),
+            postgresql_where=text("status = 'ONAY_BEKLIYOR'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True, default=new_id)
     application_id: Mapped[str] = mapped_column(ForeignKey("applications.id"), index=True)

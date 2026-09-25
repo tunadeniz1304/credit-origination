@@ -28,6 +28,7 @@ psycopg[binary]==3.3.3
 celery==5.6.3
 redis==5.2.0
 fakeredis==2.26.1
+lupa==2.8
 tenacity==9.0.0
 
 # Documents, RAG, agent
@@ -37,6 +38,7 @@ pypdf==6.13.2
 PyMuPDF==1.27.2.3
 pikepdf==10.13.0.post1
 reportlab==4.4.10
+pytesseract==0.3.13
 
 # Decisioning, explainability, governance
 numpy==2.4.6

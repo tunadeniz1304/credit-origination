@@ -80,4 +80,28 @@ Protected attributes used **only** for fairness analysis (never as model inputs)
 
 ## Semantic mapping (lane B)
 
-Filled in by `app/decisioning/public_mapping.py`; see the section below once lane B is implemented.
+Implemented in `app/decisioning/public_mapping.py`; results in `artifacts/validation/lane_b.json`
+and the lane B section of `docs/VALIDATION_REPORT.md`.
+
+| Platform feature | Public source (Taiwan) | Transformation | Rationale |
+|---|---|---|---|
+| `max_dpd_24m` → `delay_months` | `PAY_0 … PAY_6` | platform: ⌈max_dpd_24m / 30⌉ capped at 8; public: max(0, max PAY_x) | Both measure the worst arrears in months; KKB reports days past due |
+| `delinquency_count_24m` → `delinquent_months` | `PAY_0 … PAY_6` | platform: count capped at 6; public: months with PAY_x > 0 | Frequency of arrears |
+| `bureau_utilisation` → `utilisation` | `BILL_AMT1 / LIMIT_BAL` | clipped to [0, 1.5] | Revolving balance over limit, the standard bureau utilisation measure |
+| `age` | `AGE` | unchanged | Eligibility rules and fairness monitoring only — never a model input |
+
+`PAY_AMT / BILL_AMT` (payment ratio) has no counterpart in the platform's bureau payload, so it is
+used in lane A but not mapped.
+
+Known differences, stated rather than hidden:
+
+* **Window.** The public history covers 6 months, KKB features cover 24 months.
+* **Target.** Taiwan: default on the next monthly card payment. Platform: 90+ days past due within
+  12 months on an instalment loan. The anchoring transfers the *shape* of the arrears→default curve
+  and a realistic level, not a validated Turkish PD.
+* **Population.** The synthetic generator keeps a Turkish applicant mix (80 % without recent arrears
+  vs. 66 % in the card book); only the default rate *within* each delinquency band is anchored.
+
+The behaviour sub-score (`bureau_behavior_score`, artifact `artifacts/models/bureau_behavior_v1.*`)
+is a monotone LightGBM on the three behaviour features, trained and isotonically calibrated on
+real Taiwan defaults (hold-out AUC 0.740), and enters the production PD model as a feature.

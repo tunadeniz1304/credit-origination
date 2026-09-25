@@ -9,7 +9,9 @@ from app.core.config import get_settings
 from app.db.models import Base
 
 config = context.config
-config.set_main_option("sqlalchemy.url", get_settings().sqlalchemy_url.replace("%", "%%"))
+# Programmatic callers (tests) may pass an explicit URL via ``config.attributes["url"]``.
+_url = config.attributes.get("url") or get_settings().sqlalchemy_url
+config.set_main_option("sqlalchemy.url", _url.replace("%", "%%"))
 target_metadata = Base.metadata
 
 

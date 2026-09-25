@@ -46,7 +46,6 @@ def _git_grep(pattern: str) -> list[str]:
 
 
 # ------------------------------------------------------------------ A. decisioning / pricing
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f01_offer_dsr_rechecked_with_priced_taxed_instalment():
     """Audit case: 800k / 36 m for a 45k earner; the priced instalment breached the DSR cap."""
     snapshot, result = _decide("temiz", 45_000, 800_000)
@@ -58,7 +57,6 @@ def test_f01_offer_dsr_rechecked_with_priced_taxed_instalment():
     assert result.limits["dsr_offer"] == pytest.approx(real_dsr, abs=1e-3)
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f02_non_material_tenure_does_not_produce_reason():
     """52 months of employment on a PD≈1% file must not read as 'short tenure'."""
     snapshot, result = _decide("temiz", 45_000, 800_000)
@@ -69,7 +67,6 @@ def test_f02_non_material_tenure_does_not_produce_reason():
     assert all(r.kind == "improvement" for r in model_reasons)
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f03_basel_other_retail_correlation():
     from app.pricing.engine import retail_correlation
 
@@ -91,7 +88,6 @@ def test_f04_user_facing_labels_for_enum_codes():
 
 
 # ------------------------------------------------------------------ B. documents
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f05_genuine_document_from_other_tool_is_not_flagged(tmp_path):
     """A genuine e-Devlet PDF produced by a non-reportlab tool must not score as fraud."""
     import pikepdf
@@ -136,7 +132,6 @@ def test_f07_lda_table_compares_models_at_same_approval_rate():
     assert max(rates) - min(rates) <= 0.01
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f07_synthetic_proxies_correlate_with_protected_attributes():
     from app.decisioning.training import generate_dataset
 
@@ -156,7 +151,6 @@ def test_f08_champion_challenger_shows_statistical_evidence():
 
 
 # ------------------------------------------------------------------ D. concurrency
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f09_sqlite_uses_wal_and_normal_sync():
     from sqlalchemy import text
 
@@ -181,19 +175,17 @@ def test_f10_half_open_admits_a_single_probe():
     assert breaker._allow_request() is False  # everyone else waits for the probe
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
-def test_f11_single_pending_review_per_application():
-    from sqlalchemy import text
+def test_f11_single_pending_review_per_application(tmp_path):
+    from sqlalchemy import create_engine
     from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import Session
 
-    from app.db.models import Review
-    from app.db.session import init_db, session_factory
+    from app.db.models import Base, Review
 
-    init_db()
-    session = session_factory()()
-    # Isolate the uniqueness rule from the foreign key to applications.
-    session.execute(text("PRAGMA foreign_keys=OFF"))
-    try:
+    # Plain engine: SQLite leaves foreign keys off, isolating the uniqueness rule.
+    engine = create_engine(f"sqlite:///{tmp_path / 'uniq.db'}")
+    Base.metadata.create_all(engine)
+    with Session(engine) as session:
         for _ in range(2):
             session.add(
                 Review(
@@ -208,10 +200,6 @@ def test_f11_single_pending_review_per_application():
             )
         with pytest.raises(IntegrityError):
             session.flush()
-    finally:
-        session.rollback()
-        session.execute(text("PRAGMA foreign_keys=ON"))
-        session.close()
 
 
 # ------------------------------------------------------------------ E. security

@@ -2,7 +2,9 @@
 
 * Expected loss ``EL = PD × LGD × EAD`` (annualised on the average exposure).
 * Economic capital per unit of exposure from the Basel IRB retail formula
-  ``K = LGD·[N((G(PD) + √R·G(0.999)) / √(1−R)) − PD]``.
+  ``K = LGD·[N((G(PD) + √R·G(0.999)) / √(1−R)) − PD]`` with the PD-dependent
+  "other retail" correlation
+  ``R = 0.03·w + 0.16·(1 − w)``, ``w = (1 − e^(−35·PD)) / (1 − e^(−35))``.
 * ``RAROC(r) = (r − funding − opex − PD·LGD) / K``; the minimum contractual
   rate that meets the product's target RAROC is solved with
   ``scipy.optimize.brentq`` and floored at the product minimum.
@@ -48,6 +50,7 @@ class PriceQuote(BaseModel):
     lgd: float
     expected_loss_annual: float
     capital_ratio: float
+    asset_correlation: float
     raroc: float
     target_raroc: float
     annual_rate: float  # contractual (akdi) annual rate, before taxes
@@ -66,17 +69,45 @@ class PriceQuote(BaseModel):
     schedule: list[ScheduleRow] = Field(default_factory=list)
 
 
-def irb_capital(pd: float, lgd: float, correlation: float, confidence: float) -> float:
-    pd = min(max(pd, 0.0003), 0.9999)
+def retail_correlation(pd: float, cfg: PricingConfig | None = None) -> float:
+    """Basel IRB asset correlation for "other retail" exposures (falls from 16 % to 3 %)."""
+    c = (cfg or load_pricing()).correlation
+    weight = (1 - math.exp(-c.k * pd)) / (1 - math.exp(-c.k))
+    return c.r_min * weight + c.r_max * (1 - weight)
+
+
+def irb_capital(
+    pd: float,
+    lgd: float,
+    correlation: float,
+    confidence: float,
+    *,
+    pd_floor: float = 0.0003,
+    capital_floor: float = 0.0,
+) -> float:
+    """Unexpected-loss capital per unit of exposure (Basel IRB, no maturity adjustment)."""
+    pd = min(max(pd, pd_floor), 0.9999)
     g_pd = norm.ppf(pd)
     g_conf = norm.ppf(confidence)
     conditional = norm.cdf((g_pd + math.sqrt(correlation) * g_conf) / math.sqrt(1 - correlation))
-    return max(lgd * (conditional - pd), 0.01)
+    return max(lgd * (conditional - pd), capital_floor)
+
+
+def capital_ratio(pd: float, lgd: float, cfg: PricingConfig) -> float:
+    pd_eff = max(pd, cfg.pd_floor)
+    return irb_capital(
+        pd_eff,
+        lgd,
+        retail_correlation(pd_eff, cfg),
+        cfg.confidence_level,
+        pd_floor=cfg.pd_floor,
+        capital_floor=cfg.capital_floor,
+    )
 
 
 def raroc(rate: float, pd: float, product: str, cfg: PricingConfig) -> float:
     p = cfg.product(product)
-    capital = irb_capital(pd, p.lgd, cfg.asset_correlation, cfg.confidence_level)
+    capital = capital_ratio(pd, p.lgd, cfg)
     margin = rate - p.funding_cost_annual - p.opex_annual - pd * p.lgd
     return margin / capital
 
@@ -170,7 +201,7 @@ def quote(
     apr, apr_nominal = annual_cost_rate(amount, fee, payments)
     total_interest = sum(row.interest for row in rows)
     total_taxes = sum(row.kkdf + row.bsmv for row in rows)
-    capital = irb_capital(pd, p.lgd, cfg.asset_correlation, cfg.confidence_level)
+    capital = capital_ratio(pd, p.lgd, cfg)
     return PriceQuote(
         product=product,
         amount=round(amount, 2),
@@ -179,6 +210,7 @@ def quote(
         lgd=p.lgd,
         expected_loss_annual=round(pd * p.lgd * amount, 2),
         capital_ratio=round(capital, 4),
+        asset_correlation=round(retail_correlation(max(pd, cfg.pd_floor), cfg), 5),
         raroc=round(raroc(rate, pd, product, cfg), 4),
         target_raroc=p.target_raroc,
         annual_rate=rate,

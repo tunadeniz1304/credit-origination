@@ -96,7 +96,7 @@ def _decide(snapshot):
 # ------------------------------------------------------------------ rules
 def test_policy_file_parses_and_is_versioned():
     policy = parse_policy(policy_file_text())
-    assert policy.version == "policy_v1"
+    assert policy.version == "policy_v2"
     assert {r.action for r in policy.rules} == {"decline", "refer"}
     assert all(r.reason.startswith("R") for r in policy.rules)
 
@@ -172,7 +172,10 @@ def test_delinquent_declined_with_model_reasons():
     assert result.outcome == "OTOMATIK_RET"
     assert result.pd >= 0.2
     assert all(r.source == "model" for r in result.reason_codes)
-    assert "R03_GECIKME_GECMISI" in result.reason_code_list
+    # Arrears reach the model through the real-data behaviour sub-score (lane B), whose
+    # reason (R26) names the payment history; the raw count may still surface as R03.
+    assert {"R03_GECIKME_GECMISI", "R26_KKB_DAVRANIS"} & set(result.reason_code_list)
+    assert len(result.reason_codes) <= 4
 
 
 # ------------------------------------------------------------------ determinism / monotonicity
@@ -226,3 +229,44 @@ def test_annuity_and_with_loan():
         reference_rate=0.45,
     )
     assert snap["dsr"] > 0.1 and snap["loan_to_income"] == round(100_000 / 120_000, 4)
+
+
+# ------------------------------------------------------------------ limit ↔ price (audit F01)
+@pytest.mark.parametrize(
+    ("persona", "income", "amount", "term"),
+    [
+        ("temiz", 45_000, 800_000, 36),
+        ("temiz", 30_000, 600_000, 48),
+        ("temiz", 45_000, 500_000, 24),
+        ("yuksek_dsr", 45_000, 650_000, 36),
+        ("gri", 42_000, 220_000, 36),
+    ],
+)
+def test_priced_offer_never_breaches_dsr_cap(persona, income, amount, term):
+    snap = _snapshot(persona, income, amount, term)
+    result = _decide(snap)
+    if result.pricing is None:
+        return
+    real = (snap["existing_debt_service"] + result.pricing.instalment) / snap["monthly_income"]
+    assert real <= load_policy_file().product("IHTIYAC").max_dsr
+    assert result.limits["dsr_offer"] == pytest.approx(real, abs=1e-4)
+    assert result.limits["dsr_offer_reference"] <= result.limits["dsr_offer"]  # taxes add cost
+    assert result.pricing.amount == result.offer_amount
+
+
+def test_iteration_budget_exhausted_declines_instead_of_breaching_cap():
+    policy = load_policy_file()
+    tight = policy.model_copy(
+        update={"decision": policy.decision.model_copy(update={"max_pricing_iterations": 1})}
+    )
+    snap = _snapshot("temiz", 45_000, 800_000)
+    result = decide(snap, policy=tight, models=get_models(), pricing_cfg=load_pricing())
+    assert result.outcome == "OTOMATIK_RET" and result.pricing is None
+    assert "R01_DSR_YUKSEK" in result.reason_code_list
+
+
+def test_conditional_offer_explains_the_condition_first():
+    result = _decide(_snapshot("temiz", 45_000, 800_000))
+    assert result.conditional and result.reason_codes[0].code == "R01_DSR_YUKSEK"
+    assert result.reason_codes[0].kind == "condition"
+    assert all(r.kind == "improvement" for r in result.reason_codes if r.source == "model")

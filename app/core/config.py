@@ -56,6 +56,15 @@ class Settings(BaseSettings):
     # Persistence. Relative sqlite paths resolve against the project root.
     database_url: str = "sqlite:///data/anil2.db"
     db_auto_create: bool = True
+    # SQLite: one writer transaction at a time per process (see app.db.session).
+    db_writer_lock_timeout_seconds: float = 60.0
+    db_busy_timeout_ms: int = 30_000
+    # A request session keeps its connection until its background task has run,
+    # so the pool must cover requests + inline pipelines (SQLite connections are cheap).
+    db_pool_size: int = 20
+    db_max_overflow: int = 60
+    audit_lock_retries: int = 5
+    audit_retry_base_seconds: float = 0.05
 
     # Queue infrastructure.
     redis_url: str = "redis://localhost:6379/0"

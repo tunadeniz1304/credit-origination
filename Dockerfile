@@ -7,8 +7,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# libgomp is required by LightGBM.
-RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 curl \
+# libgomp is required by LightGBM; Tesseract + the Turkish model power the OCR path
+# for scanned documents (without them, scans are routed to a specialist).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libgomp1 curl tesseract-ocr tesseract-ocr-tur \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .

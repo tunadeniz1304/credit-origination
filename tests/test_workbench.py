@@ -16,12 +16,13 @@ def _p(role: str, name: str = "x") -> Principal:
 
 
 # ------------------------------------------------------------------ unit: authority matrix
+# authority_v2 limits (PD scale recalibrated with pd_lgbm_v2): uzman ≤ 15 %, kıdemli ≤ 30 %.
 @pytest.mark.parametrize(
     ("amount", "pd", "role"),
     [
         (100_000, 0.05, "uzman"),
         (300_000, 0.05, "kidemli_uzman"),
-        (100_000, 0.15, "kidemli_uzman"),
+        (100_000, 0.20, "kidemli_uzman"),
         (900_000, 0.05, "komite"),
         (100_000, 0.5, "komite"),
     ],
@@ -37,7 +38,7 @@ def test_four_eyes_triggers():
     assert big.four_eyes and not big.maker_may_finalise
     override = evaluate_authority(_p("komite"), amount=50_000, pd=0.01, is_override=True)
     assert override.four_eyes and "override" in override.reasons[0]
-    underpowered = evaluate_authority(_p("uzman"), amount=200_000, pd=0.11, is_override=False)
+    underpowered = evaluate_authority(_p("uzman"), amount=200_000, pd=0.22, is_override=False)
     assert underpowered.required_role == "kidemli_uzman" and not underpowered.maker_may_finalise
 
 
@@ -108,7 +109,9 @@ def test_queue_pagination_search_and_filters(client, users, grey_id):
     assert none["total"] == 0
     fresh = client.get("/api/v1/workbench/queue?sla_breached=false", headers=users["uzman"]).json()
     assert fresh["total"] == full["total"]
-    assert client.get("/api/v1/workbench/queue?limit=500", headers=users["uzman"]).status_code == 422
+    assert (
+        client.get("/api/v1/workbench/queue?limit=500", headers=users["uzman"]).status_code == 422
+    )
 
 
 def test_justification_is_mandatory(client, users, grey_id):
@@ -298,3 +301,44 @@ def test_request_more_documents(client, users):
         headers=users["uzman"],
     ).json()
     assert response["state"] == "BELGE_BEKLENIYOR"
+
+
+def test_concurrent_submissions_leave_one_pending_review(client, users):
+    """Audit F11: two specialists submitting at once must not create two pending reviews."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    application_id = submit_complete(
+        client, users["basvuran"], "gri", monthly_income=42_000, requested_amount=220_000
+    )
+    state = client.get(f"/api/v1/applications/{application_id}", headers=users["uzman"]).json()
+    assert state["state"] == "UZMAN_INCELEMESI"
+    body = {
+        "action": "ONAY",
+        "justification": "Gelir istikrarlı, teminat yeterli.",
+        "amount": 218_000,
+    }
+
+    def submit(user: str) -> int:
+        return client.post(
+            f"/api/v1/workbench/{application_id}/decision", json=body, headers=users[user]
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        codes = list(pool.map(submit, ["uzman", "uzman2", "uzman", "uzman2"]))
+    assert codes.count(201) == 1 and all(c == 409 for c in codes if c != 201)
+
+
+def test_pending_review_index_exists_after_migration(tmp_path):
+    from alembic.config import Config
+    from sqlalchemy import create_engine, inspect
+
+    from alembic import command
+    from app.core.config import PROJECT_ROOT
+
+    url = f"sqlite:///{(tmp_path / 'mig.db').as_posix()}"
+    cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    cfg.attributes["url"] = url
+    command.upgrade(cfg, "head")
+    indexes = {i["name"]: i for i in inspect(create_engine(url)).get_indexes("reviews")}
+    assert indexes["uq_reviews_one_pending"]["unique"]

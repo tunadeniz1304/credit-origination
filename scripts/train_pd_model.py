@@ -1,7 +1,7 @@
 """Train the PD model, the WoE scorecard and the challenger; write artifacts.
 
 Usage:
-    python scripts/train_pd_model.py [--rows 50000] [--data data/generated/training.csv]
+    python scripts/train_pd_model.py [--rows 100000] [--data data/generated/training.csv]
                                      [--out artifacts/models]
 
 Outputs (``artifacts/models``): LightGBM booster + metadata (calibration,
@@ -41,7 +41,7 @@ def _calibration_plot(meta_path: Path, target: Path) -> None:
     ax.plot(predicted, observed, marker="o", color="#1f3b57", label="PD modeli (test)")
     ax.set_xlabel("Tahmin edilen PD")
     ax.set_ylabel("Gözlenen temerrüt oranı")
-    ax.set_title("Kalibrasyon — pd_lgbm_v1 (zaman bazlı test seti)")
+    ax.set_title("Kalibrasyon — pd_lgbm_v2 (zaman bazlı test seti)")
     ax.legend(loc="upper left", fontsize=8)
     fig.tight_layout()
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -51,7 +51,7 @@ def _calibration_plot(meta_path: Path, target: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--rows", type=int, default=50_000)
+    parser.add_argument("--rows", type=int, default=100_000)
     parser.add_argument("--data", default="")
     parser.add_argument("--out", default="artifacts/models")
     args = parser.parse_args()

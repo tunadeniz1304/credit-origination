@@ -30,6 +30,12 @@ import numpy as np
 import pandas as pd
 
 from app.decisioning.features import MODEL_FEATURES, MONOTONE, annuity_factor
+from app.decisioning.public_mapping import (
+    DAYS_PER_MONTH,
+    delinquency_band,
+    lane_b_anchors,
+    load_behaviour_score,
+)
 
 SEED = 20260924
 REFERENCE_RATE = 0.45
@@ -46,6 +52,38 @@ PROVINCES = ("İstanbul", "Ankara", "İzmir", "Bursa", "Antalya", "Diyarbakır",
 
 def _uniform(rng: np.random.Generator, lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
     return lo + (hi - lo) * rng.random(len(lo))
+
+
+def anchor_to_real_curve(
+    logit: np.ndarray, max_dpd: np.ndarray, bureau_hit: np.ndarray
+) -> np.ndarray:
+    """Shift the latent log-odds per delinquency band so that the expected default
+    rate of every band equals the rate observed on real public data.
+
+    Thin-file applicants (no bureau record) get the shift of the clean band.
+    """
+    from scipy.optimize import brentq
+
+    anchors = lane_b_anchors()["delinquency_band_default"]
+    bands = [int(b) for b in anchors]
+    band = delinquency_band(np.ceil(max_dpd / DAYS_PER_MONTH), bands)
+    shifted = logit.copy()
+    shifts: dict[int, float] = {}
+    for b in bands:
+        mask = (band == b) & (bureau_hit == 1)
+        if not mask.any():
+            continue
+        target = anchors[str(b)]["default_rate"]
+        values = logit[mask]
+
+        def gap(delta: float, values: np.ndarray = values, target: float = target) -> float:
+            return float(np.mean(1 / (1 + np.exp(-(values + delta)))) - target)
+
+        shifts[b] = brentq(gap, -20.0, 20.0, xtol=1e-6)
+        shifted[mask] = values + shifts[b]
+    thin = bureau_hit == 0
+    shifted[thin] = logit[thin] + shifts.get(bands[0], 0.0)
+    return shifted
 
 
 def generate_dataset(n: int = 50_000, seed: int = SEED) -> pd.DataFrame:
@@ -138,7 +176,13 @@ def generate_dataset(n: int = 50_000, seed: int = SEED) -> pd.DataFrame:
         },
         (24, 150),
     )
-    employment = np.round(_uniform(rng, emp_lo, emp_hi)).astype(int)
+    # Tenure grows with age (a realistic proxy of a protected attribute) and never
+    # exceeds the working life since 18.
+    age_factor = 0.55 + 0.9 * (age - 21) / (64 - 21)
+    employment = np.round(
+        np.minimum(_uniform(rng, emp_lo, emp_hi) * age_factor, (age - 18) * 12)
+    ).clip(3, None)
+    employment = employment.astype(int)
 
     cv_lo, cv_hi = by(
         {"gri": (0.05, 0.12), "gecikmeli": (0.05, 0.14), "serbest": (0.12, 0.30)}, (0.008, 0.03)
@@ -184,16 +228,28 @@ def generate_dataset(n: int = 50_000, seed: int = SEED) -> pd.DataFrame:
     inquiries = inquiries + (month > 20) * rng.binomial(1, 0.3, n)  # mild recent drift
 
     s = np.nan_to_num(score, nan=1250.0)
+    # Lane B: bureau behaviour (arrears, utilisation) enters through the sub-score
+    # learnt on real defaults, and the default rate per delinquency band is anchored
+    # to the real curve (see app.decisioning.public_mapping / artifacts/validation).
+    behaviour_frame = pd.DataFrame(
+        {
+            "max_dpd_24m": max_dpd,
+            "delinquency_count_24m": delinq,
+            "bureau_utilisation": utilisation,
+        }
+    )
+    behaviour = load_behaviour_score().score_platform(behaviour_frame)
+    behaviour = np.where(bureau_hit == 1, behaviour, np.nan)
+    behaviour_logit = np.log(behaviour / (1 - behaviour))
+    behaviour_logit = np.nan_to_num(behaviour_logit - np.nanmean(behaviour_logit), nan=0.0)
     logit = (
         -4.35
         - 0.0022 * (s - 1300)
         + np.where(bureau_hit == 0, 0.20, 0.0)
         + 3.0 * np.maximum(dsr - 0.35, 0)
         + 1.0 * np.minimum(dsr, 0.35)
-        + 0.15 * delinq
-        + 0.005 * max_dpd
+        + 1.0 * behaviour_logit
         + 0.06 * inquiries
-        + 0.7 * (utilisation - 0.5)
         + 0.05 * active_loans
         + 0.6 * loan_to_income
         + 0.005 * (term - 36)
@@ -211,6 +267,7 @@ def generate_dataset(n: int = 50_000, seed: int = SEED) -> pd.DataFrame:
         + 0.6 * ((utilisation > 0.85) & (inquiries >= 4))
         + rng.normal(0, 1.35, n)  # unobserved heterogeneity (life events)
     )
+    logit = anchor_to_real_curve(logit, max_dpd, bureau_hit)
     pd_true = 1 / (1 + np.exp(-logit))
     target = (rng.random(n) < pd_true).astype(int)
 
@@ -226,6 +283,7 @@ def generate_dataset(n: int = 50_000, seed: int = SEED) -> pd.DataFrame:
             "inquiries_6m": inquiries,
             "active_loans": active_loans,
             "bureau_utilisation": np.round(utilisation, 4),
+            "bureau_behavior_score": np.round(behaviour, 5),
             "dsr": np.round(dsr, 4),
             "loan_to_income": np.round(loan_to_income, 4),
             "term_months": term,
@@ -406,7 +464,7 @@ def make_scorecard(features: list[str], monotone: dict[str, int]) -> Any:
     )
 
 
-def train_pd_model(df: pd.DataFrame, out_dir: Path, version: str = "pd_lgbm_v1") -> dict[str, Any]:
+def train_pd_model(df: pd.DataFrame, out_dir: Path, version: str = "pd_lgbm_v2") -> dict[str, Any]:
     train, calib, test = _splits(df)
     features = list(MODEL_FEATURES)
     booster = fit_lightgbm(
@@ -453,7 +511,7 @@ def train_pd_model(df: pd.DataFrame, out_dir: Path, version: str = "pd_lgbm_v1")
 
 
 def train_scorecard(
-    df: pd.DataFrame, out_dir: Path, version: str = "scorecard_woe_v1"
+    df: pd.DataFrame, out_dir: Path, version: str = "scorecard_woe_v2"
 ) -> dict[str, Any]:
     import joblib
 
@@ -500,7 +558,7 @@ def train_scorecard(
 
 
 def train_challenger(
-    df: pd.DataFrame, out_dir: Path, version: str = "challenger_lr_v1"
+    df: pd.DataFrame, out_dir: Path, version: str = "challenger_lr_v2"
 ) -> dict[str, Any]:
     import joblib
 

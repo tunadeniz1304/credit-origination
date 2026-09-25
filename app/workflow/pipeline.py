@@ -4,6 +4,11 @@
 KARAR_MOTORU → outcome``. Each stage commits, so the API (and a Celery worker
 in another process) always sees the current state from the database.
 
+Write transactions are kept short (SQLite has one writer): the expensive parts
+— PDF text/fraud analysis, the decision and its LLM narratives, the credit
+report PDF — run in a read-only session or outside any session, and only
+their results are written in a brief transaction.
+
 * Missing documents stop the flow in ``BELGE_BEKLENIYOR`` with a letter.
 * Provider outages (open circuit, 5xx after retries) leave the application in
   ``VERI_TOPLANIYOR`` with ``retry_count`` incremented; it is retried later.
@@ -96,13 +101,25 @@ class Pipeline:
     async def run(self, application_id: str) -> str:
         """Advance the application as far as possible; return the final state."""
         for _ in range(8):
-            with session_scope(self.settings) as session:
-                app = session.get(Application, application_id)
+            prepared: Any = None
+            with session_scope(self.settings, readonly=True) as ro:
+                app = ro.get(Application, application_id)
                 if app is None:
                     raise KeyError(application_id)
                 state = State(app.state)
-                service = ApplicationService(session, None, self.settings)
                 started = time.perf_counter()
+                if state == State.BELGE_INCELEMEDE:
+                    prepared = analyse_documents(ApplicationService(ro, None, self.settings), app)
+                elif state == State.KARAR_MOTORU:
+                    prepared = await self._prepare_decision(
+                        ApplicationService(ro, None, self.settings), app
+                    )
+            with session_scope(self.settings) as session:
+                app = session.get(Application, application_id)
+                assert app is not None
+                if app.state != state.value:
+                    continue  # advanced concurrently: re-read
+                service = ApplicationService(session, None, self.settings)
                 if state in (State.GONDERILDI, State.BELGE_BEKLENIYOR):
                     advanced = await self._document_gate(service, app)
                     STAGE_SECONDS.labels(stage="document_gate").observe(
@@ -111,7 +128,7 @@ class Pipeline:
                     if not advanced:
                         return app.state
                 elif state == State.BELGE_INCELEMEDE:
-                    self._document_review(service, app)
+                    self._document_review(service, app, prepared)
                     STAGE_SECONDS.labels(stage="document_review").observe(
                         time.perf_counter() - started
                     )
@@ -131,10 +148,12 @@ class Pipeline:
                         time.perf_counter() - started
                     )
                 elif state == State.KARAR_MOTORU:
-                    await self._decide(service, app)
-                    STAGE_SECONDS.labels(stage="decision").observe(time.perf_counter() - started)
+                    self._record_decision(service, app, prepared)
                 else:
                     return app.state
+            if state == State.KARAR_MOTORU:
+                self._write_report(application_id)
+                STAGE_SECONDS.labels(stage="decision").observe(time.perf_counter() - started)
         return state.value
 
     # ------------------------------------------------------------ stages
@@ -176,11 +195,15 @@ class Pipeline:
         service.transition(app, State.BELGE_INCELEMEDE, "belgeler tamamlandı")
         return True
 
-    def _document_review(self, service: ApplicationService, app: Application) -> None:
-        documents = service.documents(app)
-        for document in documents:
+    def _document_review(
+        self, service: ApplicationService, app: Application, analyses: dict[str, Any]
+    ) -> None:
+        for document in service.documents(app):
             if document.status == "YUKLENDI":
-                service.process_document(document)
+                if document.id in analyses:
+                    service.apply_analysis(document, analyses[document.id])
+                else:  # uploaded after the analysis snapshot
+                    service.process_document(document)
         service.transition(app, State.VERI_TOPLANIYOR, "belge incelemesi tamamlandı")
 
     async def _collect(self, service: ApplicationService, app: Application) -> None:
@@ -359,19 +382,31 @@ class Pipeline:
             },
         )
 
-    async def _decide(self, service: ApplicationService, app: Application) -> None:
+    async def _prepare_decision(
+        self, service: ApplicationService, app: Application
+    ) -> dict[str, Any]:
+        """Decide and write the narratives from a read-only view (no writer lock held)."""
         session = service.session
         policy = active_policy(session)
         snapshot = self.build_snapshot(service, app)
         result = decide(snapshot, policy=policy, models=get_models(), pricing_cfg=load_pricing())
-        decision = persist_decision(session, app, snapshot, result)
-        DECISIONS.labels(outcome=result.outcome).inc()
+        draft = decision_row(app, snapshot, result)
         pii = service.pii(app)
         flags = [s["label"] for d in service.documents(app) for s in d.fraud_signals]
-        ctx = build_context(
-            app, decision, applicant_name=pii["name"], pii=pii, fraud_flags=flags[:5]
-        )
+        ctx = build_context(app, draft, applicant_name=pii["name"], pii=pii, fraud_flags=flags[:5])
         bundle = await self.narrator().run_chain(ctx)
+        return {"snapshot": snapshot, "result": result, "bundle": bundle, "pii": pii}
+
+    def _record_decision(
+        self, service: ApplicationService, app: Application, prepared: dict[str, Any]
+    ) -> None:
+        """Short write transaction: decision, state, offer, audit, notification."""
+        session = service.session
+        result: DecisionResult = prepared["result"]
+        bundle = prepared["bundle"]
+        pii = prepared["pii"]
+        decision = persist_decision(session, app, prepared["snapshot"], result)
+        DECISIONS.labels(outcome=result.outcome).inc()
         decision.narratives = {
             "committee_summary": bundle.committee_summary,
             "applicant_letter": bundle.applicant_letter,
@@ -380,8 +415,6 @@ class Pipeline:
             "modes": bundle.modes,
             "errors": bundle.errors,
         }
-        # Slow work (narratives) happens before the first audit append: the audit
-        # chain lock is held from the first append until commit.
         service.audit(
             "DECISION_MADE",
             app.id,
@@ -403,14 +436,12 @@ class Pipeline:
             if result.reason_code_list
             else "karar motoru",
         )
-        offer: Offer | None = None
         if target == State.OTOMATIK_ONAY and result.pricing is not None:
-            offer = create_offer(session, app, decision)
+            create_offer(session, app, decision)
             service.transition(app, State.TEKLIF_SUNULDU, "teklif oluşturuldu")
         elif target == State.UZMAN_INCELEMESI:
             app.priority = queue_priority(app, decision)
         app.letters = {**(app.letters or {}), "karar": bundle.applicant_letter}
-        app.reports = generate_report(app, decision, offer, pii, self.settings)
         outbox.enqueue(
             session,
             event="KARAR_BILDIRIMI",
@@ -424,6 +455,27 @@ class Pipeline:
             idempotency_key=f"{app.id}:decision:{decision.id}",
         )
 
+    def _write_report(self, application_id: str) -> None:
+        """Render the credit report outside any write transaction, then store its paths."""
+        with session_scope(self.settings, readonly=True) as ro:
+            app = ro.get(Application, application_id)
+            assert app is not None
+            decision = latest_decision(ro, application_id)
+            if decision is None:
+                return
+            offer = latest_offer(ro, application_id)
+            pii = ApplicationService(ro, None, self.settings).pii(app)
+            paths = generate_report(app, decision, offer, pii, self.settings)
+        with session_scope(self.settings) as session:
+            app = session.get(Application, application_id)
+            assert app is not None
+            app.reports = paths
+
+
+def analyse_documents(service: ApplicationService, app: Application) -> dict[str, Any]:
+    """Text extraction + tamper analysis of every pending document (read-only)."""
+    return {d.id: service.analyse_file(d) for d in service.documents(app) if d.status == "YUKLENDI"}
+
 
 def persist_decision(
     session: Session,
@@ -434,7 +486,22 @@ def persist_decision(
     kind: str = "engine",
     decided_by: str = "engine",
 ) -> Decision:
-    decision = Decision(
+    decision = decision_row(app, snapshot, result, kind=kind, decided_by=decided_by)
+    session.add(decision)
+    session.flush()
+    return decision
+
+
+def decision_row(
+    app: Application,
+    snapshot: dict[str, Any],
+    result: DecisionResult,
+    *,
+    kind: str = "engine",
+    decided_by: str = "engine",
+) -> Decision:
+    """A (not yet persisted) decision row for ``result``."""
+    return Decision(
         application_id=app.id,
         kind=kind,
         outcome=result.outcome,
@@ -460,15 +527,12 @@ def persist_decision(
         latency_ms=result.latency_ms,
         decided_by=decided_by,
     )
-    session.add(decision)
-    session.flush()
-    return decision
 
 
 def queue_priority(app: Application, decision: Decision) -> float:
     weights = load_workflow().queue_priority
     amount_score = min(app.requested_amount / 1_000_000, 1.0)
-    risk_score = min((decision.pd or 0.0) / 0.2, 1.0)
+    risk_score = min((decision.pd or 0.0) / load_policy_file().decision.auto_decline_min_pd, 1.0)
     return round(
         weights.get("amount_weight", 0.4) * amount_score
         + weights.get("risk_weight", 0.4) * risk_score

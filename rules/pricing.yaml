@@ -1,14 +1,21 @@
 # Risk bazlı fiyatlama parametreleri.
 # UYARI: BSMV/KKDF oranları ve TCMB azami akdi faiz oranı örnek değerlerdir;
 # canlı kullanımdan önce güncel mevzuatı (Resmî Gazete / TCMB duyuruları) kontrol edin.
-version: pricing_v1
+version: pricing_v2
 taxes:
   bsmv: 0.15      # Banka ve Sigorta Muameleleri Vergisi (faiz üzerinden)
   kkdf: 0.15      # Kaynak Kullanımını Destekleme Fonu (faiz üzerinden)
 legal_cap_annual: 0.72   # TCMB azami akdi faiz tavanı (örnek)
 offer_validity_days: 7
-asset_correlation: 0.15  # Basel IRB diğer perakende için varsayılan korelasyon
+# Basel IRB "diğer perakende" varlık korelasyonu (CRE31.xx / BCBS 2005 açıklayıcı not):
+# R(PD) = r_min·w + r_max·(1 − w),  w = (1 − e^(−k·PD)) / (1 − e^(−k))
+correlation:
+  r_min: 0.03
+  r_max: 0.16
+  k: 35
 confidence_level: 0.999
+capital_floor: 0.01      # ekonomik sermaye oranı alt sınırı (RAROC paydası sıfıra yaklaşmasın)
+pd_floor: 0.0003         # Basel perakende PD tabanı (%0,03)
 products:
   IHTIYAC:
     lgd: 0.55

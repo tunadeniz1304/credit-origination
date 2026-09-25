@@ -1,6 +1,6 @@
 """Generate the seeded synthetic training population (50k applications).
 
-Usage: python scripts/generate_training_data.py [--rows 50000] [--out data/generated/training.parquet]
+Usage: python scripts/generate_training_data.py [--rows 100000] [--out data/generated/training.parquet]
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from app.decisioning.training import SEED, generate_dataset
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--rows", type=int, default=50_000)
+    parser.add_argument("--rows", type=int, default=100_000)
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--out", default="data/generated/training.csv")
     args = parser.parse_args()

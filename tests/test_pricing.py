@@ -52,3 +52,25 @@ def test_legal_cap_flag():
 
 def test_quote_without_schedule_is_light():
     assert quote(pd=0.05, amount=10_000, term_months=6, include_schedule=False).schedule == []
+
+
+def test_basel_other_retail_correlation_and_capital_known_values():
+    """BCBS other-retail curve: R falls from 16 % to 3 %; PD 1 %, LGD 45 % → K ≈ 3.66 % (RW ≈ 46 %)."""
+    from app.core.rules import load_pricing
+    from app.pricing.engine import capital_ratio, retail_correlation
+
+    cfg = load_pricing()
+    assert retail_correlation(0.0, cfg) == pytest.approx(0.16)
+    assert retail_correlation(1.0, cfg) == pytest.approx(0.03, abs=1e-12)
+    assert retail_correlation(0.01, cfg) == pytest.approx(0.12161, abs=1e-5)
+    assert retail_correlation(0.10, cfg) == pytest.approx(0.03392, abs=1e-5)
+    k = irb_capital(0.01, 0.45, retail_correlation(0.01, cfg), 0.999)
+    assert k == pytest.approx(0.0366, abs=5e-4)
+    assert k * 12.5 == pytest.approx(0.458, abs=0.01)
+    # The engine wires the PD-dependent correlation into K (not a constant 0.15).
+    assert capital_ratio(0.01, 0.45, cfg) == pytest.approx(k, rel=1e-9)
+    assert quote(pd=0.01, amount=100_000, term_months=24).asset_correlation == pytest.approx(
+        0.12161, abs=1e-5
+    )
+    # PD floor: a 0 PD is priced at the Basel retail floor.
+    assert capital_ratio(0.0, 0.45, cfg) == capital_ratio(cfg.pd_floor, 0.45, cfg)

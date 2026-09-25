@@ -8,7 +8,6 @@ license = { text = "MIT" }
 
 [project.optional-dependencies]
 # Heavy, optional capabilities. The platform degrades gracefully without them.
-ocr = ["pytesseract>=0.3.10"]
 barcode = ["pyzbar>=0.1.9"]
 layout = ["docling>=2.0"]
 explain = ["dice-ml>=0.11"]

@@ -289,3 +289,98 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
     )
     out.append("")
     return out
+
+
+def lane_b_section(lane: dict[str, Any]) -> list[str]:
+    """Lane B: mapping, behaviour sub-score, generator anchoring, PD level check."""
+    anchors = lane["anchors"]
+    check = lane["generator_check"]
+    calib = lane.get("production_calibration", {})
+    behaviour = lane.get("behaviour_score", {})
+    out = [
+        "## Lane B — anchoring the production model to real data",
+        "",
+        "The production model runs on Turkey-specific features that no public set contains, so it "
+        "cannot be validated end-to-end on public data. Instead its bureau-behaviour inputs are "
+        "mapped onto the Taiwan variables (`app/decisioning/public_mapping.py`, table in "
+        "[`DATA.md`](DATA.md)), a behaviour sub-score is learnt on real defaults, and the synthetic "
+        "generator and the PD level are anchored to the real default curve.",
+        "",
+        f"- Real anchor source: {anchors['source']} ({anchors['rows']:,} rows, default rate "
+        f"{anchors['overall_default_rate']:.2%}).",
+        f"- `bureau_behavior_score` ({behaviour.get('version', '—')}): monotone LightGBM on delay "
+        f"months, delinquent months and utilisation; real hold-out AUC "
+        f"{behaviour.get('holdout_auc', float('nan')):.3f} (n = {behaviour.get('holdout_rows', 0):,}).",
+        "",
+        f"### Generator check — default rate per delinquency band (tolerance ±{check['tolerance_abs']:.2f})",
+        "",
+    ]
+    out += _table(
+        [
+            "Max delay (months)",
+            "Real default rate",
+            "Synthetic default rate",
+            "|gap|",
+            "Within",
+            "Real share",
+            "Synthetic share",
+        ],
+        [
+            [
+                f"{c['band']}+" if c is check["bands"][-1] else c["band"],
+                _pct(c["real_default_rate"]),
+                _pct(c["synthetic_default_rate"]),
+                f"{c['abs_gap']:.4f}",
+                "yes" if c["within_tolerance"] else "**no**",
+                _pct(c["real_share"]),
+                _pct(c["synthetic_share"]),
+            ]
+            for c in check["bands"]
+        ],
+    )
+    out += ["", f"- {check['note']}", ""]
+    if calib:
+        low = calib["low_risk"]
+        out += [
+            f"### Production PD ({calib['model']}) — level and low-risk calibration",
+            "",
+            f"Synthetic time-based test set, n = {calib['test_rows']:,}: ECE {calib['ece']:.4f}, "
+            f"Hosmer–Lemeshow χ² {calib['hosmer_lemeshow']['statistic']:.1f} "
+            f"(p = {calib['hosmer_lemeshow']['p_value']:.3g}). Lowest {low['deciles']} deciles: "
+            f"predicted {_pct(low['predicted'])}, observed {_pct(low['observed'])} "
+            f"(ratio {low['ratio_observed_to_predicted']}; tolerance ±{calib['tolerance_ratio']:.0%} — "
+            f"{'met' if calib['low_risk_within_tolerance'] else '**not met**'} in aggregate, "
+            f"{'met' if calib.get('low_risk_deciles_within_tolerance') else '**not met**'} per decile).",
+            "",
+        ]
+        out += _table(
+            ["Decile", "Predicted", "Observed", "Obs / pred"],
+            [
+                [
+                    d["decile"],
+                    _pct(d["predicted"]),
+                    _pct(d["observed"]),
+                    d["ratio_observed_to_predicted"],
+                ]
+                for d in calib["deciles"]
+            ],
+        )
+        out += ["", "Mean predicted PD per delinquency band vs the real default rate:", ""]
+        out += _table(
+            ["Band", "Real default rate", "Mean predicted PD", "n (test)"],
+            [
+                [b["band"], _pct(b["real_default_rate"]), _pct(b["mean_predicted_pd"]), b["n"]]
+                for b in calib["per_band_level"]
+            ],
+        )
+        out.append("")
+    out += [
+        "**Reading this honestly.** The anchoring transfers the *shape* of real credit risk "
+        "(how default rises with arrears) and a realistic PD level into the synthetic population. "
+        "The Taiwan target is next-month default on credit cards, not 90+ DPD within 12 months on "
+        "personal loans, and Taiwanese card holders are not Turkish loan applicants: the anchored "
+        "model is a methodologically sound starting point, not a validated Turkish PD model. A real "
+        "bank portfolio is needed for re-training and independent validation.",
+        "",
+    ]
+    return out

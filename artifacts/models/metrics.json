@@ -1,88 +1,88 @@
 {
- "rows": 50000,
+ "rows": 100000,
  "models": {
-  "pd": "pd_lgbm_v1",
-  "scorecard": "scorecard_woe_v1",
-  "challenger": "challenger_lr_v1"
+  "pd": "pd_lgbm_v2",
+  "scorecard": "scorecard_woe_v2",
+  "challenger": "challenger_lr_v2"
  },
  "metrics": {
   "pd": {
-   "auc": 0.8949,
-   "gini": 0.7898,
-   "ks": 0.6251,
-   "brier": 0.06282,
-   "default_rate": 0.1081,
-   "n": 8208,
-   "raw_auc": 0.8963,
+   "auc": 0.8266,
+   "gini": 0.6532,
+   "ks": 0.5108,
+   "brier": 0.10645,
+   "default_rate": 0.1655,
+   "n": 16803,
+   "raw_auc": 0.8272,
    "calibration": [
     {
-     "predicted": 0.0031,
-     "observed": 0.0062,
-     "count": 1601
+     "predicted": 0.0205,
+     "observed": 0.0218,
+     "count": 3949
     },
     {
-     "predicted": 0.0037,
-     "observed": 0.0082,
-     "count": 1576
+     "predicted": 0.0234,
+     "observed": 0.0231,
+     "count": 3197
     },
     {
-     "predicted": 0.0117,
-     "observed": 0.0104,
-     "count": 1638
+     "predicted": 0.0269,
+     "observed": 0.027,
+     "count": 5701
     },
     {
-     "predicted": 0.0142,
-     "observed": 0.0106,
-     "count": 1979
+     "predicted": 0.0385,
+     "observed": 0.0406,
+     "count": 2980
     },
     {
-     "predicted": 0.0194,
-     "observed": 0.0156,
-     "count": 1216
+     "predicted": 0.0651,
+     "observed": 0.076,
+     "count": 2525
     },
     {
-     "predicted": 0.0395,
-     "observed": 0.038,
-     "count": 1315
+     "predicted": 0.113,
+     "observed": 0.1238,
+     "count": 2327
     },
     {
-     "predicted": 0.0925,
-     "observed": 0.08,
-     "count": 937
+     "predicted": 0.1799,
+     "observed": 0.1903,
+     "count": 2107
     },
     {
-     "predicted": 0.1265,
-     "observed": 0.114,
-     "count": 1535
+     "predicted": 0.2415,
+     "observed": 0.25,
+     "count": 2152
     },
     {
-     "predicted": 0.1764,
-     "observed": 0.1877,
-     "count": 1257
+     "predicted": 0.3361,
+     "observed": 0.3254,
+     "count": 2234
     },
     {
-     "predicted": 0.569,
-     "observed": 0.5813,
-     "count": 886
+     "predicted": 0.5275,
+     "observed": 0.5216,
+     "count": 2335
     }
    ],
-   "best_iteration": 119
+   "best_iteration": 151
   },
   "scorecard": {
-   "auc": 0.8917,
-   "gini": 0.7834,
-   "ks": 0.6193,
-   "brier": 0.06388,
-   "default_rate": 0.1081,
-   "n": 8208
+   "auc": 0.8226,
+   "gini": 0.6453,
+   "ks": 0.5085,
+   "brier": 0.10848,
+   "default_rate": 0.1655,
+   "n": 16803
   },
   "challenger": {
-   "auc": 0.8957,
-   "gini": 0.7914,
-   "ks": 0.6184,
-   "brier": 0.06254,
-   "default_rate": 0.1081,
-   "n": 8208
+   "auc": 0.8251,
+   "gini": 0.6502,
+   "ks": 0.5081,
+   "brier": 0.10716,
+   "default_rate": 0.1655,
+   "n": 16803
   }
  }
 }

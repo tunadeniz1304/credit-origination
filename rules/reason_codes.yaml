@@ -1,6 +1,6 @@
 # Başvurana özel Türkçe gerekçe kodu sözlüğü. {placeholder} alanları karar
 # bağlamındaki değerlerle (biçimlendirilmiş) doldurulur.
-version: reasons_v1
+version: reasons_v2
 codes:
   R01_DSR_YUKSEK: "Aylık borç ödemelerinizin gelirinize oranı {dsr} ile politika sınırı olan {max_dsr} seviyesinin üzerinde."
   R02_KKB_DUSUK: "Kredi Kayıt Bürosu kredi notunuz ({bureau_score}) başvurulan ürün için yeterli seviyede değil."
@@ -27,6 +27,8 @@ codes:
   R23_ANOMALI: "Başvurunuz olağan dışı özellikler taşıdığı için ek incelemeye alındı."
   R24_BAKIYE_DUSUK: "Hesabınızdaki ortalama bakiye gelirinize göre düşük."
   R25_MEVCUT_BORC: "Mevcut kredi ve kart borçlarınızın limitlerinize oranı yüksek ({bureau_utilisation})."
+  R26_KKB_DAVRANIS: "Kredi Kayıt Bürosu ödeme davranışınız (gecikme geçmişi ve limit kullanımı) yüksek risk göstergesi taşıyor."
+  R27_DSR_SINIRDA: "Aylık borç ödemelerinizin gelirinize oranı ({dsr}) politika sınırı olan {max_dsr} seviyesine yakın."
 feature_reasons:        # model feature -> olumsuz katkıda kullanılacak gerekçe kodu
   bureau_score: R02_KKB_DUSUK
   dsr: R01_DSR_YUKSEK
@@ -43,3 +45,50 @@ feature_reasons:        # model feature -> olumsuz katkıda kullanılacak gerek�
   avg_balance_to_income: R24_BAKIYE_DUSUK
   bureau_utilisation: R25_MEVCUT_BORC
   active_loans: R25_MEVCUT_BORC
+  bureau_behavior_score: R26_KKB_DAVRANIS
+
+# Önemlilik: bir model gerekçesi ancak SHAP katkısı (log-odds) ve skor kartında kaybedilen
+# puan eşiği aşıyorsa üretilir; toplamda en fazla max_codes kod gösterilir.
+materiality:
+  min_shap: 0.10
+  min_points_lost: 5.0
+  max_codes: 4
+
+# Değere göre koşul: özellik değeri politika açısından gerçekten olumsuz aralıkta değilse
+# (koşul yanlışsa) o özellikten gerekçe üretilmez. İfadeler güvenli değerlendiriciyle çalışır.
+adverse_when:
+  bureau_score: "bureau_score < 1400"
+  delinquency_count_24m: "delinquency_count_24m >= 1"
+  max_dpd_24m: "max_dpd_24m >= 30"
+  inquiries_6m: "inquiries_6m >= 3"
+  active_loans: "active_loans >= 3"
+  bureau_utilisation: "bureau_utilisation >= 0.60"
+  bureau_behavior_score: "bureau_behavior_score >= 0.15"
+  dsr: "dsr > max_dsr * 0.8"
+  loan_to_income: "loan_to_income >= 0.60"
+  employment_months: "employment_months < 24"
+  income_cv: "income_cv >= 0.10"
+  negative_balance_days: "negative_balance_days >= 10"
+  nsf_count: "nsf_count >= 1"
+  gambling_share: "gambling_share >= 0.03"
+  savings_rate: "savings_rate < 0.05"
+  avg_balance_to_income: "avg_balance_to_income < 0.50"
+
+# Onaylanan dosyalarda ret dili kullanılmaz: aynı koşullar "iyileştirme alanı" olarak anlatılır.
+improvements:
+  R01_DSR_YUKSEK: "İyileştirme alanı: aylık borç ödemelerinizin gelirinize oranı {dsr}; bu oranın düşmesi daha yüksek tutar ve daha iyi koşullar sağlayabilir."
+  R02_KKB_DUSUK: "İyileştirme alanı: Kredi Kayıt Bürosu notunuzun ({bureau_score}) yükselmesi fiyatlamanızı iyileştirebilir."
+  R03_GECIKME_GECMISI: "İyileştirme alanı: son 24 aydaki {delinquency_count_24m} gecikme kaydı; düzenli ödemeler risk değerlendirmenizi iyileştirir."
+  R04_SORGU_SAYISI: "İyileştirme alanı: son 6 ayda {inquiries_6m} kredi sorgusu yapılmış; yeni başvuruları sınırlamak faydalı olabilir."
+  R05_ISTIHDAM_KISA: "İyileştirme alanı: mevcut işyerinizdeki çalışma süreniz ({employment_months} ay) uzadıkça değerlendirme olumlu etkilenir."
+  R06_GELIR_DEGISKEN: "İyileştirme alanı: aylık gelirinizin değişkenliği ({income_cv}) azaldıkça koşullarınız iyileşebilir."
+  R07_NEGATIF_BAKIYE: "İyileştirme alanı: hesabınızın eksi bakiyede kaldığı gün sayısı ({negative_balance_days})."
+  R08_KUMAR_HARCAMA: "İyileştirme alanı: şans oyunu/bahis harcamalarınızın payı ({gambling_share})."
+  R09_TUTAR_GELIR: "İyileştirme alanı: talep tutarınız yıllık gelirinizin {loan_to_income} katı; daha düşük tutar daha iyi koşullar sağlayabilir."
+  R17_TASARRUF_DUSUK: "İyileştirme alanı: aylık tasarruf oranınız ({savings_rate}) arttıkça değerlendirme olumlu etkilenir."
+  R19_KARSILIKSIZ: "İyileştirme alanı: son 12 aydaki {nsf_count} karşılıksız/iade işlem kaydı."
+  R20_INCE_DOSYA: "İyileştirme alanı: kredi geçmişiniz oluştukça değerlendirme hesap hareketlerinin yanında KKB verisine de dayanabilir."
+  R24_BAKIYE_DUSUK: "İyileştirme alanı: hesabınızdaki ortalama bakiyenin gelirinize oranı yükseldikçe koşullarınız iyileşebilir."
+  R25_MEVCUT_BORC: "İyileştirme alanı: mevcut kredi ve kart borçlarınızın limitlerinize oranı ({bureau_utilisation})."
+  R27_DSR_SINIRDA: "İyileştirme alanı: aylık borç ödemelerinizin gelirinize oranı {dsr}; sınır olan {max_dsr} seviyesinden uzaklaştıkça koşullarınız iyileşebilir."
+  R26_KKB_DAVRANIS: "İyileştirme alanı: KKB ödeme davranışınız (gecikme geçmişi ve limit kullanımı) iyileştikçe fiyatlamanız iyileşebilir."

@@ -23,9 +23,9 @@ from app.core.config import get_settings
 from app.core.logging import get_logger
 from app.decisioning.features import MODEL_FEATURES, model_vector
 
-PD_VERSION = "pd_lgbm_v1"
-SCORECARD_VERSION = "scorecard_woe_v1"
-CHALLENGER_VERSION = "challenger_lr_v1"
+PD_VERSION = "pd_lgbm_v2"
+SCORECARD_VERSION = "scorecard_woe_v2"
+CHALLENGER_VERSION = "challenger_lr_v2"
 SCORE_MIN, SCORE_MAX = 300, 900
 _lock = threading.Lock()
 

@@ -277,21 +277,28 @@ class ApplicationService:
         )
         return document
 
-    def process_document(self, document: Document) -> None:
+    def analyse_file(self, document: Document) -> dict[str, Any]:
+        """Pure analysis of a stored document (no database writes)."""
         path = Path(document.stored_path)
         text = extract_text(path, document.mime)
-        document.text_source = text.source
         if text.source == "none":
+            return {"source": "none", "fields": [], "report": None}
+        fields = extract_fields(document.code, text, path)
+        report = analyse_document(path, document.code, document.mime, fields, text)
+        return {"source": text.source, "fields": fields, "report": report}
+
+    def apply_analysis(self, document: Document, analysis: dict[str, Any]) -> None:
+        document.text_source = analysis["source"]
+        report = analysis["report"]
+        if report is None:
             document.status = "OCR_GEREKLI"
             document.fraud_score = 0.0
             document.fraud_signals = []
             return
-        fields = extract_fields(document.code, text, path)
-        report = analyse_document(path, document.code, document.mime, fields, text)
         document.fraud_score = report.score
         document.fraud_signals = [s.model_dump() for s in report.signals]
         document.status = "SUPHELI" if report.score >= 0.6 else "ISLENDI"
-        for f in fields:
+        for f in analysis["fields"]:
             self.session.add(
                 ExtractedField(
                     document_id=document.id,
@@ -304,6 +311,9 @@ class ApplicationService:
                     source=f.source,
                 )
             )
+
+    def process_document(self, document: Document) -> None:
+        self.apply_analysis(document, self.analyse_file(document))
 
     def documents(self, app: Application) -> list[Document]:
         return list(

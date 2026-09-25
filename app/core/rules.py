@@ -32,6 +32,7 @@ class DecisionThresholds(BaseModel):
     auto_decline_min_pd: float
     min_document_confidence: float
     counter_offer_min_ratio: float = 0.3
+    max_pricing_iterations: int = 6  # limit ↔ price fixed-point iterations (DSR re-check)
 
 
 class RiskBand(BaseModel):
@@ -76,13 +77,23 @@ class ProductPricing(BaseModel):
     min_rate_annual: float
 
 
+class RetailCorrelation(BaseModel):
+    """Basel IRB 'other retail' asset correlation parameters."""
+
+    r_min: float = 0.03
+    r_max: float = 0.16
+    k: float = 35.0
+
+
 class PricingConfig(BaseModel):
     version: str
     taxes: dict[str, float]
     legal_cap_annual: float
     offer_validity_days: int
-    asset_correlation: float = 0.15
+    correlation: RetailCorrelation = Field(default_factory=RetailCorrelation)
     confidence_level: float = 0.999
+    capital_floor: float = 0.01
+    pd_floor: float = 0.0003
     products: dict[str, ProductPricing]
 
     def product(self, code: str) -> ProductPricing:
@@ -123,10 +134,40 @@ class WorkflowConfig(BaseModel):
     income_tolerance: float = 0.15
 
 
+class ReasonMateriality(BaseModel):
+    min_shap: float = 0.0
+    min_points_lost: float = 0.0
+    max_codes: int = 4
+
+
 class ReasonCatalog(BaseModel):
     version: str
     codes: dict[str, str]
     feature_reasons: dict[str, str] = Field(default_factory=dict)
+    materiality: ReasonMateriality = Field(default_factory=ReasonMateriality)
+    adverse_when: dict[str, str] = Field(default_factory=dict)
+    improvements: dict[str, str] = Field(default_factory=dict)
+
+
+class ProducerProfile(BaseModel):
+    expected: list[str] = Field(default_factory=list)
+    unexpected: list[str] = Field(default_factory=list)
+
+
+class FraudThresholds(BaseModel):
+    modified_after_creation_hours: float
+    max_font_families_per_page: int
+    digit_size_tolerance_pt: float
+    whiteout_min_overlap: float
+    image_page_coverage: float
+
+
+class FraudConfig(BaseModel):
+    version: str
+    weights: dict[str, float]
+    thresholds: FraudThresholds
+    editing_tools: list[str]
+    profiles: dict[str, ProducerProfile] = Field(default_factory=dict)
 
 
 class SanctionEntry(BaseModel):
@@ -207,11 +248,11 @@ def parse_policy(text: str) -> PolicyRules:
 
 @lru_cache(maxsize=1)
 def load_policy_file() -> PolicyRules:
-    return PolicyRules.model_validate(read_yaml("policy_v1.yaml"))
+    return PolicyRules.model_validate(read_yaml("policy_v2.yaml"))
 
 
 def policy_file_text() -> str:
-    return (_rules_dir() / "policy_v1.yaml").read_text(encoding="utf-8")
+    return (_rules_dir() / "policy_v2.yaml").read_text(encoding="utf-8")
 
 
 @lru_cache(maxsize=1)
@@ -237,6 +278,11 @@ def load_reasons() -> ReasonCatalog:
 @lru_cache(maxsize=1)
 def load_validation() -> ValidationConfig:
     return ValidationConfig.model_validate(read_yaml("validation.yaml"))
+
+
+@lru_cache(maxsize=1)
+def load_fraud() -> FraudConfig:
+    return FraudConfig.model_validate(read_yaml("fraud.yaml"))
 
 
 @lru_cache(maxsize=1)
