@@ -3,7 +3,9 @@
 States: CLOSED (normal) -> OPEN (failures >= threshold; rejects calls until
 ``reset_timeout`` elapses) -> HALF_OPEN (at most ``half_open_max_calls``
 probes admitted) -> CLOSED on a successful probe or back to OPEN on a failed
-one.
+one. A probe that ends without an outcome (task cancelled, ``BaseException``)
+gives its slot back, and every slot is a lease of ``probe_lease`` seconds, so
+a probe whose process died cannot wedge the breaker in HALF_OPEN.
 
 Every transition is a single atomic store operation. v1 did load → modify →
 save from Python, so two processes could both flip OPEN → HALF_OPEN and
@@ -45,12 +47,15 @@ class BreakerSnapshot:
     failures: int = 0
     opened_at: float = 0.0
     probes: int = 0  # probes in flight while HALF_OPEN
+    probe_at: float = 0.0  # when the latest probe slot was leased
 
 
 class BreakerStore(Protocol):
     def load(self, name: str) -> BreakerSnapshot: ...
 
-    def acquire(self, name: str, now: float, reset_timeout: float, max_probes: int) -> str:
+    def acquire(
+        self, name: str, now: float, reset_timeout: float, max_probes: int, lease: float
+    ) -> str:
         """Atomically decide admission; returns the state the caller runs under or ``""``."""
         ...
 
@@ -58,11 +63,15 @@ class BreakerStore(Protocol):
 
     def failure(self, name: str, now: float, threshold: int) -> str: ...
 
+    def release(self, name: str) -> None:
+        """Give back a probe slot whose call ended without an outcome."""
+        ...
+
     def reset(self, name: str) -> None: ...
 
 
 def _decide(
-    snap: BreakerSnapshot, now: float, reset_timeout: float, max_probes: int
+    snap: BreakerSnapshot, now: float, reset_timeout: float, max_probes: int, lease: float
 ) -> tuple[BreakerSnapshot, str]:
     if snap.state == CircuitState.CLOSED.value:
         return snap, CircuitState.CLOSED.value
@@ -71,8 +80,11 @@ def _decide(
             return snap, ""
         snap.state, snap.probes = CircuitState.HALF_OPEN.value, 0
     if snap.probes >= max_probes:
-        return snap, ""
+        if now - snap.probe_at < lease:
+            return snap, ""
+        snap.probes = 0  # the leases expired: their probes are presumed dead
     snap.probes += 1
+    snap.probe_at = now
     return snap, CircuitState.HALF_OPEN.value
 
 
@@ -97,9 +109,11 @@ class MemoryBreakerStore:
         with self._lock:
             return BreakerSnapshot(**asdict(self._get(name)))
 
-    def acquire(self, name: str, now: float, reset_timeout: float, max_probes: int) -> str:
+    def acquire(
+        self, name: str, now: float, reset_timeout: float, max_probes: int, lease: float
+    ) -> str:
         with self._lock:
-            snap, admitted = _decide(self._get(name), now, reset_timeout, max_probes)
+            snap, admitted = _decide(self._get(name), now, reset_timeout, max_probes, lease)
             self._data[name] = snap
             return admitted
 
@@ -114,12 +128,18 @@ class MemoryBreakerStore:
             self._data[name] = snap
             return snap.state
 
+    def release(self, name: str) -> None:
+        with self._lock:
+            snap = self._get(name)
+            if snap.state == CircuitState.HALF_OPEN.value and snap.probes > 0:
+                snap.probes -= 1
+
     def reset(self, name: str) -> None:
         with self._lock:
             self._data[name] = BreakerSnapshot()
 
 
-# KEYS[1] = breaker hash; ARGV = now, reset_timeout, max_probes
+# KEYS[1] = breaker hash; ARGV = now, reset_timeout, max_probes, probe lease
 _ACQUIRE = """
 local state = redis.call('HGET', KEYS[1], 'state') or 'CLOSED'
 if state == 'CLOSED' then return 'CLOSED' end
@@ -129,9 +149,21 @@ if state == 'OPEN' then
   redis.call('HSET', KEYS[1], 'state', 'HALF_OPEN', 'probes', 0)
 end
 local probes = tonumber(redis.call('HGET', KEYS[1], 'probes') or '0')
-if probes >= tonumber(ARGV[3]) then return '' end
+if probes >= tonumber(ARGV[3]) then
+  local leased = tonumber(redis.call('HGET', KEYS[1], 'probe_at') or '0')
+  if tonumber(ARGV[1]) - leased < tonumber(ARGV[4]) then return '' end
+  redis.call('HSET', KEYS[1], 'probes', 0)
+end
 redis.call('HINCRBY', KEYS[1], 'probes', 1)
+redis.call('HSET', KEYS[1], 'probe_at', ARGV[1])
 return 'HALF_OPEN'
+"""
+_RELEASE = """
+if redis.call('HGET', KEYS[1], 'state') == 'HALF_OPEN'
+   and tonumber(redis.call('HGET', KEYS[1], 'probes') or '0') > 0 then
+  redis.call('HINCRBY', KEYS[1], 'probes', -1)
+end
+return 1
 """
 _SUCCESS = """
 redis.call('HSET', KEYS[1], 'state', 'CLOSED', 'failures', 0, 'opened_at', 0, 'probes', 0)
@@ -159,6 +191,7 @@ class RedisBreakerStore:
         self._acquire = client.register_script(_ACQUIRE)
         self._success = client.register_script(_SUCCESS)
         self._failure = client.register_script(_FAILURE)
+        self._release = client.register_script(_RELEASE)
 
     def _key(self, name: str) -> str:
         return self._prefix + name
@@ -178,11 +211,14 @@ class RedisBreakerStore:
             failures=int(raw.get("failures", 0) or 0),
             opened_at=float(raw.get("opened_at", 0) or 0),
             probes=int(raw.get("probes", 0) or 0),
+            probe_at=float(raw.get("probe_at", 0) or 0),
         )
 
-    def acquire(self, name: str, now: float, reset_timeout: float, max_probes: int) -> str:
+    def acquire(
+        self, name: str, now: float, reset_timeout: float, max_probes: int, lease: float
+    ) -> str:
         return self._text(
-            self._acquire(keys=[self._key(name)], args=[now, reset_timeout, max_probes])
+            self._acquire(keys=[self._key(name)], args=[now, reset_timeout, max_probes, lease])
         )
 
     def success(self, name: str) -> str:
@@ -190,6 +226,9 @@ class RedisBreakerStore:
 
     def failure(self, name: str, now: float, threshold: int) -> str:
         return self._text(self._failure(keys=[self._key(name)], args=[now, threshold]))
+
+    def release(self, name: str) -> None:
+        self._release(keys=[self._key(name)])
 
     def reset(self, name: str) -> None:
         self._client.delete(self._key(name))
@@ -205,11 +244,13 @@ class CircuitBreaker:
         reset_timeout: float = 30.0,
         store: BreakerStore | None = None,
         half_open_max_calls: int = 1,
+        probe_lease: float = 60.0,
     ) -> None:
         self.name = name
         self.failure_threshold = max(1, failure_threshold)
         self.reset_timeout = reset_timeout
         self.half_open_max_calls = max(1, half_open_max_calls)
+        self.probe_lease = probe_lease
         self.logger = get_logger(f"circuit.{name}")
         self._store: BreakerStore = store or MemoryBreakerStore()
 
@@ -237,7 +278,7 @@ class CircuitBreaker:
 
     def _allow_request(self) -> bool:
         admitted = self._store.acquire(
-            self.name, time.time(), self.reset_timeout, self.half_open_max_calls
+            self.name, time.time(), self.reset_timeout, self.half_open_max_calls, self.probe_lease
         )
         if admitted == CircuitState.HALF_OPEN.value:
             self._publish(admitted)
@@ -262,6 +303,9 @@ class CircuitBreaker:
         except Exception:
             self._on_failure()
             raise
+        except BaseException:  # cancelled / interrupted: no verdict on the service
+            self._store.release(self.name)
+            raise
         self._on_success()
         return result
 
@@ -273,6 +317,9 @@ class CircuitBreaker:
             result = await fn(*args, **kwargs)
         except Exception:
             self._on_failure()
+            raise
+        except BaseException:  # cancelled / interrupted: no verdict on the service
+            self._store.release(self.name)
             raise
         self._on_success()
         return result

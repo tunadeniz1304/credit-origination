@@ -115,3 +115,50 @@ def test_half_open_probe_budget_is_configurable():
     assert [breaker._allow_request() for _ in range(4)] == [True, True, True, False]
     breaker.reset()
     assert breaker.snapshot()["state"] == "CLOSED"
+
+
+def _stores():
+    import fakeredis
+
+    from app.integrations.circuit_breaker import MemoryBreakerStore, RedisBreakerStore
+
+    return [MemoryBreakerStore(), RedisBreakerStore(fakeredis.FakeRedis())]
+
+
+@pytest.mark.parametrize("store_index", [0, 1])
+def test_cancelled_probe_releases_its_slot(store_index):
+    """Audit v2.1 round 1: a cancelled probe left HALF_OPEN with probes=1 forever."""
+    import asyncio
+
+    store = _stores()[store_index]
+    breaker = CircuitBreaker("cancel", failure_threshold=1, reset_timeout=0.0, store=store)
+    breaker._on_failure()
+
+    async def hang():
+        await asyncio.sleep(10)
+
+    async def run():
+        task = asyncio.create_task(breaker.call_async(hang))
+        await asyncio.sleep(0.01)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+    assert breaker.state == CircuitState.HALF_OPEN
+    assert store.load("cancel").probes == 0
+    assert breaker.call(lambda: "ok") == "ok"  # the next caller can probe
+    assert breaker.state == CircuitState.CLOSED
+
+
+@pytest.mark.parametrize("store_index", [0, 1])
+def test_probe_lease_expires_when_its_process_died(store_index):
+    store = _stores()[store_index]
+    breaker = CircuitBreaker(
+        "lease", failure_threshold=1, reset_timeout=0.0, store=store, probe_lease=0.05
+    )
+    breaker._on_failure()
+    assert breaker._allow_request() is True  # probe admitted, then its process "dies"
+    assert breaker._allow_request() is False  # lease still held
+    time.sleep(0.08)
+    assert breaker._allow_request() is True  # lease expired: a new probe may run
