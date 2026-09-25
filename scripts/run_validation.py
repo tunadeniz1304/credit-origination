@@ -102,18 +102,48 @@ def summary_lines(results: dict[str, dict]) -> list[str]:
         hold = m["holdout"][champion]
         low = m["calibration"][champion]["low_risk"]["ratio_observed_to_predicted"]
         attrs = m["fairness"]["by_model"][champion]
-        worst = min(attrs, key=lambda a: attrs[a]["min_air"])
-        air = attrs[worst]["min_air"]
+        testable = [a for a in attrs if attrs[a]["min_air"] is not None]
+        untestable = [a for a in attrs if attrs[a]["min_air"] is None]
+        if testable:
+            worst = min(testable, key=lambda a: attrs[a]["min_air"])
+            air = attrs[worst]["min_air"]
+            spread = attrs[worst].get("min_air_spread")
+            air_text = f"{air:.3f} ({worst})"
+            if spread:
+                air_text += f", seeds {spread['min']:.3f}–{spread['max']:.3f}"
+        else:
+            worst, air, spread, air_text = "", None, None, "n/a"
+        if untestable:
+            air_text += "; not testable: " + ", ".join(untestable)
         lines.append(
             f"| {name} | {MODEL_NAMES[champion]} | {hold['auc']:.4f} [{hold['auc_ci'][0]:.3f}, "
             f"{hold['auc_ci'][1]:.3f}] | {test.get('auc_diff', 0):+.4f}, "
-            f"p={test.get('p_value', float('nan')):.3g} | {low} | {air:.3f} ({worst}) |"
+            f"p={test.get('p_value', float('nan')):.3g} | {low} | {air_text} |"
         )
-        if not attrs[worst]["passes_four_fifths"]:
+        if air is not None and attrs[worst]["passes_four_fifths"] is False:
+            rec = m["lda"]["recommendation"]
+            if m["lda"]["attribute"] == worst and rec.get("recommended"):
+                threshold = load_validation().fairness.air_threshold
+                still = f", still below {threshold:.2f}" if rec["min_air_to"] < threshold else ""
+                follow = (
+                    f"the LDA search finds a fairer alternative within the allowed AUC loss "
+                    f"(min AIR {rec['min_air_from']:.3f} → {rec['min_air_to']:.3f}{still}, AUC loss "
+                    f"{rec['auc_loss']:.4f}); adopting it is the model risk committee's decision"
+                )
+            else:
+                follow = (
+                    "no less discriminatory alternative stays within the allowed AUC loss, so the "
+                    "finding goes to the model risk committee"
+                )
+            robust = ""
+            if spread:
+                robust = (
+                    f" It fails for {1 - spread['share_passing']:.0%} of the "
+                    f"{spread['seeds']} tie-break seeds."
+                )
             alerts.append(
                 f"- **Alert — {name}:** the champion fails the four-fifths rule for `{worst}` "
-                f"(min AIR {air:.3f}); no less discriminatory alternative stays within the allowed "
-                "AUC loss, so the finding goes to the model risk committee (see the LDA table)."
+                f"(min AIR {air:.3f}); {follow} (see the LDA table).{robust}"
             )
         if low is not None and abs(low - 1) > 0.25:
             alerts.append(

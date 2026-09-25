@@ -489,6 +489,34 @@ function platform() {
         return { key, label: this.modelLabel(a) + " − " + this.modelLabel(b), diff: this.num(r.auc_diff, 4), ci: this.ci(r.diff_ci, 4), z: this.num(r.z, 2), p: this.pval(r.p_value) };
       });
     },
+    delongOofRows() {
+      const d = this.vs().delong_oof || {};
+      return Object.keys(d).map((key) => {
+        const [a, b] = key.split("_vs_");
+        const r = d[key];
+        return { key, label: this.modelLabel(a) + " − " + this.modelLabel(b), diff: this.num(r.auc_diff, 4), ci: this.ci(r.diff_ci, 4), z: this.num(r.z, 2), p: this.pval(r.p_value) };
+      });
+    },
+    championBasis() {
+      return this.vs().champion.basis === "out_of_fold"
+        ? "Seçim, eğitim bölümünün katlama dışı (out-of-fold) tahminleri üzerinde DeLong testiyle yapılır; hold-out yalnızca teyit içindir."
+        : "Seçim hold-out üzerinde yapılmıştır.";
+    },
+    // Fairness badge: null = attribute not testable (only one group meets the minimum size).
+    passBadge(pass) {
+      if (pass === null || pass === undefined) return { cls: "", text: "n/a" };
+      return pass ? { cls: "ok", text: "Geçer" } : { cls: "bad", text: "Kalır" };
+    },
+    airText(v) { return v === null || v === undefined ? "n/a (test edilemez)" : this.num(v, 3); },
+    airSpread(s) {
+      if (!s) return "—";
+      return this.num(s.min, 3) + " – " + this.num(s.max, 3) + " (medyan " + this.num(s.median, 3) + "; geçen " + this.pct(s.share_passing) + ")";
+    },
+    fairnessTieNote() {
+      const t = (this.vs().fairness || {}).tie_break;
+      if (!t) return "";
+      return "Eşik noktasında aynı PD'ye sahip başvurular tohumlu rastgele sırayla onaylanır (satır sırası değil); min AIR tohum " + t.seed + " içindir, aralık " + t.spread_seeds + " tohum üzerindendir. Yalnızca bir grubu asgari büyüklüğü karşılayan özellik test edilemez (n/a).";
+    },
     championOrder() { return (this.vs().champion.simplicity_order || []).map((k) => this.modelLabel(k)).join(" → "); },
     calModels() { return Object.keys(this.vs().calibration || {}); },
     calRows() {
@@ -529,14 +557,15 @@ function platform() {
           attr, groups, title: this.lbl("fairness_attr", attr),
           rows: models.map((m) => {
             const a = byModel[m][attr];
-            return { model: m, label: this.modelLabel(m), cells: groups.map((g) => this.pct(a.selection_rate[g])), minAir: this.num(a.min_air, 3), pass: a.passes_four_fifths, tpr: this.num(a.tpr_gap, 3), fpr: this.num(a.fpr_gap, 3) };
+            return { model: m, label: this.modelLabel(m), cells: groups.map((g) => this.pct(a.selection_rate[g])), minAir: this.airText(a.min_air), spread: this.airSpread(a.min_air_spread), badge: this.passBadge(a.passes_four_fifths), tpr: this.num(a.tpr_gap, 3), fpr: this.num(a.fpr_gap, 3) };
           }),
         };
       });
     },
     ldaRows() {
       const l = this.vs().lda || {};
-      const row = (r, i, reference) => ({ key: (reference ? "ref-" : "") + i, model: r.model, reference, caveat: !!r.legal_caveat, auc: this.num(r.auc, 4), approval: this.pct(r.approval_rate), badRate: this.pct(r.bad_rate_approved), minAir: this.num(r.min_air, 3), tpr: this.num(r.tpr_gap, 3), fpr: this.num(r.fpr_gap, 3), pass: r.passes_four_fifths });
+      const name = (r) => (r.kind === "model_family" ? "Diğer eğitilmiş aile: " + this.modelLabel(r.family) : r.model);
+      const row = (r, i, reference) => ({ key: (reference ? "ref-" : "") + i, model: name(r), reference, caveat: !!r.legal_caveat, auc: this.num(r.auc, 4), approval: this.pct(r.approval_rate), badRate: this.pct(r.bad_rate_approved), minAir: this.airText(r.min_air), tpr: this.num(r.tpr_gap, 3), fpr: this.num(r.fpr_gap, 3), badge: this.passBadge(r.passes_four_fifths) });
       return (l.rows || []).map((r, i) => row(r, i, false)).concat((l.reference_rows || []).map((r, i) => row(r, i, true)));
     },
     ldaCaveat() {
@@ -548,7 +577,17 @@ function platform() {
     laneB() { return (this.validation && this.validation.lane_b) || {}; },
     laneBIntro() {
       const a = this.laneB().anchors || {};
-      return "Şerit B, sentetik Türkiye verisini gerçek halka açık veriye çapalar: kaynak " + (a.source || "—") + ", " + this.num(a.rows, 0) + " kayıt, genel temerrüt " + this.pct(a.overall_default_rate) + ".";
+      return "Şerit B, sentetik Türkiye verisini gerçek halka açık veriye çapalar: kaynak " + (a.source || "—") + ", " + this.num(a.rows, 0) + " kayıt, genel temerrüt " + this.pct(a.overall_default_rate) + ". "
+        + "PD seviyesi gerçek bir vekil eğriden dayatılır (çapalama), doğrulanmaz: çapa sonraki ay kart temerrüdüdür ve 12 aylık 90+ gün gecikmeli kredi PD'sinin seviyesi olarak kullanılır. "
+        + "Aşağıdaki kontroller iç tutarlılık kontrolleridir; gerçek veri kanıtı yalnızca Şerit A (metodoloji) ve gerçek veride öğrenilen davranış alt skorudur.";
+    },
+    laneBPolicy() {
+      const p = this.laneB().policy_cutoffs;
+      if (!p) return null;
+      return {
+        caption: "Politika eşik tablosu — çapalanmış sentetik test seti (" + this.num(p.test_rows, 0) + " kayıt, gözlenen temerrüt " + this.pct(p.observed_default_rate) + "); yalnızca PD eşikleri uygulanır.",
+        rows: p.rows.map((r, i) => ({ key: i, policy: r.policy, model: r.model, approveMax: this.pct(r.auto_approve_max_pd), declineMin: this.pct(r.auto_decline_min_pd), approve: this.pct(r.share_auto_approve), grey: this.pct(r.share_referred), decline: this.pct(r.share_auto_decline), bad: this.pct(r.bad_rate_auto_approved) })),
+      };
     },
     laneBAnchors() {
       const bands = (this.laneB().anchors || {}).delinquency_band_default || {};
@@ -591,6 +630,7 @@ function platform() {
         rows: [row("Şampiyon", v.champion), row("Challenger", v.challenger)],
         summary: this.lbl("dataset", v.dataset) + " · ΔAUC (challenger − şampiyon) " + this.num(diff, 4) + " · DeLong p " + this.pval(v.delong_p_value)
           + " · gerçek veride seçilen şampiyon: " + this.lbl("model_family", v.lane_a_champion),
+        scope: v.evidence_scope || "",
       };
     },
 

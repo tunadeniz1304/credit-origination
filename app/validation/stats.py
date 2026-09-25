@@ -130,11 +130,14 @@ def bootstrap_auc_ci(
 
 def ks_statistic(y: np.ndarray, p: np.ndarray) -> float:
     y = np.asarray(y).astype(int)
-    order = np.argsort(p)
+    p = np.asarray(p, dtype=float)
+    order = np.argsort(p, kind="mergesort")
     y_sorted = y[order]
     cum_bad = np.cumsum(y_sorted) / max(y_sorted.sum(), 1)
     cum_good = np.cumsum(1 - y_sorted) / max((1 - y_sorted).sum(), 1)
-    return float(np.max(np.abs(cum_bad - cum_good)))
+    # Evaluate only at real thresholds (end of each tie block), never inside a tie.
+    ends = np.r_[np.flatnonzero(np.diff(p[order]) != 0), len(p) - 1]
+    return float(np.max(np.abs(cum_bad[ends] - cum_good[ends])))
 
 
 def discrimination(
@@ -162,12 +165,20 @@ def discrimination(
 
 # ------------------------------------------------------------------ calibration
 def calibration_deciles(y: np.ndarray, p: np.ndarray, bins: int = 10) -> list[dict[str, Any]]:
-    """Equal-count bins ordered from the lowest to the highest predicted PD."""
+    """(Near) equal-count bins ordered from the lowest to the highest predicted PD.
+
+    Rows with the same PD always fall in the same bin: a bin is assigned from the
+    *average* rank of the tie block, so a calibrated model with few distinct PDs
+    (isotonic steps) is not split arbitrarily by row order. Bins can therefore be
+    uneven, and a bin swallowed by a large tie block is empty and omitted.
+    """
     y = np.asarray(y).astype(int)
     p = np.asarray(p, dtype=float)
-    order = np.argsort(p, kind="mergesort")
+    ranks = stats.rankdata(p, method="average")
+    assigned = np.minimum(((ranks - 1) * bins / len(p)).astype(int), bins - 1)
     rows = []
-    for index, chunk in enumerate(np.array_split(order, bins), start=1):
+    for index in range(1, bins + 1):
+        chunk = np.flatnonzero(assigned == index - 1)
         if len(chunk) == 0:
             continue
         predicted = float(p[chunk].mean())

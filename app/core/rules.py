@@ -185,6 +185,12 @@ class ChampionSelection(BaseModel):
     significance_level: float
     min_auc_gain: float
     simplicity_order: list[str]
+    basis: str = "out_of_fold"
+
+
+class PromotionConfig(BaseModel):
+    evidence: str = "holdout"
+    require_every_dataset: bool = True
 
 
 class FairnessConfig(BaseModel):
@@ -194,6 +200,7 @@ class FairnessConfig(BaseModel):
     age_labels: list[str]
     min_group_size: int
     min_group_share: float = 0.0
+    tie_break_seeds: int = 20
 
     def group_floor(self, n: int) -> int:
         return max(self.min_group_size, round(self.min_group_share * n))
@@ -222,6 +229,7 @@ class ValidationConfig(BaseModel):
     calibration_bins: int
     low_risk_deciles: int
     champion_selection: ChampionSelection
+    promotion: PromotionConfig = PromotionConfig()
     fairness: FairnessConfig
     lda: LDAConfig
     lane_b: LaneBConfig

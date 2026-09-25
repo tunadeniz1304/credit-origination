@@ -17,13 +17,18 @@ from app.core.rules import load_validation
 
 VALIDATION_DIR = PROJECT_ROOT / "artifacts" / "validation"
 PRIMARY_SET = "uci_taiwan"
-# Production model kind -> lane-A model family.
+# Production model kind -> lane-A model family. A kind that is not listed has no real-data
+# evidence of its own and is refused; it never borrows the evidence of another family.
 KIND_TO_FAMILY = {
     "lightgbm_monotone": "lightgbm",
     "logistic_regression": "logistic",
-    "ebm": "logistic",
     "optbinning_woe_logistic": "scorecard",
 }
+EVIDENCE_SCOPE = (
+    "Kanıt, model ailesi / modelleme tarifi içindir (kulvar A: aynı tarif gerçek halka açık "
+    "veride). Üretim artefaktı sentetik veriyle eğitildiğinden artefakt özetine bağlı gerçek "
+    "veri kanıtı mümkün değildir."
+)
 
 
 @lru_cache(maxsize=8)
@@ -106,22 +111,72 @@ def family_evidence(champion: str, challenger: str, name: str = PRIMARY_SET) -> 
 
 
 def promotion_evidence(champion_kind: str, challenger_kind: str) -> dict[str, Any]:
-    """Promotion is allowed only if the challenger is not significantly worse on real data."""
+    """Promotion gate on the committed real-data evidence (rule: ``rules/validation.yaml``).
+
+    * both kinds must map to a lane-A family — an unknown family is refused;
+    * at least one real dataset must be available, and (``require_every_dataset``)
+      every available dataset must hold evidence for both families;
+    * the challenger must not be significantly worse than the champion (hold-out
+      DeLong, ΔAUC < 0 and p < α) on **any** dataset.
+
+    The evidence is for the family / recipe, not for the production artifact.
+    """
+    cfg = load_validation()
     champion = KIND_TO_FAMILY.get(champion_kind)
     challenger = KIND_TO_FAMILY.get(challenger_kind)
+    base: dict[str, Any] = {"evidence_scope": EVIDENCE_SCOPE, "rule": "not_worse_on_any_dataset"}
     if champion is None or challenger is None:
-        return {"allowed": False, "reason": "model ailesi için gerçek veri kanıtı yok"}
-    evidence = family_evidence(champion, challenger)
-    if not evidence["available"]:
-        return {"allowed": False, "reason": "gerçek veri doğrulama metrikleri bulunamadı"}
-    alpha = load_validation().champion_selection.significance_level
-    diff = evidence["auc_diff_challenger_minus_champion"]
-    p = evidence["delong_p_value"]
-    worse = diff is not None and p is not None and diff < 0 and p < alpha
-    reason = (
-        f"challenger gerçek veride anlamlı biçimde daha zayıf (ΔAUC={diff:+.4f}, DeLong p={p:.3g})"
-        if worse
-        else f"challenger gerçek veride champion'dan anlamlı biçimde zayıf değil (ΔAUC={diff:+.4f}, "
-        f"DeLong p={p:.3g})"
+        unknown = [k for k in (champion_kind, challenger_kind) if k not in KIND_TO_FAMILY]
+        return {
+            **base,
+            "allowed": False,
+            "reason": f"model ailesi için gerçek veri kanıtı yok ({', '.join(unknown)}); "
+            "başka bir ailenin kanıtı kullanılmaz",
+        }
+    names = available_sets()
+    if not names:
+        return {**base, "allowed": False, "reason": "gerçek veri doğrulama metrikleri bulunamadı"}
+    alpha = cfg.champion_selection.significance_level
+    per_set: list[dict[str, Any]] = []
+    missing: list[str] = []
+    for name in names:
+        metrics = load_metrics(name) or {}
+        holdout = metrics.get("holdout", {})
+        test = pair_test(metrics, challenger, champion) if metrics else None
+        if champion not in holdout or challenger not in holdout or test is None:
+            missing.append(name)
+            continue
+        diff, p = float(test["auc_diff"]), float(test["p_value"])
+        per_set.append(
+            {
+                "dataset": name,
+                "auc_diff_challenger_minus_champion": diff,
+                "delong_p_value": p,
+                "significantly_worse": diff < 0 and p < alpha,
+            }
+        )
+    base |= {"families": {"champion": champion, "challenger": challenger}, "datasets": per_set}
+    if not per_set or (missing and cfg.promotion.require_every_dataset):
+        return {
+            **base,
+            "allowed": False,
+            "reason": "aile için gerçek veri kanıtı eksik: " + ", ".join(missing or names),
+        }
+    worse = [d for d in per_set if d["significantly_worse"]]
+    detail = "; ".join(
+        f"{d['dataset']}: ΔAUC={d['auc_diff_challenger_minus_champion']:+.4f}, "
+        f"DeLong p={d['delong_p_value']:.3g}"
+        for d in (worse or per_set)
     )
-    return {"allowed": not worse, "reason": reason, "evidence": evidence}
+    reason = (
+        f"challenger gerçek veride anlamlı biçimde daha zayıf ({detail})"
+        if worse
+        else f"challenger hiçbir gerçek veri setinde champion'dan anlamlı biçimde zayıf değil "
+        f"({detail})"
+    )
+    return {
+        **base,
+        "allowed": not worse,
+        "reason": f"{reason}. Aile düzeyinde kanıt; üretim artefaktına bağlı değildir.",
+        "evidence": family_evidence(champion, challenger),
+    }

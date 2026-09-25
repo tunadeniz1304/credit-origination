@@ -10,11 +10,17 @@ Design (no time axis in the public sets):
 * stratified ``cv_folds``-fold cross-validation on the remainder → per-fold
   AUC and out-of-fold scores (the isotonic map of LightGBM is fitted on the
   out-of-fold scores, never on the hold-out);
+* evidence-based champion choice (:func:`select_champion`) on the pooled
+  **out-of-fold** predictions of the training part (paired DeLong tests: every
+  model scores the same rows, each row by a model that did not see it). The
+  hold-out is not used for the choice, only to *confirm* it — selecting and
+  reporting on the same hold-out would make the reported gain optimistic;
 * hold-out metrics with bootstrap and DeLong confidence intervals, pairwise
-  DeLong tests, decile calibration (low-risk deciles separately), ECE and
-  Hosmer–Lemeshow;
-* evidence-based champion choice (:func:`select_champion`);
-* fairness at the same approval rate and the LDA trade-off table.
+  DeLong tests (confirmation), decile calibration (low-risk deciles
+  separately), ECE and Hosmer–Lemeshow;
+* fairness at the same approval rate (ties broken in a seeded random order,
+  AIR spread over ``fairness.tie_break_seeds`` seeds) and the LDA trade-off
+  table, which also lists the other trained model families as alternatives.
 """
 
 from __future__ import annotations
@@ -30,6 +36,7 @@ import pandas as pd
 from app.core.rules import ValidationConfig
 from app.decisioning.training import fit_isotonic, fit_lightgbm, make_logistic, make_scorecard
 from app.governance.fairness import (
+    air_spread,
     approve_at_rate,
     group_fairness,
     less_discriminatory_search,
@@ -108,23 +115,36 @@ VERDICTS = {
 }
 
 
+def _oriented(tests: dict[str, dict[str, Any]], a: str, b: str) -> dict[str, Any] | None:
+    """``a`` vs ``b`` test whatever order it was stored in (ΔAUC = a − b)."""
+    if f"{a}_vs_{b}" in tests:
+        return tests[f"{a}_vs_{b}"]
+    flipped = tests.get(f"{b}_vs_{a}")
+    return None if flipped is None else {**flipped, "auc_diff": -flipped["auc_diff"]}
+
+
 def select_champion(
-    holdout: dict[str, dict[str, Any]],
+    models: dict[str, Any],
     tests: dict[str, dict[str, Any]],
     *,
     alpha: float,
     min_gain: float,
     simplicity_order: list[str],
+    basis: str = "out_of_fold",
+    confirmation: dict[str, dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    """Prefer the simplest model unless a more complex one is significantly *and* materially better."""
-    order = [m for m in simplicity_order if m in holdout]
+    """Prefer the simplest model unless a more complex one is significantly *and* materially better.
+
+    ``tests`` are the selection tests (out-of-fold DeLong); ``confirmation`` holds
+    the hold-out tests, reported next to each step but never used to decide.
+    """
+    order = [m for m in simplicity_order if m in models]
     champion = order[0]
     comparisons: list[dict[str, Any]] = []
     for challenger in order[1:]:
-        test = tests.get(f"{challenger}_vs_{champion}")
+        test = _oriented(tests, challenger, champion)
         if test is None:
-            flipped = tests[f"{champion}_vs_{challenger}"]
-            test = {**flipped, "auc_diff": -flipped["auc_diff"]}
+            raise KeyError(f"no test for {challenger} vs {champion}")
         gain, p = float(test["auc_diff"]), float(test["p_value"])
         significant = p < alpha
         if significant and gain >= min_gain:
@@ -135,30 +155,45 @@ def select_champion(
             verdict = "worse"
         else:
             verdict = "immaterial"
-        comparisons.append(
-            {
-                "challenger": challenger,
-                "incumbent": champion,
-                "auc_diff": round(gain, 5),
-                "p_value": p,
-                "verdict": verdict,
-            }
-        )
+        step: dict[str, Any] = {
+            "challenger": challenger,
+            "incumbent": champion,
+            "auc_diff": round(gain, 5),
+            "p_value": p,
+            "verdict": verdict,
+        }
+        check = _oriented(confirmation or {}, challenger, champion)
+        if check is not None:
+            step["holdout_auc_diff"] = round(float(check["auc_diff"]), 5)
+            step["holdout_p_value"] = float(check["p_value"])
+        comparisons.append(step)
         if verdict == "selected":
             champion = challenger
     return {
         "model": champion,
-        "label": MODEL_LABELS[champion],
+        "label": MODEL_LABELS.get(champion, champion),
+        "basis": basis,
         "alpha": alpha,
         "min_auc_gain": min_gain,
         "simplicity_order": simplicity_order,
         "comparisons": comparisons,
-        "steps": [
-            f"{MODEL_LABELS[c['challenger']]} vs {MODEL_LABELS[c['incumbent']]}: "
-            f"ΔAUC={c['auc_diff']:+.4f}, DeLong p={c['p_value']:.3g} → {VERDICTS[c['verdict']]}"
-            for c in comparisons
-        ],
+        "steps": [_step_text(c) for c in comparisons],
     }
+
+
+def _step_text(c: dict[str, Any]) -> str:
+    text = (
+        f"{MODEL_LABELS.get(c['challenger'], c['challenger'])} vs "
+        f"{MODEL_LABELS.get(c['incumbent'], c['incumbent'])}: ΔAUC={c['auc_diff']:+.4f}, "
+        f"DeLong p={c['p_value']:.3g} (katlama dışı) → {VERDICTS[c['verdict']]}"
+    )
+    if "holdout_auc_diff" in c:
+        text += f"; hold-out teyidi ΔAUC={c['holdout_auc_diff']:+.4f}, p={c['holdout_p_value']:.3g}"
+    return text
+
+
+def _air_key(stats: dict[str, Any]) -> float:
+    return 2.0 if stats["min_air"] is None else float(stats["min_air"])
 
 
 def _shap_top(model: _LightGBM, X: pd.DataFrame, seed: int, rows: int = 2000) -> list[dict]:
@@ -231,35 +266,54 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
         f"{a}_vs_{b}": delong_test(y_hold, predictions[a], predictions[b])
         for a, b in combinations(builders, 2)
     }
+    # Selection evidence: paired DeLong on the pooled out-of-fold scores of the training part.
+    tests_oof = {
+        f"{a}_vs_{b}": delong_test(y_train, oof[a], oof[b]) for a, b in combinations(builders, 2)
+    }
+    for name, scores in oof.items():
+        cv[name]["oof_auc"] = round(float(roc_auc_score(y_train, scores)), 4)
     selection = cfg.champion_selection
     champion = select_champion(
-        holdout,
-        tests,
+        cv,
+        tests_oof,
         alpha=selection.significance_level,
         min_gain=selection.min_auc_gain,
         simplicity_order=selection.simplicity_order,
+        basis=selection.basis,
+        confirmation=tests,
     )
 
     fair_cfg = cfg.fairness
     protected_hold = data.protected.iloc[idx_hold]
+    floor = fair_cfg.group_floor(len(y_hold))
+    tie_seeds = [seed + i for i in range(fair_cfg.tie_break_seeds)]
     fairness: dict[str, dict[str, Any]] = {}
     for name in builders:
-        approved = approve_at_rate(predictions[name], fair_cfg.approval_rate)
-        fairness[name] = {
-            attr: group_fairness(
+        approved = approve_at_rate(predictions[name], fair_cfg.approval_rate, seed)
+        fairness[name] = {}
+        for attr in data.protected.columns:
+            stats = group_fairness(
                 y_hold,
                 approved,
                 protected_hold[attr],
                 air_threshold=fair_cfg.air_threshold,
-                min_group_size=fair_cfg.group_floor(len(y_hold)),
+                min_group_size=floor,
             )
-            for attr in data.protected.columns
-        }
+            stats["min_air_spread"] = air_spread(
+                y_hold,
+                predictions[name],
+                protected_hold[attr],
+                approval_rate=fair_cfg.approval_rate,
+                seeds=tie_seeds,
+                air_threshold=fair_cfg.air_threshold,
+                min_group_size=floor,
+            )
+            fairness[name][attr] = stats
 
     attribute = cfg.lda.attribute
-    if attribute == "auto":  # search where the champion is least fair
+    if attribute == "auto":  # search where the champion is least fair (testable attributes)
         champion_fairness = fairness[champion["model"]]
-        attribute = min(champion_fairness, key=lambda a: champion_fairness[a]["min_air"])
+        attribute = min(champion_fairness, key=lambda a: _air_key(champion_fairness[a]))
     lda = less_discriminatory_search(
         X_train,
         y_train,
@@ -274,6 +328,13 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
         min_group_size=fair_cfg.group_floor(len(y_hold)),
         baseline_scores=predictions[champion["model"]],
         baseline_name=f"Champion: {champion['label']}",
+        # The other trained families; logistic regression is already the "baseline" row.
+        alternatives={
+            name: predictions[name]
+            for name in builders
+            if name not in (champion["model"], "logistic")
+        },
+        seed=seed,
     )
     lda["attribute"] = attribute
     lda["recommendation"] = recommend_lda(lda, cfg.lda.max_auc_loss)
@@ -299,10 +360,12 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
         "holdout": holdout,
         "calibration": calibration,
         "delong": tests,
+        "delong_oof": tests_oof,
         "champion": champion,
         "fairness": {
             "approval_rate": fair_cfg.approval_rate,
-            "min_group_size": fair_cfg.group_floor(len(y_hold)),
+            "min_group_size": floor,
+            "tie_break": {"seed": seed, "spread_seeds": len(tie_seeds)},
             "by_model": fairness,
         },
         "lda": lda,

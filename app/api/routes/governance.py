@@ -74,8 +74,9 @@ def validation(user: Principal = Depends(require_roles("model_yoneticisi"))) -> 
         "lane_b": load_lane_b(),
         "note": (
             "Metodoloji gerçek halka açık veriyle doğrulanmıştır; üretim modeli Türkiye'ye özgü "
-            "sentetik özelliklerle çalışır. Gerçek bir banka portföyünde yeniden eğitim ve "
-            "bağımsız doğrulama gerekir."
+            "sentetik özelliklerle çalışır. Şerit B, PD seviyesini gerçek bir vekil eğriden "
+            "(sonraki ay kart temerrüdü) dayatır (çapalama); bu bir doğrulama değildir. Gerçek "
+            "bir banka portföyünde yeniden eğitim ve bağımsız doğrulama gerekir."
         ),
     }
 
@@ -181,6 +182,7 @@ def _real_data_fairness() -> dict[str, Any]:
             "champion": champion,
             "approval_rate": metrics["fairness"]["approval_rate"],
             "attributes": metrics["fairness"]["by_model"][champion],
+            "tie_break": metrics["fairness"].get("tie_break"),
             "lda": metrics["lda"],
         }
     return out

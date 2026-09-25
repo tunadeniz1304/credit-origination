@@ -8,6 +8,8 @@ import pytest
 
 from app.core.rules import load_validation
 from app.governance.fairness import (
+    adverse_impact,
+    air_spread,
     approve_at_rate,
     group_fairness,
     group_thresholds_at_rate,
@@ -73,12 +75,20 @@ def test_lda_table_rows_share_one_approval_rate():
         approval_rate=0.7,
         epsilons=[0.02],
         proxy_auc_threshold=0.99,  # nothing qualifies: the strongest proxy is weakened anyway
+        alternatives={"other_family": data.X.iloc[te, 0].rank(pct=True).to_numpy()},
     )
     rates = {r["approval_rate"] for r in table["rows"]}
     assert rates == {0.7}
     kinds = [r["kind"] for r in table["rows"]]
-    assert kinds == ["baseline", "proxy_removal", "exponentiated_gradient", "group_threshold"]
-    assert len(table["rows"][1]["dropped_features"]) == 1
+    assert kinds == [
+        "baseline",
+        "model_family",
+        "proxy_removal",
+        "exponentiated_gradient",
+        "group_threshold",
+    ]
+    assert table["rows"][1]["family"] == "other_family"
+    assert len(table["rows"][2]["dropped_features"]) == 1
     group_row = table["rows"][-1]
     assert group_row["min_air"] >= 0.98 and "legal_caveat" in group_row
     assert table["reference_rows"][0]["comparable"] is False
@@ -97,3 +107,59 @@ def test_recommend_lda_prefers_fairer_row_within_auc_budget():
     }
     assert recommend_lda(table, 0.01)["recommended"] == "weak"
     assert recommend_lda({"rows": table["rows"][:1]}, 0.01)["recommended"] is None
+
+
+def test_recommend_lda_considers_other_model_families():
+    table = {
+        "rows": [
+            {"model": "scorecard", "kind": "baseline", "auc": 0.80, "min_air": 0.70},
+            {"model": "drop", "kind": "proxy_removal", "auc": 0.70, "min_air": 0.95},
+            {"model": "lightgbm", "kind": "model_family", "auc": 0.795, "min_air": 0.78},
+            {"model": "thr", "kind": "group_threshold", "auc": 0.80, "min_air": 1.0},
+        ]
+    }
+    rec = recommend_lda(table, 0.01)
+    assert rec["recommended"] == "lightgbm" and rec["kind"] == "model_family"
+    assert rec["min_air_to"] == 0.78
+
+
+def test_recommend_lda_reports_untestable_attribute():
+    table = {"rows": [{"model": "champ", "kind": "baseline", "auc": 0.8, "min_air": None}]}
+    rec = recommend_lda(table, 0.01)
+    assert rec["recommended"] is None and rec["testable"] is False
+
+
+def test_tie_break_is_seeded_and_independent_of_row_order():
+    scores = np.array([0.1] * 4 + [0.5] * 6)  # cut-off at 7 falls inside the 0.5 tie block
+    first = approve_at_rate(scores, 0.7, seed=3)
+    assert first.sum() == 7 and first[:4].all()
+    assert (approve_at_rate(scores, 0.7, seed=3) == first).all()
+    # Row order no longer decides: over seeds every tied applicant is sometimes declined.
+    declined = sum(1 - approve_at_rate(scores, 0.7, seed=s)[4:] for s in range(40))
+    assert (declined > 0).all()
+    # Rows 4.. used to be approved first-come; a stable sort would always decline the last 3.
+    assert not all((approve_at_rate(scores, 0.7, seed=s)[-3:] == 0).all() for s in range(40))
+
+
+def test_single_testable_group_is_reported_as_not_testable():
+    groups = pd.Series(["a"] * 95 + ["b"] * 5)
+    approved = np.r_[np.ones(60, dtype=int), np.zeros(40, dtype=int)]
+    stats = adverse_impact(approved, groups, min_group_size=20)
+    assert stats["testable"] is False
+    assert stats["min_air"] is None and stats["passes_four_fifths"] is None
+    assert stats["air"] == {"a": None}
+    fairness = group_fairness(np.zeros(100), approved, groups, min_group_size=20)
+    assert fairness["passes_four_fifths"] is None and fairness["tpr_gap"] is None
+
+
+def test_air_spread_over_tie_break_seeds():
+    rng = np.random.default_rng(5)
+    groups = pd.Series(rng.choice(["a", "b"], 400))
+    scores = np.round(rng.random(400), 1)  # heavy ties
+    y = (rng.random(400) < scores).astype(int)
+    spread = air_spread(y, scores, groups, approval_rate=0.5, seeds=list(range(10)))
+    assert spread is not None and spread["seeds"] == 10
+    assert spread["min"] <= spread["median"] <= spread["max"]
+    assert 0 <= spread["share_passing"] <= 1
+    single = pd.Series(["a"] * 400)
+    assert air_spread(y, scores, single, approval_rate=0.5, seeds=[0, 1]) is None

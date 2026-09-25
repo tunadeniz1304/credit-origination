@@ -58,6 +58,13 @@ def test_lane_a_on_fixture_produces_complete_metrics(fixture_run):
         "logistic_vs_scorecard",
     }
     assert m["champion"]["model"] in m["holdout"] and m["champion"]["steps"]
+    # Selection runs on the pooled out-of-fold predictions; the hold-out only confirms.
+    assert m["champion"]["basis"] == "out_of_fold"
+    assert set(m["delong_oof"]) == set(m["delong"])
+    assert all(0.5 < v["oof_auc"] < 1 for v in m["cv"].values())
+    spreads = [s["min_air_spread"] for s in m["fairness"]["by_model"]["lightgbm"].values()]
+    assert all(s is None or s["min"] <= s["median"] <= s["max"] for s in spreads)
+    assert m["fairness"]["tie_break"]["spread_seeds"] == load_validation().fairness.tie_break_seeds
     assert "lightgbm_uncalibrated" in m["calibration"]
     assert m["fairness"]["approval_rate"] == 0.7
     assert set(m["fairness"]["by_model"]["logistic"]) == {
@@ -164,3 +171,33 @@ def test_committed_evidence_and_promotion_rule(monkeypatch):
     assert (
         evidence.promotion_evidence("lightgbm_monotone", "logistic_regression")["allowed"] is False
     )
+
+
+def test_promotion_gate_checks_every_dataset_and_refuses_unknown_families():
+    from app.validation import evidence
+
+    unknown = evidence.promotion_evidence("lightgbm_monotone", "ebm")
+    assert unknown["allowed"] is False and "ebm" in unknown["reason"]
+    assert unknown["evidence_scope"] == evidence.EVIDENCE_SCOPE
+    # Scorecard is not worse on German Credit but significantly worse on Taiwan: refused.
+    decision = evidence.promotion_evidence("lightgbm_monotone", "optbinning_woe_logistic")
+    assert {d["dataset"] for d in decision["datasets"]} == set(evidence.available_sets())
+    worse = {d["dataset"]: d["significantly_worse"] for d in decision["datasets"]}
+    assert worse == {"uci_taiwan": True, "german_credit": False}
+    assert decision["allowed"] is False and decision["families"]["challenger"] == "scorecard"
+
+
+def test_committed_evidence_uses_out_of_fold_selection_and_reports_untestable_groups():
+    from app.validation import evidence
+
+    for name in evidence.available_sets():
+        metrics = evidence.load_metrics(name)
+        assert metrics["champion"]["basis"] == "out_of_fold", name
+        assert set(metrics["delong_oof"]) == set(metrics["delong"]), name
+    german = evidence.load_metrics("german_credit")
+    foreign = german["fairness"]["by_model"]["scorecard"]["FOREIGN_WORKER"]
+    assert foreign["testable"] is False and foreign["min_air"] is None
+    assert foreign["passes_four_fifths"] is None and foreign["min_air_spread"] is None
+    rec = german["lda"]["recommendation"]
+    assert rec["kind"] == "model_family" and rec["recommended"] == "lightgbm"
+    assert rec["min_air_to"] < load_validation().fairness.air_threshold  # still an open finding

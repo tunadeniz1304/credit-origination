@@ -7,6 +7,11 @@ Protected attributes are never model inputs; they are used here only to
   quantile cut-off of one model with the 0.5-threshold ``predict()`` of
   another (the v1 table) mixes a fairness change with an approval-volume
   change and is meaningless.
+* Ties at the cut-off (an isotonic calibration maps many applicants to the
+  same PD) are broken by a seeded random key, never by row order; lane A
+  reports the AIR spread over several tie-break seeds.
+* An attribute with fewer than two groups above the minimum size is **not
+  testable**: its AIR and gaps are ``None`` (shown as n/a), not a perfect 1.0.
 * Per group: selection (approval) rate, adverse impact ratio (AIR, the
   four-fifths rule: group rate / most favoured group rate ≥ 0.8) and
   equalised-odds gaps — the difference between groups in the approval rate of
@@ -36,23 +41,31 @@ GROUP_THRESHOLD_CAVEAT = (
 
 
 # ------------------------------------------------------------------ approval at a fixed rate
-def approve_at_rate(pd_scores: np.ndarray, rate: float) -> np.ndarray:
-    """Approve exactly ``round(rate·n)`` applicants with the lowest PD (stable ties)."""
+def approve_at_rate(pd_scores: np.ndarray, rate: float, seed: int = 0) -> np.ndarray:
+    """Approve exactly ``round(rate·n)`` applicants with the lowest PD.
+
+    Applicants with the same PD at the cut-off are ordered by a random key drawn
+    from ``seed``, so which of them is approved does not depend on row order
+    (a stable sort would favour whoever happens to come first in the file).
+    """
     scores = np.asarray(pd_scores, dtype=float)
     k = round(rate * len(scores))
+    tie_break = np.random.default_rng(seed).random(len(scores))
     approved = np.zeros(len(scores), dtype=int)
-    approved[np.argsort(scores, kind="mergesort")[:k]] = 1
+    approved[np.lexsort((tie_break, scores))[:k]] = 1
     return approved
 
 
-def group_thresholds_at_rate(pd_scores: np.ndarray, groups: pd.Series, rate: float) -> np.ndarray:
+def group_thresholds_at_rate(
+    pd_scores: np.ndarray, groups: pd.Series, rate: float, seed: int = 0
+) -> np.ndarray:
     """Demographic-parity post-processing: every group approved at ``rate``."""
     scores = np.asarray(pd_scores, dtype=float)
     labels = np.asarray(groups)
     approved = np.zeros(len(scores), dtype=int)
     for group in np.unique(labels):
         idx = np.flatnonzero(labels == group)
-        approved[idx] = approve_at_rate(scores[idx], rate)
+        approved[idx] = approve_at_rate(scores[idx], rate, seed)
     return approved
 
 
@@ -74,12 +87,15 @@ def adverse_impact(
     }
     top = max(rates.values()) if rates else 0.0
     air = {g: round(r / top, 4) if top else None for g, r in rates.items()}
-    worst = min((v for v in air.values() if v is not None), default=1.0)
+    # With fewer than two comparable groups there is nothing to compare: not testable.
+    testable = len(rates) >= 2
+    worst = min((v for v in air.values() if v is not None), default=None) if testable else None
     return {
         "selection_rate": rates,
-        "air": air,
+        "air": air if testable else {g: None for g in rates},
         "min_air": worst,
-        "passes_four_fifths": worst >= AIR_THRESHOLD,
+        "testable": testable,
+        "passes_four_fifths": None if worst is None else worst >= AIR_THRESHOLD,
     }
 
 
@@ -116,17 +132,61 @@ def group_fairness(
         fpr[group] = round(float(approved[bad].mean()), 4) if bad.any() else float("nan")
     finite = [v for v in tpr.values() if not np.isnan(v)]
     finite_fpr = [v for v in fpr.values() if not np.isnan(v)]
+
+    def gap(values: list[float]) -> float | None:
+        return round(max(values) - min(values), 4) if len(values) >= 2 else None
+
     stats.update(
         {
             "group_size": sizes,
             "tpr_good_approved": tpr,
             "fpr_bad_approved": fpr,
-            "tpr_gap": round(max(finite) - min(finite), 4) if finite else 0.0,
-            "fpr_gap": round(max(finite_fpr) - min(finite_fpr), 4) if finite_fpr else 0.0,
-            "passes_four_fifths": stats["min_air"] >= air_threshold,
+            "tpr_gap": gap(finite) if stats["testable"] else None,
+            "fpr_gap": gap(finite_fpr) if stats["testable"] else None,
+            "passes_four_fifths": None
+            if stats["min_air"] is None
+            else stats["min_air"] >= air_threshold,
         }
     )
     return stats
+
+
+def air_spread(
+    y_true: np.ndarray,
+    pd_scores: np.ndarray,
+    groups: pd.Series,
+    *,
+    approval_rate: float,
+    seeds: list[int],
+    air_threshold: float = AIR_THRESHOLD,
+    min_group_size: int = 0,
+) -> dict[str, Any] | None:
+    """Minimum AIR over several tie-break seeds (min / median / max, share passing).
+
+    Tied PDs at the cut-off are approved in a seeded random order; the spread shows
+    how much a fairness conclusion depends on that arbitrary choice. ``None`` when
+    the attribute is not testable.
+    """
+    values = []
+    for seed in seeds:
+        stats = group_fairness(
+            y_true,
+            approve_at_rate(pd_scores, approval_rate, seed),
+            groups,
+            air_threshold=air_threshold,
+            min_group_size=min_group_size,
+        )
+        if stats["min_air"] is None:
+            return None
+        values.append(float(stats["min_air"]))
+    arr = np.asarray(values)
+    return {
+        "seeds": len(seeds),
+        "min": round(float(arr.min()), 4),
+        "median": round(float(np.median(arr)), 4),
+        "max": round(float(arr.max()), 4),
+        "share_passing": round(float((arr >= air_threshold).mean()), 4),
+    }
 
 
 def fairness_report(
@@ -149,7 +209,7 @@ def fairness_report(
     report["alerts"] = [
         f"{attr}: AIR {stats['min_air']:.2f} < {AIR_THRESHOLD}"
         for attr, stats in report["attributes"].items()
-        if not stats["passes_four_fifths"]
+        if stats["passes_four_fifths"] is False
     ]
     return report
 
@@ -230,8 +290,15 @@ def less_discriminatory_search(
     min_group_size: int = 0,
     baseline_scores: np.ndarray | None = None,
     baseline_name: str = "Kısıtsız lojistik",
+    alternatives: dict[str, np.ndarray] | None = None,
+    seed: int = 0,
 ) -> dict[str, Any]:
-    """Performance–fairness trade-off table, every row at ``approval_rate``."""
+    """Performance–fairness trade-off table, every row at ``approval_rate``.
+
+    ``alternatives`` are hold-out scores of the other model families that were
+    already trained (e.g. the scorecard when LightGBM is champion): they are
+    genuine less discriminatory alternative candidates and are ranked with the rest.
+    """
     from fairlearn.postprocessing import ThresholdOptimizer
     from fairlearn.reductions import DemographicParity, ExponentiatedGradient
 
@@ -248,7 +315,7 @@ def less_discriminatory_search(
                 baseline_name,
                 y_test,
                 baseline_scores,
-                approve_at_rate(baseline_scores, approval_rate),
+                approve_at_rate(baseline_scores, approval_rate, seed),
                 a_test,
                 kind="champion",
                 **common,
@@ -259,12 +326,25 @@ def less_discriminatory_search(
             "Kısıtsız lojistik",
             y_test,
             lr_scores,
-            approve_at_rate(lr_scores, approval_rate),
+            approve_at_rate(lr_scores, approval_rate, seed),
             a_test,
             kind="baseline",
             **common,
         )
     )
+    for family, scores in (alternatives or {}).items():
+        rows.append(
+            _row(
+                family,
+                y_test,
+                scores,
+                approve_at_rate(scores, approval_rate, seed),
+                a_test,
+                kind="model_family",
+                family=family,
+                **common,
+            )
+        )
 
     proxies = proxy_strength(X_train, a_train)
     dropped = [f for f, auc in proxies.items() if auc >= proxy_auc_threshold]
@@ -278,7 +358,7 @@ def less_discriminatory_search(
             "Proxy zayıflatılmış lojistik",
             y_test,
             weak_scores,
-            approve_at_rate(weak_scores, approval_rate),
+            approve_at_rate(weak_scores, approval_rate, seed),
             a_test,
             kind="proxy_removal",
             dropped_features=dropped,
@@ -312,7 +392,7 @@ def less_discriminatory_search(
                 f"ExponentiatedGradient (demografik eşitlik, ε={eps})",
                 y_test,
                 eg_scores,
-                approve_at_rate(eg_scores, approval_rate),
+                approve_at_rate(eg_scores, approval_rate, seed),
                 a_test,
                 kind="exponentiated_gradient",
                 epsilon=eps,
@@ -326,7 +406,7 @@ def less_discriminatory_search(
             "Grup bazlı eşik (demografik eşitlik, ThresholdOptimizer yaklaşımı)",
             y_test,
             reference,
-            group_thresholds_at_rate(reference, a_test, approval_rate),
+            group_thresholds_at_rate(reference, a_test, approval_rate, seed),
             a_test,
             kind="group_threshold",
             legal_caveat=GROUP_THRESHOLD_CAVEAT,
@@ -367,16 +447,30 @@ def less_discriminatory_search(
 
 
 def recommend_lda(table: dict[str, Any], max_auc_loss: float) -> dict[str, Any]:
-    """Pick the fairest non-group-threshold row within the allowed AUC loss."""
+    """Pick the fairest non-group-threshold row within the allowed AUC loss.
+
+    Candidates include the other already-trained model families (``model_family``
+    rows), not only the purpose-built mitigations.
+    """
     rows = table["rows"]
     anchor = rows[0]
+    base = {"anchor": anchor["model"], "max_auc_loss": max_auc_loss}
+    if anchor["min_air"] is None:
+        return {
+            **base,
+            "recommended": None,
+            "kind": None,
+            "testable": False,
+            "reason": "Korunan özellik test edilemiyor (karşılaştırılabilir ikinci grup yok).",
+        }
     candidates = [
         r
         for r in rows[1:]
-        if r["kind"] != "group_threshold" and anchor["auc"] - r["auc"] <= max_auc_loss
+        if r["kind"] != "group_threshold"
+        and r["min_air"] is not None
+        and anchor["auc"] - r["auc"] <= max_auc_loss
     ]
     better = [r for r in candidates if r["min_air"] > anchor["min_air"]]
-    base = {"anchor": anchor["model"], "max_auc_loss": max_auc_loss}
     if not better:
         return {
             **base,

@@ -25,7 +25,12 @@ from app.db.audit import append_audit
 from app.db.models import Decision, ModelRecord, RuleSet, utcnow
 from app.decisioning.features import FEATURE_LABELS, MODEL_FEATURES
 from app.decisioning.models import get_models
-from app.validation.evidence import KIND_TO_FAMILY, family_evidence, promotion_evidence
+from app.validation.evidence import (
+    EVIDENCE_SCOPE,
+    KIND_TO_FAMILY,
+    family_evidence,
+    promotion_evidence,
+)
 
 REQUIRED_APPROVALS = 2
 
@@ -135,7 +140,7 @@ def card_markdown(card: dict[str, Any]) -> str:
     ]
     if card.get("fairness"):
         lines += ["", "## Adillik"] + [
-            f"- {attr}: asgari AIR {s['min_air']}"
+            f"- {attr}: asgari AIR {'test edilemez' if s['min_air'] is None else s['min_air']}"
             for attr, s in card["fairness"].get("attributes", {}).items()
         ]
     lines += ["", "## Sınırlamalar"] + [f"- {x}" for x in card["limitations"]]
@@ -180,10 +185,13 @@ def champion_challenger(session: Session, limit: int = 2000) -> dict[str, Any]:
         (pd, ch.get("pd")) for pd, ch in rows if pd is not None and ch and ch.get("pd") is not None
     ]
     models = get_models()
-    validation = family_evidence(
-        KIND_TO_FAMILY.get(models.pd_model.meta["kind"], "lightgbm"),
-        KIND_TO_FAMILY.get(models.challenger.meta["kind"], "logistic"),
+    families = [KIND_TO_FAMILY.get(m.meta["kind"]) for m in (models.pd_model, models.challenger)]
+    validation: dict[str, Any] = (
+        {"available": False, "reason": "model ailesi için gerçek veri kanıtı yok"}
+        if None in families
+        else family_evidence(str(families[0]), str(families[1]))
     )
+    validation["evidence_scope"] = EVIDENCE_SCOPE
     if not pairs:
         return {"decisions": 0, "validation": validation}
     champ = [p for p, _ in pairs]

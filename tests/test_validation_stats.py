@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import math
 
 import numpy as np
@@ -86,3 +87,25 @@ def test_calibration_perfect_and_biased():
     deciles = bad["deciles"]
     assert [r["decile"] for r in deciles] == list(range(1, 11))
     assert deciles[0]["pd_max"] <= deciles[-1]["pd_min"]
+
+
+def test_calibration_deciles_keep_tied_pds_together():
+    # A calibrated isotonic model has few distinct PDs: a tie block must not be split.
+    p = np.r_[np.full(50, 0.01), np.full(300, 0.02), np.linspace(0.03, 0.5, 650)]
+    y = (np.random.default_rng(1).random(len(p)) < p).astype(int)
+    rows = stats.calibration_deciles(y, p)
+    assert sum(r["n"] for r in rows) == len(p)
+    tied = [r for r in rows if r["pd_min"] <= 0.02 <= r["pd_max"]]
+    assert len(tied) == 1 and tied[0]["n"] >= 300
+    for lower, upper in itertools.pairwise(rows):
+        assert lower["pd_max"] < upper["pd_min"]
+    # Row order does not change the table.
+    perm = np.random.default_rng(2).permutation(len(p))
+    assert stats.calibration_deciles(y[perm], p[perm]) == rows
+
+
+def test_ks_is_evaluated_only_between_tie_blocks():
+    y = np.array([0, 1, 0, 1])
+    p = np.array([0.5, 0.5, 0.5, 0.5])
+    assert stats.ks_statistic(y, p) == 0.0
+    assert stats.ks_statistic(y[::-1], p) == 0.0

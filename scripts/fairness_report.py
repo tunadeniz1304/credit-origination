@@ -96,22 +96,34 @@ def main() -> int:
     from app.validation.evidence import available_sets, load_metrics
 
     lines += [
-        "| Dataset | Champion | Attribute | Min AIR | Passes 0.8 | TPR gap |",
-        "|---|---|---|---|---|---|",
+        "Tied PDs at the cut-off are approved in a seeded random order; the range is the minimum AIR over the "
+        "tie-break seeds. An attribute with only one group above the minimum group size is not testable (n/a).",
+        "",
+        "| Dataset | Champion | Attribute | Min AIR | Range over tie-break seeds | Passes 0.8 | TPR gap |",
+        "|---|---|---|---|---|---|---|",
     ]
+
+    def fmt(value: float | None) -> str:
+        return "n/a" if value is None else f"{value:.3f}"
+
     for name in available_sets():
         metrics = load_metrics(name) or {}
         champion = metrics["champion"]["model"]
         for attr, stats in metrics["fairness"]["by_model"][champion].items():
+            spread = stats.get("min_air_spread")
+            passes = stats["passes_four_fifths"]
             lines.append(
-                f"| {name} | {champion} | {attr} | {stats['min_air']:.3f} | "
-                f"{'yes' if stats['passes_four_fifths'] else '**no**'} | {stats['tpr_gap']:.3f} |"
+                f"| {name} | {champion} | {attr} | {fmt(stats['min_air'])} | "
+                + (f"{spread['min']:.3f}–{spread['max']:.3f}" if spread else "—")
+                + f" | {'n/a' if passes is None else 'yes' if passes else '**no**'} | "
+                f"{fmt(stats['tpr_gap'])} |"
             )
     lines += [
         "",
         "The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real "
-        "data: on German Credit the champion fails the four-fifths rule for age band, and no alternative within the "
-        "allowed AUC loss fixes it (see the LDA tables in `VALIDATION_REPORT.md`).",
+        "data: on German Credit the champion fails the four-fifths rule for age band. The fairest alternative within "
+        "the allowed AUC loss (the LightGBM family) raises the age-band AIR but still stays below 0.8, so the finding "
+        "is open (see the LDA tables in `VALIDATION_REPORT.md`).",
         "",
         "## Interpretation",
         "",

@@ -392,6 +392,7 @@
               <thead><tr><th scope="col">Rol</th><th scope="col">Model ailesi</th><th scope="col">AUC</th><th scope="col">%95 GA</th><th scope="col">Brier</th><th scope="col">ECE</th></tr></thead>
               <tbody><template x-for="r in ccEvidence().rows" :key="r.role"><tr><th scope="row" x-text="r.role"></th><td x-text="r.family"></td><td class="num" x-text="r.auc"></td><td class="num" x-text="r.ci"></td><td class="num" x-text="r.brier"></td><td class="num" x-text="r.ece"></td></tr></template></tbody></table>
             <p class="muted" x-text="ccEvidence().summary"></p>
+            <p class="muted" x-show="ccEvidence().scope" x-text="ccEvidence().scope"></p>
           </div></template>
           <p class="muted" x-show="dash.cc && dash.cc.validation && !dash.cc.validation.available">Gerçek veri doğrulama sonuçları bulunamadı.</p>
           <p class="error" role="alert" x-show="promoteError" x-text="promoteError"></p>
@@ -425,16 +426,24 @@
 
         <div class="grid-2">
           <div class="card">
-            <h2 id="delong-title">DeLong testi (AUC farkı)</h2>
+            <h2 id="delong-title">DeLong testi (AUC farkı) — hold-out, teyit</h2>
             <table aria-labelledby="delong-title">
               <thead><tr><th scope="col">Karşılaştırma</th><th scope="col">ΔAUC</th><th scope="col">%95 GA</th><th scope="col">z</th><th scope="col">p</th></tr></thead>
               <tbody><template x-for="r in delongRows()" :key="r.key"><tr><th scope="row" x-text="r.label"></th><td class="num" x-text="r.diff"></td><td class="num" x-text="r.ci"></td><td class="num" x-text="r.z"></td><td class="num" x-text="r.p"></td></tr></template></tbody>
             </table>
+            <template x-if="delongOofRows().length"><div>
+              <h3 id="delong-oof-title">Katlama dışı (seçim kanıtı)</h3>
+              <table aria-labelledby="delong-oof-title">
+                <thead><tr><th scope="col">Karşılaştırma</th><th scope="col">ΔAUC</th><th scope="col">%95 GA</th><th scope="col">z</th><th scope="col">p</th></tr></thead>
+                <tbody><template x-for="r in delongOofRows()" :key="r.key"><tr><th scope="row" x-text="r.label"></th><td class="num" x-text="r.diff"></td><td class="num" x-text="r.ci"></td><td class="num" x-text="r.z"></td><td class="num" x-text="r.p"></td></tr></template></tbody>
+              </table>
+            </div></template>
           </div>
           <div class="card">
             <h2>Şampiyon kararı</h2>
             <p><b x-text="vs().champion.label"></b></p>
             <p class="muted" x-text="'Kural: basitlik sırası ' + championOrder() + '; anlamlılık düzeyi α=' + vs().champion.alpha + ', asgari AUC kazancı ' + vs().champion.min_auc_gain"></p>
+            <p class="muted" x-text="championBasis()"></p>
             <ol><template x-for="s in vs().champion.steps"><li x-text="s"></li></template></ol>
           </div>
         </div>
@@ -456,11 +465,12 @@
         <div class="card">
           <h2>Adillik — aynı onay oranında karşılaştırma</h2>
           <p class="muted" x-text="'Tüm modeller aynı onay oranında (' + pct(vs().fairness.approval_rate) + ') karşılaştırılır; AIR ≥ 0,80 dört-beşte-bir kuralını geçer.'"></p>
+          <p class="muted" x-show="fairnessTieNote()" x-text="fairnessTieNote()"></p>
           <template x-for="t in fairnessTables()" :key="t.attr">
             <div class="table-scroll"><table>
               <caption x-text="t.title"></caption>
-              <thead><tr><th scope="col">Model</th><template x-for="g in t.groups" :key="g"><th scope="col" x-text="'Onay oranı: ' + g"></th></template><th scope="col">min AIR</th><th scope="col">4/5 kuralı</th><th scope="col">TPR farkı</th><th scope="col">FPR farkı</th></tr></thead>
-              <tbody><template x-for="r in t.rows" :key="r.model"><tr><th scope="row" x-text="r.label"></th><template x-for="c in r.cells"><td class="num" x-text="c"></td></template><td class="num" x-text="r.minAir"></td><td><span class="badge" :class="r.pass ? 'ok' : 'bad'" x-text="r.pass ? 'Geçer' : 'Kalır'"></span></td><td class="num" x-text="r.tpr"></td><td class="num" x-text="r.fpr"></td></tr></template></tbody>
+              <thead><tr><th scope="col">Model</th><template x-for="g in t.groups" :key="g"><th scope="col" x-text="'Onay oranı: ' + g"></th></template><th scope="col">min AIR</th><th scope="col">min AIR aralığı (tohumlar)</th><th scope="col">4/5 kuralı</th><th scope="col">TPR farkı</th><th scope="col">FPR farkı</th></tr></thead>
+              <tbody><template x-for="r in t.rows" :key="r.model"><tr><th scope="row" x-text="r.label"></th><template x-for="c in r.cells"><td class="num" x-text="c"></td></template><td class="num" x-text="r.minAir"></td><td class="num" x-text="r.spread"></td><td><span class="badge" :class="r.badge.cls" x-text="r.badge.text"></span></td><td class="num" x-text="r.tpr"></td><td class="num" x-text="r.fpr"></td></tr></template></tbody>
             </table></div>
           </template>
         </div>
@@ -470,7 +480,7 @@
           <div class="table-scroll"><table>
             <caption class="sr-only">LDA ödünleşim tablosu</caption>
             <thead><tr><th scope="col">Model</th><th scope="col">AUC</th><th scope="col">Onay oranı</th><th scope="col">Onaylananlarda kötü oranı</th><th scope="col">min AIR</th><th scope="col">TPR farkı</th><th scope="col">FPR farkı</th><th scope="col">4/5 kuralı</th></tr></thead>
-            <tbody><template x-for="r in ldaRows()" :key="r.key"><tr :class="{muted: r.reference}"><th scope="row"><span x-text="r.model"></span><span x-show="r.caveat" title="Hukuki uyarıya bakın"> †</span><span class="muted" x-show="r.reference"> (referans, karşılaştırılamaz)</span></th><td class="num" x-text="r.auc"></td><td class="num" x-text="r.approval"></td><td class="num" x-text="r.badRate"></td><td class="num" x-text="r.minAir"></td><td class="num" x-text="r.tpr"></td><td class="num" x-text="r.fpr"></td><td><span class="badge" :class="r.pass ? 'ok' : 'bad'" x-text="r.pass ? 'Geçer' : 'Kalır'"></span></td></tr></template></tbody>
+            <tbody><template x-for="r in ldaRows()" :key="r.key"><tr :class="{muted: r.reference}"><th scope="row"><span x-text="r.model"></span><span x-show="r.caveat" title="Hukuki uyarıya bakın"> †</span><span class="muted" x-show="r.reference"> (referans, karşılaştırılamaz)</span></th><td class="num" x-text="r.auc"></td><td class="num" x-text="r.approval"></td><td class="num" x-text="r.badRate"></td><td class="num" x-text="r.minAir"></td><td class="num" x-text="r.tpr"></td><td class="num" x-text="r.fpr"></td><td><span class="badge" :class="r.badge.cls" x-text="r.badge.text"></span></td></tr></template></tbody>
           </table></div>
           <p><b>Öneri:</b> <span x-text="vs().lda.recommendation.reason"></span></p>
           <p class="notice" role="note" x-show="ldaCaveat()"><b>† Hukuki uyarı:</b> <span x-text="ldaCaveat()"></span></p>
@@ -478,7 +488,7 @@
         </div>
 
         <div class="card">
-          <h2>Şerit B (çapalama)</h2>
+          <h2>Şerit B (çapalama — doğrulama değil)</h2>
           <p class="muted" x-show="!validation.lane_b">Şerit B sonuçları henüz üretilmedi.</p>
           <template x-if="validation.lane_b"><div>
             <p class="muted" x-text="laneBIntro()"></p>
@@ -508,6 +518,11 @@
                 <tbody><template x-for="r in laneBBandLevel()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.real"></td><td class="num" x-text="r.predicted"></td><td class="num" x-text="r.n"></td></tr></template></tbody>
               </table></div>
             </div>
+            <template x-if="laneBPolicy()"><div class="table-scroll"><table>
+              <caption x-text="laneBPolicy().caption"></caption>
+              <thead><tr><th scope="col">Politika</th><th scope="col">Model</th><th scope="col">Otomatik onay PD ≤</th><th scope="col">Otomatik ret PD ≥</th><th scope="col">Otomatik onay</th><th scope="col">Uzman (gri)</th><th scope="col">Otomatik ret</th><th scope="col">Otomatik onaylananlarda kötü oranı</th></tr></thead>
+              <tbody><template x-for="r in laneBPolicy().rows" :key="r.key"><tr><th scope="row" x-text="r.policy"></th><td x-text="r.model"></td><td class="num" x-text="r.approveMax"></td><td class="num" x-text="r.declineMin"></td><td class="num" x-text="r.approve"></td><td class="num" x-text="r.grey"></td><td class="num" x-text="r.decline"></td><td class="num" x-text="r.bad"></td></tr></template></tbody>
+            </table></div></template>
             <p class="muted" x-text="laneBBehaviour()"></p>
           </div></template>
         </div>

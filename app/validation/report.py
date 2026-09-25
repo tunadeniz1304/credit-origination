@@ -18,6 +18,7 @@ VERDICT_EN = {
 }
 LDA_KIND_EN = {
     "baseline": "Unconstrained logistic regression",
+    "model_family": "Other trained family: {family}",
     "proxy_removal": "Proxy-weakened logistic regression",
     "exponentiated_gradient": "ExponentiatedGradient, demographic parity (ε={epsilon})",
     "group_threshold": "Group-specific thresholds, demographic parity (ThresholdOptimizer-style)",
@@ -49,6 +50,23 @@ def _pct(value: float | None) -> str:
     return "—" if value is None else f"{value:.1%}"
 
 
+def _num(value: float | None, digits: int = 3) -> str:
+    """Fairness figures: ``None`` means *not testable* and is shown as n/a."""
+    return "n/a" if value is None else f"{value:.{digits}f}"
+
+
+def _air_with_spread(stats: dict[str, Any]) -> str:
+    spread = stats.get("min_air_spread")
+    if stats["min_air"] is None:
+        return "n/a"
+    if not spread:
+        return _num(stats["min_air"])
+    return (
+        f"{stats['min_air']:.3f} ({spread['min']:.3f}–{spread['max']:.3f}, "
+        f"median {spread['median']:.3f})"
+    )
+
+
 def _table(header: list[str], rows: list[list[Any]]) -> list[str]:
     lines = ["| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     lines += ["| " + " | ".join(str(c) for c in row) + " |" for row in rows]
@@ -58,10 +76,13 @@ def _table(header: list[str], rows: list[list[Any]]) -> list[str]:
 def _lda_name(row: dict[str, Any], champion: str) -> str:
     if row["kind"] == "champion":
         return f"Champion: {MODEL_NAMES[champion]}"
-    return LDA_KIND_EN[row["kind"]].format(epsilon=row.get("epsilon"))
+    family = MODEL_NAMES.get(row.get("family", ""), row.get("family"))
+    return LDA_KIND_EN[row["kind"]].format(epsilon=row.get("epsilon"), family=family)
 
 
 def _recommendation(rec: dict[str, Any], rows: list[dict[str, Any]], champion: str) -> str:
+    if rec.get("testable") is False:
+        return "not testable — only one group of the attribute meets the minimum size."
     if not rec.get("recommended"):
         return (
             f"keep the champion — no alternative raises the minimum AIR within the allowed AUC loss "
@@ -88,19 +109,39 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
     ]
     out += [f"- {note}" for note in DESIGN_NOTES.get(name, design["notes"])] + [""]
 
-    out += ["### Cross-validation (training part)", ""]
+    out += ["### Cross-validation (training part) — champion selection", ""]
     out += _table(
-        ["Model", "Mean AUC", "Std", "Fold AUCs"],
+        ["Model", "Mean fold AUC", "Std", "Pooled out-of-fold AUC", "Fold AUCs"],
         [
             [
                 MODEL_NAMES[k],
                 f"{v['mean_auc']:.4f}",
                 f"{v['std_auc']:.4f}",
+                f"{v['oof_auc']:.4f}" if "oof_auc" in v else "—",
                 ", ".join(map(str, v["fold_auc"])),
             ]
             for k, v in m["cv"].items()
         ],
     )
+    if m.get("delong_oof"):
+        out += [
+            "",
+            "Paired DeLong tests on the pooled out-of-fold scores (the selection evidence):",
+            "",
+        ]
+        out += _table(
+            ["Comparison", "ΔAUC", "95% CI of Δ", "z", "p-value"],
+            [
+                [
+                    " vs ".join(MODEL_NAMES[p] for p in key.split("_vs_")),
+                    f"{t['auc_diff']:+.4f}",
+                    _ci(t["diff_ci"]),
+                    f"{t['z']:.2f}",
+                    f"{t['p_value']:.3g}",
+                ]
+                for key, t in m["delong_oof"].items()
+            ],
+        )
     out += ["", "### Hold-out discrimination", ""]
     out += _table(
         [
@@ -127,7 +168,11 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
             for k, v in m["holdout"].items()
         ],
     )
-    out += ["", "DeLong tests on the hold-out (two-sided):", ""]
+    out += [
+        "",
+        "DeLong tests on the hold-out (two-sided; confirmation only, not used for the choice):",
+        "",
+    ]
     out += _table(
         ["Comparison", "ΔAUC", "95% CI of Δ", "z", "p-value"],
         [
@@ -142,16 +187,31 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
         ],
     )
     champion = m["champion"]
+    oof = champion.get("basis") == "out_of_fold"
     out += [
         "",
         f"**Champion: {MODEL_NAMES[champion['model']]}.** Rule: a more complex model replaces a simpler "
         "one only when the DeLong test is significant *and* the AUC gain is material (thresholds in "
-        "`rules/validation.yaml`).",
+        "`rules/validation.yaml`). "
+        + (
+            "The choice is made on the pooled out-of-fold scores of the training part; the hold-out "
+            "only confirms it, so the hold-out figures above are not selection-biased."
+            if oof
+            else "The choice was made on the hold-out."
+        ),
         "",
     ]
     out += [
         f"- {MODEL_NAMES[c['challenger']]} vs {MODEL_NAMES[c['incumbent']]}: "
-        f"ΔAUC {c['auc_diff']:+.4f}, DeLong p = {c['p_value']:.3g} → {VERDICT_EN[c['verdict']]}"
+        f"ΔAUC {c['auc_diff']:+.4f}, DeLong p = {c['p_value']:.3g}"
+        + (" (out-of-fold)" if oof else "")
+        + f" → {VERDICT_EN[c['verdict']]}"
+        + (
+            f"; hold-out confirmation ΔAUC {c['holdout_auc_diff']:+.4f}, "
+            f"p = {c['holdout_p_value']:.3g}"
+            if c.get("holdout_auc_diff") is not None
+            else ""
+        )
         for c in champion["comparisons"]
     ] + [
         f"- Thresholds: α = {champion['alpha']}, minimum ΔAUC = {champion['min_auc_gain']}.",
@@ -204,13 +264,20 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
     ]
 
     fairness = m["fairness"]
+    tie = fairness.get("tie_break", {})
     out += [
         f"### Fairness at the same approval rate ({fairness['approval_rate']:.0%})",
         "",
         "Every model approves the same share of the hold-out (lowest PDs first). AIR = group approval "
         "rate / highest group approval rate; TPR = approval rate of good payers, FPR = approval rate of "
         "defaulters (equalised odds). Groups smaller than "
-        f"{fairness.get('min_group_size', 0)} hold-out rows are excluded from AIR (unstable rates).",
+        f"{fairness.get('min_group_size', 0)} hold-out rows are excluded from AIR (unstable rates); "
+        "an attribute left with a single group is **not testable** (n/a), not a perfect 1.000.",
+        "",
+        "Applicants with the same PD at the cut-off (isotonic calibration yields few distinct PDs) are "
+        f"approved in a seeded random order, never by row order. Min AIR is shown for seed "
+        f"{tie.get('seed', '—')} followed by (min–max, median) over {tie.get('spread_seeds', '—')} "
+        "tie-break seeds; a conclusion that flips inside that range rests on an arbitrary choice.",
         "",
     ]
     by_model = fairness["by_model"]
@@ -220,8 +287,8 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
         [
             [
                 MODEL_NAMES[k],
-                *[f"{v[a]['min_air']:.3f}" for a in attrs],
-                *[f"{v[a]['tpr_gap']:.3f}" for a in attrs],
+                *[_air_with_spread(v[a]) for a in attrs],
+                *[_num(v[a]["tpr_gap"]) for a in attrs],
             ]
             for k, v in by_model.items()
         ],
@@ -236,7 +303,7 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
                     group,
                     stats["group_size"][group],
                     _pct(rate),
-                    f"{stats['air'][group]:.3f}",
+                    _num(stats["air"][group]),
                     _pct(stats["tpr_good_approved"][group]),
                     _pct(stats["fpr_bad_approved"][group]),
                 ]
@@ -257,9 +324,9 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
                 f"{r['auc']:.4f}",
                 _pct(r["approval_rate"]),
                 _pct(r["bad_rate_approved"]),
-                f"{r['min_air']:.3f}",
-                f"{r['tpr_gap']:.3f}",
-                f"{r['fpr_gap']:.3f}",
+                _num(r["min_air"]),
+                _num(r["tpr_gap"]),
+                _num(r["fpr_gap"]),
             ]
             for r in lda["rows"]
         ],
@@ -280,7 +347,7 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
     for ref in lda.get("reference_rows", []):
         out.append(
             f"- Reference, not comparable (own operating point): {_lda_name(ref, champion['model'])} — approval "
-            f"{_pct(ref['approval_rate'])}, min AIR {ref['min_air']:.3f}."
+            f"{_pct(ref['approval_rate'])}, min AIR {_num(ref['min_air'])}."
         )
     out += ["", "### Largest SHAP contributions (LightGBM, hold-out sample)", ""]
     out += _table(
@@ -298,13 +365,18 @@ def lane_b_section(lane: dict[str, Any]) -> list[str]:
     calib = lane.get("production_calibration", {})
     behaviour = lane.get("behaviour_score", {})
     out = [
-        "## Lane B — anchoring the production model to real data",
+        "## Lane B — anchoring the production model to a real proxy curve (not a validation)",
         "",
         "The production model runs on Turkey-specific features that no public set contains, so it "
-        "cannot be validated end-to-end on public data. Instead its bureau-behaviour inputs are "
-        "mapped onto the Taiwan variables (`app/decisioning/public_mapping.py`, table in "
-        "[`DATA.md`](DATA.md)), a behaviour sub-score is learnt on real defaults, and the synthetic "
-        "generator and the PD level are anchored to the real default curve.",
+        "cannot be validated end-to-end on public data. Its bureau-behaviour inputs are mapped onto "
+        "the Taiwan variables (`app/decisioning/public_mapping.py`, table in [`DATA.md`](DATA.md)), "
+        "a behaviour sub-score is learnt on real defaults, and the synthetic generator is anchored "
+        "to the real default curve. **The PD level is imposed from a real proxy curve (anchoring), "
+        "not validated:** the anchor is next-month credit-card default, used as the level of a "
+        "12-month 90+DPD personal-loan PD. The synthetic outcomes are then drawn from that same "
+        "curve, so the checks below are internal consistency checks — they show the level was "
+        "imposed correctly, not that it is right. The only real-data evidence is lane A "
+        "(methodology) and the behaviour sub-score's real hold-out AUC.",
         "",
         f"- Real anchor source: {anchors['source']} ({anchors['rows']:,} rows, default rate "
         f"{anchors['overall_default_rate']:.2%}).",
@@ -342,7 +414,8 @@ def lane_b_section(lane: dict[str, Any]) -> list[str]:
     if calib:
         low = calib["low_risk"]
         out += [
-            f"### Production PD ({calib['model']}) — level and low-risk calibration",
+            f"### Production PD ({calib['model']}) — level and low-risk calibration "
+            "(anchored synthetic population)",
             "",
             f"Synthetic time-based test set, n = {calib['test_rows']:,}: ECE {calib['ece']:.4f}, "
             f"Hosmer–Lemeshow χ² {calib['hosmer_lemeshow']['statistic']:.1f} "
@@ -353,11 +426,17 @@ def lane_b_section(lane: dict[str, Any]) -> list[str]:
             f"{'met' if calib.get('low_risk_deciles_within_tolerance') else '**not met**'} per decile).",
             "",
         ]
+        out += [
+            "Deciles are formed on average ranks, so applicants with the same PD always share a "
+            "decile (isotonic calibration produces large tie blocks; decile sizes therefore differ).",
+            "",
+        ]
         out += _table(
-            ["Decile", "Predicted", "Observed", "Obs / pred"],
+            ["Decile", "n", "Predicted", "Observed", "Obs / pred"],
             [
                 [
                     d["decile"],
+                    d["n"],
                     _pct(d["predicted"]),
                     _pct(d["observed"]),
                     d["ratio_observed_to_predicted"],
@@ -374,13 +453,49 @@ def lane_b_section(lane: dict[str, Any]) -> list[str]:
             ],
         )
         out.append("")
+    policy = lane.get("policy_cutoffs")
+    if policy:
+        out += [
+            "### Policy cut-off table (anchored synthetic population)",
+            "",
+            f"{policy['population']}, n = {policy['test_rows']:,}, observed default rate "
+            f"{_pct(policy['observed_default_rate'])}. {policy['note']}",
+            "",
+        ]
+        out += _table(
+            [
+                "Policy",
+                "Model",
+                "Auto-approve PD ≤",
+                "Auto-decline PD ≥",
+                "Auto-approved",
+                "Referred (grey)",
+                "Auto-declined",
+                "Bad rate of auto-approved",
+            ],
+            [
+                [
+                    r["policy"],
+                    r["model"],
+                    _pct(r["auto_approve_max_pd"]),
+                    _pct(r["auto_decline_min_pd"]),
+                    _pct(r["share_auto_approve"]),
+                    _pct(r["share_referred"]),
+                    _pct(r["share_auto_decline"]),
+                    _pct(r["bad_rate_auto_approved"]),
+                ]
+                for r in policy["rows"]
+            ],
+        )
+        out.append("")
     out += [
         "**Reading this honestly.** The anchoring transfers the *shape* of real credit risk "
-        "(how default rises with arrears) and a realistic PD level into the synthetic population. "
-        "The Taiwan target is next-month default on credit cards, not 90+ DPD within 12 months on "
-        "personal loans, and Taiwanese card holders are not Turkish loan applicants: the anchored "
-        "model is a methodologically sound starting point, not a validated Turkish PD model. A real "
-        "bank portfolio is needed for re-training and independent validation.",
+        "(how default rises with arrears) into the synthetic population and imposes a PD level "
+        "from a proxy: the Taiwan target is next-month default on credit cards, not 90+ DPD within "
+        "12 months on personal loans, and Taiwanese card holders are not Turkish loan applicants. "
+        "Whether the old model under- or over-stated risk cannot be decided from this data. The "
+        "anchored model is a methodologically sound starting point, not a validated Turkish PD "
+        "model; a real bank portfolio is needed for re-training and independent validation.",
         "",
     ]
     return out

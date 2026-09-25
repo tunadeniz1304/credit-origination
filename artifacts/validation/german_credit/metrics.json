@@ -1,6 +1,6 @@
 {
  "dataset": "german_credit",
- "generated_at": "2026-09-24T22:27:15+00:00",
+ "generated_at": "2026-09-25T09:27:18+00:00",
  "config_version": "validation_v1",
  "design": {
   "rows": 1000,
@@ -91,7 +91,8 @@
     0.7247
    ],
    "mean_auc": 0.7751,
-   "std_auc": 0.0412
+   "std_auc": 0.0412,
+   "oof_auc": 0.7758
   },
   "logistic": {
    "fold_auc": [
@@ -102,7 +103,8 @@
     0.7537
    ],
    "mean_auc": 0.7746,
-   "std_auc": 0.0208
+   "std_auc": 0.0208,
+   "oof_auc": 0.7743
   },
   "scorecard": {
    "fold_auc": [
@@ -113,7 +115,8 @@
     0.7494
    ],
    "mean_auc": 0.7962,
-   "std_auc": 0.0392
+   "std_auc": 0.0392,
+   "oof_auc": 0.7961
   }
  },
  "holdout": {
@@ -132,7 +135,7 @@
     0.3952,
     0.6759
    ],
-   "ks": 0.4619,
+   "ks": 0.4524,
    "brier": 0.16812,
    "log_loss": 0.51263,
    "default_rate": 0.3,
@@ -304,118 +307,118 @@
    "deciles": [
     {
      "decile": 1,
-     "n": 20,
+     "n": 25,
      "pd_min": 0.0005,
      "pd_max": 0.11538,
-     "predicted": 0.03948,
-     "observed": 0.1,
+     "predicted": 0.05466,
+     "observed": 0.08,
      "defaults": 2,
-     "ratio_observed_to_predicted": 2.533
+     "ratio_observed_to_predicted": 1.464
     },
     {
      "decile": 2,
-     "n": 20,
-     "pd_min": 0.11538,
+     "n": 22,
+     "pd_min": 0.11628,
      "pd_max": 0.11628,
-     "predicted": 0.11606,
-     "observed": 0.05,
+     "predicted": 0.11628,
+     "observed": 0.04545,
      "defaults": 1,
-     "ratio_observed_to_predicted": 0.431
+     "ratio_observed_to_predicted": 0.391
     },
     {
      "decile": 3,
-     "n": 20,
-     "pd_min": 0.11628,
-     "pd_max": 0.13393,
-     "predicted": 0.12721,
-     "observed": 0.15,
-     "defaults": 3,
-     "ratio_observed_to_predicted": 1.179
+     "n": 1,
+     "pd_min": 0.1232,
+     "pd_max": 0.1232,
+     "predicted": 0.1232,
+     "observed": 1.0,
+     "defaults": 1,
+     "ratio_observed_to_predicted": 8.117
     },
     {
      "decile": 4,
-     "n": 20,
+     "n": 33,
      "pd_min": 0.13393,
      "pd_max": 0.13393,
      "predicted": 0.13393,
-     "observed": 0.15,
-     "defaults": 3,
-     "ratio_observed_to_predicted": 1.12
+     "observed": 0.18182,
+     "defaults": 6,
+     "ratio_observed_to_predicted": 1.358
     },
     {
      "decile": 5,
-     "n": 20,
-     "pd_min": 0.13393,
+     "n": 24,
+     "pd_min": 0.15781,
      "pd_max": 0.21429,
-     "predicted": 0.20744,
-     "observed": 0.25,
-     "defaults": 5,
-     "ratio_observed_to_predicted": 1.205
+     "predicted": 0.21193,
+     "observed": 0.16667,
+     "defaults": 4,
+     "ratio_observed_to_predicted": 0.786
     },
     {
      "decile": 6,
-     "n": 20,
-     "pd_min": 0.21429,
+     "n": 15,
+     "pd_min": 0.22703,
      "pd_max": 0.3125,
-     "predicted": 0.27126,
-     "observed": 0.15,
+     "predicted": 0.29025,
+     "observed": 0.2,
      "defaults": 3,
-     "ratio_observed_to_predicted": 0.553
+     "ratio_observed_to_predicted": 0.689
     },
     {
      "decile": 7,
-     "n": 20,
+     "n": 31,
      "pd_min": 0.34615,
      "pd_max": 0.37179,
-     "predicted": 0.36154,
-     "observed": 0.5,
-     "defaults": 10,
-     "ratio_observed_to_predicted": 1.383
+     "predicted": 0.36518,
+     "observed": 0.45161,
+     "defaults": 14,
+     "ratio_observed_to_predicted": 1.237
     },
     {
      "decile": 8,
-     "n": 20,
-     "pd_min": 0.37179,
+     "n": 16,
+     "pd_min": 0.38462,
      "pd_max": 0.41509,
-     "predicted": 0.38976,
-     "observed": 0.45,
-     "defaults": 9,
-     "ratio_observed_to_predicted": 1.155
+     "predicted": 0.41319,
+     "observed": 0.5,
+     "defaults": 8,
+     "ratio_observed_to_predicted": 1.21
     },
     {
      "decile": 9,
-     "n": 20,
-     "pd_min": 0.41509,
+     "n": 14,
+     "pd_min": 0.4898,
      "pd_max": 0.55556,
-     "predicted": 0.46694,
-     "observed": 0.45,
-     "defaults": 9,
-     "ratio_observed_to_predicted": 0.964
+     "predicted": 0.49919,
+     "observed": 0.5,
+     "defaults": 7,
+     "ratio_observed_to_predicted": 1.002
     },
     {
      "decile": 10,
-     "n": 20,
-     "pd_min": 0.55556,
+     "n": 19,
+     "pd_min": 0.68,
      "pd_max": 0.76923,
-     "predicted": 0.71393,
-     "observed": 0.75,
-     "defaults": 15,
-     "ratio_observed_to_predicted": 1.051
+     "predicted": 0.72227,
+     "observed": 0.73684,
+     "defaults": 14,
+     "ratio_observed_to_predicted": 1.02
     }
    ],
-   "ece": 0.0581,
+   "ece": 0.05723,
    "hosmer_lemeshow": {
-    "statistic": 6.745,
+    "statistic": 11.558,
     "dof": 8,
-    "p_value": 0.564351
+    "p_value": 0.172048
    },
    "mean_predicted": 0.28275,
    "observed_rate": 0.3,
    "low_risk": {
     "deciles": 3,
-    "predicted": 0.09425,
-    "observed": 0.1,
-    "ratio_observed_to_predicted": 1.061
+    "predicted": 0.08433,
+    "observed": 0.08333,
+    "ratio_observed_to_predicted": 0.988
    }
   },
   "logistic": {
@@ -690,9 +693,45 @@
    "p_value": 0.224555
   }
  },
+ "delong_oof": {
+  "lightgbm_vs_logistic": {
+   "auc_a": 0.7758,
+   "auc_b": 0.77432,
+   "auc_diff": 0.00149,
+   "diff_ci": [
+    -0.02083,
+    0.0238
+   ],
+   "z": 0.1307,
+   "p_value": 0.896009
+  },
+  "lightgbm_vs_scorecard": {
+   "auc_a": 0.7758,
+   "auc_b": 0.79611,
+   "auc_diff": -0.02031,
+   "diff_ci": [
+    -0.03817,
+    -0.00244
+   ],
+   "z": -2.2276,
+   "p_value": 0.0259093
+  },
+  "logistic_vs_scorecard": {
+   "auc_a": 0.77432,
+   "auc_b": 0.79611,
+   "auc_diff": -0.02179,
+   "diff_ci": [
+    -0.04018,
+    -0.0034
+   ],
+   "z": -2.3226,
+   "p_value": 0.0202018
+  }
+ },
  "champion": {
   "model": "scorecard",
   "label": "WoE skor kartı (optbinning + lojistik)",
+  "basis": "out_of_fold",
   "alpha": 0.05,
   "min_auc_gain": 0.005,
   "simplicity_order": [
@@ -704,69 +743,86 @@
    {
     "challenger": "logistic",
     "incumbent": "scorecard",
-    "auc_diff": -0.02071,
-    "p_value": 0.224555,
-    "verdict": "not_significant"
+    "auc_diff": -0.02179,
+    "p_value": 0.0202018,
+    "verdict": "worse",
+    "holdout_auc_diff": -0.02071,
+    "holdout_p_value": 0.224555
    },
    {
     "challenger": "lightgbm",
     "incumbent": "scorecard",
-    "auc_diff": -0.00869,
-    "p_value": 0.625787,
-    "verdict": "not_significant"
+    "auc_diff": -0.02031,
+    "p_value": 0.0259093,
+    "verdict": "worse",
+    "holdout_auc_diff": -0.00869,
+    "holdout_p_value": 0.625787
    }
   ],
   "steps": [
-   "Lojistik regresyon vs WoE skor kartı (optbinning + lojistik): ΔAUC=-0.0207, DeLong p=0.225 → anlamlı değil",
-   "Monotonik LightGBM + izotonik kalibrasyon vs WoE skor kartı (optbinning + lojistik): ΔAUC=-0.0087, DeLong p=0.626 → anlamlı değil"
+   "Lojistik regresyon vs WoE skor kartı (optbinning + lojistik): ΔAUC=-0.0218, DeLong p=0.0202 (katlama dışı) → anlamlı biçimde daha zayıf; hold-out teyidi ΔAUC=-0.0207, p=0.225",
+   "Monotonik LightGBM + izotonik kalibrasyon vs WoE skor kartı (optbinning + lojistik): ΔAUC=-0.0203, DeLong p=0.0259 (katlama dışı) → anlamlı biçimde daha zayıf; hold-out teyidi ΔAUC=-0.0087, p=0.626"
   ]
  },
  "fairness": {
   "approval_rate": 0.7,
   "min_group_size": 20,
+  "tie_break": {
+   "seed": 20260925,
+   "spread_seeds": 20
+  },
   "by_model": {
    "lightgbm": {
     "SEX": {
      "selection_rate": {
-      "Erkek": 0.7172,
-      "Kadın": 0.6545
+      "Erkek": 0.731,
+      "Kadın": 0.6182
      },
      "air": {
       "Erkek": 1.0,
-      "Kadın": 0.9126
+      "Kadın": 0.8457
      },
-     "min_air": 0.9126,
+     "min_air": 0.8457,
+     "testable": true,
      "passes_four_fifths": true,
      "group_size": {
       "Erkek": 145,
       "Kadın": 55
      },
      "tpr_good_approved": {
-      "Erkek": 0.8286,
-      "Kadın": 0.7429
+      "Erkek": 0.8571,
+      "Kadın": 0.6857
      },
      "fpr_bad_approved": {
-      "Erkek": 0.425,
+      "Erkek": 0.4,
       "Kadın": 0.5
      },
-     "tpr_gap": 0.0857,
-     "fpr_gap": 0.075
+     "tpr_gap": 0.1714,
+     "fpr_gap": 0.1,
+     "min_air_spread": {
+      "seeds": 20,
+      "min": 0.8131,
+      "median": 0.8623,
+      "max": 0.9126,
+      "share_passing": 1.0
+     }
     },
     "AGE_BAND": {
      "selection_rate": {
-      "21-29": 0.6154,
-      "30-39": 0.7576,
-      "40-49": 0.7647,
-      "50+": 0.7273
+      "21-29": 0.6026,
+      "30-39": 0.7727,
+      "40-49": 0.7353,
+      "50+": 0.7727
      },
      "air": {
-      "21-29": 0.8048,
-      "30-39": 0.9907,
-      "40-49": 1.0,
-      "50+": 0.9511
+      "21-29": 0.7799,
+      "30-39": 1.0,
+      "40-49": 0.9516,
+      "50+": 1.0
      },
-     "min_air": 0.8048,
-     "passes_four_fifths": true,
+     "min_air": 0.7799,
+     "testable": true,
+     "passes_four_fifths": false,
      "group_size": {
       "21-29": 78,
       "30-39": 66,
@@ -774,40 +830,49 @@
       "50+": 22
      },
      "tpr_good_approved": {
-      "21-29": 0.8,
+      "21-29": 0.8222,
       "30-39": 0.8235,
-      "40-49": 0.8077,
-      "50+": 0.7778
+      "40-49": 0.7692,
+      "50+": 0.8333
      },
      "fpr_bad_approved": {
-      "21-29": 0.3636,
-      "30-39": 0.5333,
+      "21-29": 0.303,
+      "30-39": 0.6,
       "40-49": 0.625,
       "50+": 0.5
      },
-     "tpr_gap": 0.0457,
-     "fpr_gap": 0.2614
+     "tpr_gap": 0.0641,
+     "fpr_gap": 0.322,
+     "min_air_spread": {
+      "seeds": 20,
+      "min": 0.7344,
+      "median": 0.7882,
+      "max": 0.8296,
+      "share_passing": 0.25
+     }
     },
     "FOREIGN_WORKER": {
      "selection_rate": {
       "Evet": 0.6911
      },
      "air": {
-      "Evet": 1.0
+      "Evet": null
      },
-     "min_air": 1.0,
-     "passes_four_fifths": true,
+     "min_air": null,
+     "testable": false,
+     "passes_four_fifths": null,
      "group_size": {
       "Evet": 191
      },
      "tpr_good_approved": {
-      "Evet": 0.8015
+      "Evet": 0.8092
      },
      "fpr_bad_approved": {
-      "Evet": 0.45
+      "Evet": 0.4333
      },
-     "tpr_gap": 0.0,
-     "fpr_gap": 0.0
+     "tpr_gap": null,
+     "fpr_gap": null,
+     "min_air_spread": null
     }
    },
    "logistic": {
@@ -821,6 +886,7 @@
       "Kadın": 0.9126
      },
      "min_air": 0.9126,
+     "testable": true,
      "passes_four_fifths": true,
      "group_size": {
       "Erkek": 145,
@@ -835,7 +901,14 @@
       "Kadın": 0.5
      },
      "tpr_gap": 0.0857,
-     "fpr_gap": 0.075
+     "fpr_gap": 0.075,
+     "min_air_spread": {
+      "seeds": 20,
+      "min": 0.9126,
+      "median": 0.9126,
+      "max": 0.9126,
+      "share_passing": 1.0
+     }
     },
     "AGE_BAND": {
      "selection_rate": {
@@ -851,6 +924,7 @@
       "50+": 0.9936
      },
      "min_air": 0.7161,
+     "testable": true,
      "passes_four_fifths": false,
      "group_size": {
       "21-29": 78,
@@ -871,17 +945,25 @@
       "50+": 0.5
      },
      "tpr_gap": 0.1333,
-     "fpr_gap": 0.3864
+     "fpr_gap": 0.3864,
+     "min_air_spread": {
+      "seeds": 20,
+      "min": 0.7161,
+      "median": 0.7161,
+      "max": 0.7161,
+      "share_passing": 0.0
+     }
     },
     "FOREIGN_WORKER": {
      "selection_rate": {
       "Evet": 0.6859
      },
      "air": {
-      "Evet": 1.0
+      "Evet": null
      },
-     "min_air": 1.0,
-     "passes_four_fifths": true,
+     "min_air": null,
+     "testable": false,
+     "passes_four_fifths": null,
      "group_size": {
       "Evet": 191
      },
@@ -891,8 +973,9 @@
      "fpr_bad_approved": {
       "Evet": 0.45
      },
-     "tpr_gap": 0.0,
-     "fpr_gap": 0.0
+     "tpr_gap": null,
+     "fpr_gap": null,
+     "min_air_spread": null
     }
    },
    "scorecard": {
@@ -906,6 +989,7 @@
       "Kadın": 0.8789
      },
      "min_air": 0.8789,
+     "testable": true,
      "passes_four_fifths": true,
      "group_size": {
       "Erkek": 145,
@@ -920,7 +1004,14 @@
       "Kadın": 0.45
      },
      "tpr_gap": 0.1047,
-     "fpr_gap": 0.05
+     "fpr_gap": 0.05,
+     "min_air_spread": {
+      "seeds": 20,
+      "min": 0.8789,
+      "median": 0.8789,
+      "max": 0.8789,
+      "share_passing": 1.0
+     }
     },
     "AGE_BAND": {
      "selection_rate": {
@@ -936,6 +1027,7 @@
       "50+": 1.0
      },
      "min_air": 0.6978,
+     "testable": true,
      "passes_four_fifths": false,
      "group_size": {
       "21-29": 78,
@@ -956,17 +1048,25 @@
       "50+": 0.5
      },
      "tpr_gap": 0.1601,
-     "fpr_gap": 0.447
+     "fpr_gap": 0.447,
+     "min_air_spread": {
+      "seeds": 20,
+      "min": 0.6978,
+      "median": 0.6978,
+      "max": 0.6978,
+      "share_passing": 0.0
+     }
     },
     "FOREIGN_WORKER": {
      "selection_rate": {
       "Evet": 0.6911
      },
      "air": {
-      "Evet": 1.0
+      "Evet": null
      },
-     "min_air": 1.0,
-     "passes_four_fifths": true,
+     "min_air": null,
+     "testable": false,
+     "passes_four_fifths": null,
      "group_size": {
       "Evet": 191
      },
@@ -976,8 +1076,9 @@
      "fpr_bad_approved": {
       "Evet": 0.4167
      },
-     "tpr_gap": 0.0,
-     "fpr_gap": 0.0
+     "tpr_gap": null,
+     "fpr_gap": null,
+     "min_air_spread": null
     }
    }
   }
@@ -1028,6 +1129,24 @@
     "fpr_gap": 0.3864,
     "passes_four_fifths": false,
     "kind": "baseline"
+   },
+   {
+    "model": "lightgbm",
+    "auc": 0.7701,
+    "approval_rate": 0.7,
+    "bad_rate_approved": 0.1857,
+    "min_air": 0.7799,
+    "selection_rate": {
+     "21-29": 0.6026,
+     "30-39": 0.7727,
+     "40-49": 0.7353,
+     "50+": 0.7727
+    },
+    "tpr_gap": 0.0641,
+    "fpr_gap": 0.322,
+    "passes_four_fifths": false,
+    "kind": "model_family",
+    "family": "lightgbm"
    },
    {
     "model": "Proxy zayıflatılmış lojistik",
@@ -1135,9 +1254,12 @@
   "recommendation": {
    "anchor": "Champion: WoE skor kartı (optbinning + lojistik)",
    "max_auc_loss": 0.01,
-   "recommended": null,
-   "kind": null,
-   "reason": "İzin verilen AUC kaybı (0.010) içinde Champion: WoE skor kartı (optbinning + lojistik) modelinden daha yüksek AIR veren alternatif yok."
+   "recommended": "lightgbm",
+   "kind": "model_family",
+   "min_air_from": 0.6978,
+   "min_air_to": 0.7799,
+   "auc_loss": 0.0087,
+   "reason": "AIR 0.698 → 0.780, AUC kaybı 0.0087 (sınır 0.010)."
   }
  },
  "shap_top_features": [

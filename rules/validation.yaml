@@ -14,6 +14,20 @@ champion_selection:
   min_auc_gain: 0.005           # pratik önem: en az 0,5 AUC puanı
   # Fark anlamlı ve önemli değilse daha basit/yorumlanabilir model seçilir.
   simplicity_order: [scorecard, logistic, lightgbm]
+  # Seçim, eğitim payındaki çapraz doğrulamanın katlama dışı (out-of-fold) tahminleri
+  # üzerinde DeLong testiyle yapılır; hold-out yalnızca teyit için raporlanır (seçim ve
+  # raporlama aynı veride yapılırsa hold-out iyimser olur).
+  basis: out_of_fold
+
+promotion:
+  # Terfi kapısı (app/validation/evidence.py). Kanıt model AİLESİ / tarifi içindir: üretim
+  # artefaktı sentetik veriyle eğitildiği için artefakt özetine bağlı gerçek veri kanıtı yoktur.
+  # Kural: (1) aile kulvar A'da tanımlı olmalı — bilinmeyen aile reddedilir, başka ailenin
+  # kanıtı ödünç alınmaz; (2) en az bir gerçek veri seti bulunmalı; (3) challenger, champion'a
+  # göre HİÇBİR veri setinde hold-out DeLong testinde anlamlı biçimde daha zayıf olmamalı
+  # (ΔAUC < 0 ve p < significance_level ise ret).
+  evidence: holdout
+  require_every_dataset: true
 
 fairness:
   air_threshold: 0.80           # 4/5 kuralı
@@ -22,6 +36,9 @@ fairness:
   age_labels: ["21-29", "30-39", "40-49", "50+"]
   min_group_size: 20            # mutlak alt sınır
   min_group_share: 0.02         # grup, örneklemin en az %2'si değilse AIR'a alınmaz (oran gürültülü)
+  # Eşit PD'ler (izotonik kalibrasyon) kesim noktasında tohumlu rastgele sırayla onaylanır;
+  # sonucun satır sırasına bağlı olmadığını göstermek için AIR bu kadar tohumda raporlanır.
+  tie_break_seeds: 20
 
 lda:
   attribute: auto               # auto = champion'da en düşük AIR'a sahip korunan özellik

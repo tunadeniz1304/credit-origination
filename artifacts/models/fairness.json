@@ -12,6 +12,7 @@
     "K": 0.9962
    },
    "min_air": 0.9962,
+   "testable": true,
    "passes_four_fifths": true,
    "group_size": {
     "E": 9094,
@@ -43,6 +44,7 @@
     "50+": 1.0
    },
    "min_air": 0.9679,
+   "testable": true,
    "passes_four_fifths": true,
    "group_size": {
     "21-29": 3361,
@@ -88,6 +90,7 @@
     "İzmir": 0.9296
    },
    "min_air": 0.9296,
+   "testable": true,
    "passes_four_fifths": true,
    "group_size": {
     "Ankara": 2337,

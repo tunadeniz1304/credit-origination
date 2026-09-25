@@ -45,17 +45,19 @@ Overall approval rate: **54.8%**
 
 ## Real-data results (lane A, same approval rate for every model)
 
-| Dataset | Champion | Attribute | Min AIR | Passes 0.8 | TPR gap |
-|---|---|---|---|---|---|
-| german_credit | scorecard | SEX | 0.879 | yes | 0.105 |
-| german_credit | scorecard | AGE_BAND | 0.698 | **no** | 0.160 |
-| german_credit | scorecard | FOREIGN_WORKER | 1.000 | yes | 0.000 |
-| uci_taiwan | lightgbm | SEX | 0.935 | yes | 0.019 |
-| uci_taiwan | lightgbm | AGE_BAND | 0.879 | yes | 0.068 |
-| uci_taiwan | lightgbm | EDUCATION | 0.878 | yes | 0.071 |
-| uci_taiwan | lightgbm | MARRIAGE | 0.979 | yes | 0.015 |
+Tied PDs at the cut-off are approved in a seeded random order; the range is the minimum AIR over the tie-break seeds. An attribute with only one group above the minimum group size is not testable (n/a).
 
-The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real data: on German Credit the champion fails the four-fifths rule for age band, and no alternative within the allowed AUC loss fixes it (see the LDA tables in `VALIDATION_REPORT.md`).
+| Dataset | Champion | Attribute | Min AIR | Range over tie-break seeds | Passes 0.8 | TPR gap |
+|---|---|---|---|---|---|---|
+| german_credit | scorecard | SEX | 0.879 | 0.879–0.879 | yes | 0.105 |
+| german_credit | scorecard | AGE_BAND | 0.698 | 0.698–0.698 | **no** | 0.160 |
+| german_credit | scorecard | FOREIGN_WORKER | n/a | — | n/a | n/a |
+| uci_taiwan | lightgbm | SEX | 0.932 | 0.930–0.937 | yes | 0.023 |
+| uci_taiwan | lightgbm | AGE_BAND | 0.882 | 0.871–0.884 | yes | 0.065 |
+| uci_taiwan | lightgbm | EDUCATION | 0.877 | 0.874–0.882 | yes | 0.074 |
+| uci_taiwan | lightgbm | MARRIAGE | 0.978 | 0.974–0.982 | yes | 0.016 |
+
+The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real data: on German Credit the champion fails the four-fifths rule for age band. The fairest alternative within the allowed AUC loss (the LightGBM family) raises the age-band AIR but still stays below 0.8, so the finding is open (see the LDA tables in `VALIDATION_REPORT.md`).
 
 ## Interpretation
 
