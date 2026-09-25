@@ -103,6 +103,8 @@ SHAP TreeExplainer on the log-odds margin → adverse contributions mapped to Tu
 ## Limitations
 * Production features are synthetic; only the methodology, the behaviour sub-score and the calibration level are validated on real (non-Turkish, credit-card) data. Retrain and validate on bank data before production.
 * The real anchor's target (next-month card default) differs from the platform target (90+ DPD in 12 months).
+* **Reject inference is not addressed.** A live model only observes outcomes of approved applicants, so training on booked loans biases PD downward for the declined region. Neither public set contains rejected applicants; with a real portfolio, parceling or fuzzy augmentation (or a small randomised approval band) is needed before retraining.
+* **No out-of-time evidence on real data.** The public sets have no usable time axis (Taiwan is one six-month window; German Credit is undated), so lane A uses stratified CV + hold-out; PSI drift monitoring stands in for out-of-time testing in production.
 * Macroeconomic shocks shift distributions — PSI drift is monitored hourly (`/api/v1/governance/drift`).
 * Thin-file applicants without open-banking consent carry more uncertainty (routed via the grey zone).
 
