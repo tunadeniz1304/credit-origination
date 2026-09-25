@@ -115,7 +115,8 @@ class Settings(BaseSettings):
         default=None, validation_alias=AliasChoices("SEED_DEMO_USERS", "DEMO_USERS_ENABLED")
     )
     demo_password: SecretStr = SecretStr("Demo123!")
-    registration_enabled: bool = True
+    # Self-registration: on by default in dev/test, off in prod unless explicitly enabled.
+    registration_enabled: bool | None = None
     captcha_provider: Literal["none", "hook"] = "none"
     # Browser sessions: HttpOnly cookie + signed double-submit CSRF token.
     session_cookie_name: str = "anil2_session"
@@ -172,7 +173,22 @@ class Settings(BaseSettings):
     def _environment_defaults(self) -> Settings:
         if self.seed_demo_users is None:
             self.seed_demo_users = self.app_env != "prod"
+        if self.registration_enabled is None:
+            self.registration_enabled = self.app_env != "prod"
         return self
+
+    def production_problems(self) -> list[str]:
+        """Settings that must not reach production; the app refuses to start with any."""
+        problems = []
+        if self.using_dev_jwt_secret or len(self.jwt_secret.get_secret_value()) < 32:
+            problems.append("JWT_SECRET must be a strong secret (>= 32 characters)")
+        if not self.pii_encryption_key.get_secret_value():
+            problems.append("PII_ENCRYPTION_KEY is empty")
+        if not self.blind_index_key.get_secret_value():
+            problems.append("BLIND_INDEX_KEY is empty")
+        if self.registration_enabled and self.captcha_provider == "none":
+            problems.append("self-registration without CAPTCHA (set CAPTCHA_PROVIDER=hook)")
+        return problems
 
     @property
     def demo_mode(self) -> bool:

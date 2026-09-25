@@ -17,6 +17,7 @@ from app.core.security import (
     create_access_token,
     csrf_token_for,
     hash_password,
+    revoke_token,
     verify_password,
 )
 from app.db.audit import append_audit
@@ -90,8 +91,13 @@ def login(
 
 
 @router.post("/logout")
-def logout(response: Response) -> dict:
+def logout(request: Request, response: Response) -> dict:
     settings = get_settings()
+    header = request.headers.get("authorization", "")
+    token = header[7:] if header.lower().startswith("bearer ") else None
+    token = token or request.cookies.get(settings.session_cookie_name)
+    if token:
+        revoke_token(token)  # the JWT stops working now, not at its expiry
     for name in (settings.session_cookie_name, settings.csrf_cookie_name):
         response.delete_cookie(name, path="/", secure=settings.cookie_secure, samesite="strict")
     return {"status": "ok"}

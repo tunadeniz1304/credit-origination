@@ -120,3 +120,57 @@ def test_prod_start_does_not_seed_demo_users(tmp_path):
 def test_health_reports_ocr_and_demo_mode(client):
     body = client.get("/health").json()
     assert set(body["ocr"]) >= {"available", "reason"} and body["demo_mode"] is True
+
+
+def test_logout_revokes_the_bearer_token(client):
+    token = client.post(
+        "/api/v1/auth/login", json={"username": "uzman", "password": "Demo123!"}
+    ).json()["access_token"]
+    client.cookies.clear()
+    headers = {"Authorization": f"Bearer {token}"}
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 200
+    client.post("/api/v1/auth/logout", headers=headers)
+    assert client.get("/api/v1/auth/me", headers=headers).status_code == 401
+
+
+def test_prod_refuses_unsafe_settings():
+    strong = "x" * 40
+    unsafe = Settings(_env_file=None, app_env="prod")  # type: ignore[call-arg]
+    problems = " ".join(unsafe.production_problems())
+    assert "JWT_SECRET" in problems and "PII_ENCRYPTION_KEY" in problems
+    assert unsafe.registration_enabled is False  # self-registration off by default in prod
+    safe = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        app_env="prod",
+        jwt_secret=strong,
+        pii_encryption_key=strong,
+        blind_index_key=strong,
+    )
+    assert safe.production_problems() == []
+    open_registration = Settings(  # type: ignore[call-arg]
+        _env_file=None,
+        app_env="prod",
+        jwt_secret=strong,
+        pii_encryption_key=strong,
+        blind_index_key=strong,
+        registration_enabled=True,
+    )
+    assert any("CAPTCHA" in p for p in open_registration.production_problems())
+
+
+def test_app_does_not_start_with_unsafe_prod_settings(monkeypatch):
+    import asyncio
+
+    from app.main import app, lifespan
+
+    monkeypatch.setattr(
+        "app.main.get_settings",
+        lambda: Settings(_env_file=None, app_env="prod"),  # type: ignore[call-arg]
+    )
+
+    async def start():
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="unsafe production settings"):
+        asyncio.run(start())

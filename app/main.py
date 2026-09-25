@@ -55,6 +55,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     settings = get_settings()
     logger = get_logger("app.main")
     validate_llm_settings(settings)
+    if settings.app_env == "prod" and (problems := settings.production_problems()):
+        raise RuntimeError("unsafe production settings: " + "; ".join(problems))
     from app.core.users import ensure_demo_users
     from app.db.session import init_db, session_scope
 
@@ -72,8 +74,6 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     get_models()  # warm models (and SHAP) before serving traffic
     register_recorder(_buffer_llm_call)
     register_after_commit(_flush_llm_calls)
-    if settings.using_dev_jwt_secret and settings.app_env == "prod":
-        logger.warning("JWT_SECRET is the development default: set a strong secret in production")
     logger.info(startup_banner(settings))
     logger.info("Application initialised (env=%s)", settings.app_env)
     yield
@@ -83,7 +83,7 @@ def create_app() -> FastAPI:
     settings = get_settings()
     app = FastAPI(
         title=settings.app_name,
-        version="2.0.0",
+        version="2.1.0",
         description=(
             "Explainable, human-in-the-loop hybrid credit origination platform: KYC and fraud "
             "pre-checks, intelligent document processing, open-banking cash-flow analytics, "
