@@ -19,6 +19,7 @@ from app.ews.model import watchlist_entry
 from app.governance.drift import compute_drift_report
 from app.governance.fairness import live_fairness
 from app.governance.inventory import (
+    SERVING_NOTE,
     GovernanceError,
     approve_promotion,
     approve_rule_set,
@@ -119,7 +120,13 @@ def promote(
         row = approve_promotion(session, model_id, user.username)
     except GovernanceError as exc:
         raise _err(exc) from exc
-    return {"model_id": row.id, "role": row.role, "status": row.status, "approvals": row.approvals}
+    return {
+        "model_id": row.id,
+        "role": row.role,
+        "status": row.status,
+        "approvals": row.approvals,
+        "serving": SERVING_NOTE,
+    }
 
 
 @router.get("/api/v1/governance/drift")
@@ -238,7 +245,7 @@ def approve(
     version: str, session: Session = Depends(db_session), user: Principal = Depends(MODEL_ROLES)
 ) -> dict[str, Any]:
     try:
-        row = approve_rule_set(session, version, user.username)
+        row = approve_rule_set(session, version, user.username, user.role)
     except GovernanceError as exc:
         raise _err(exc) from exc
     return {"version": row.id, "status": row.status, "approvals": row.approvals}

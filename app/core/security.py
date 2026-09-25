@@ -12,6 +12,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+import threading
 from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
@@ -114,6 +115,7 @@ class _RevocationList:
 
     def __init__(self) -> None:
         self._local: dict[str, float] = {}
+        self._lock = threading.Lock()
         self._client: Any = None
         self._client_for: tuple[str, str] | None = None
         self._next_probe = 0.0
@@ -140,20 +142,28 @@ class _RevocationList:
                     raise AuthError("revocation list unavailable") from exc
         return self._client
 
+    def _drop_client(self) -> None:
+        """Forget a Redis that failed mid-request; ``auto`` waits before probing it again."""
+        self._client = None
+        self._next_probe = datetime.now(UTC).timestamp() + self._RETRY_SECONDS
+
     def add(self, jti: str, expires_at: float, settings: Settings) -> None:
         now = datetime.now(UTC).timestamp()
-        self._local = {k: v for k, v in self._local.items() if v > now}
-        self._local[jti] = expires_at
+        with self._lock:
+            self._local = {k: v for k, v in self._local.items() if v > now}
+            self._local[jti] = expires_at
         client = self._redis(settings)
         if client is not None:
             try:
                 client.set(f"anil2:revoked:{jti}", 1, ex=max(1, int(expires_at - now)))
             except Exception as exc:
-                self._client = None
+                self._drop_client()
                 raise AuthError("revocation list unavailable") from exc
 
     def contains(self, jti: str, settings: Settings) -> bool:
-        if self._local.get(jti, 0.0) > datetime.now(UTC).timestamp():
+        with self._lock:
+            expires_at = self._local.get(jti, 0.0)
+        if expires_at > datetime.now(UTC).timestamp():
             return True
         client = self._redis(settings)
         if client is None:
@@ -161,7 +171,7 @@ class _RevocationList:
         try:
             return bool(client.exists(f"anil2:revoked:{jti}"))
         except Exception as exc:  # fail closed: an unanswerable check is not a pass
-            self._client = None
+            self._drop_client()
             raise AuthError("revocation list unavailable") from exc
 
 

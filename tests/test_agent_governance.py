@@ -214,6 +214,18 @@ def test_model_inventory_card_and_promotion_four_eyes(client, users, app_id, mon
         "/api/v1/models/challenger_lr_v2/promote", headers=users["modelyon2"]
     ).json()
     assert second["role"] == "champion" and second["status"] == "TERFI_ONAYLANDI"
+    assert "artefakt" in second["serving"]
+    # One PD champion: the old one is retired, the scorecard slot is untouched.
+    with session_scope() as session:
+        from sqlalchemy import select
+
+        from app.db.models import ModelRecord
+
+        roles = dict(session.execute(select(ModelRecord.id, ModelRecord.role)).all())
+    assert roles["pd_lgbm_v2"] == "retired" and roles["challenger_lr_v2"] == "champion"
+    assert [m for m, r in roles.items() if r == "champion" and m != "challenger_lr_v2"] == [
+        m for m in roles if m.startswith("scorecard")
+    ]
 
 
 def test_drift_fairness_endpoints(client, users, app_id):  # app_id: at least one decision
@@ -265,14 +277,17 @@ def test_rule_set_backtest_and_two_approvals(client, users, app_id):
         headers=users["modelyon"],
     ).json()
     assert created["status"] == "TASLAK"
+    # The submitter cannot approve their own draft.
+    own = client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon"])
+    assert own.status_code == 403 and "sunan" in own.json()["detail"]
     assert (
-        client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon"]).json()[
+        client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon2"]).json()[
             "status"
         ]
         == "TASLAK"
     )
     assert (
-        client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon"]).status_code
+        client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["modelyon2"]).status_code
         == 403
     )
     active = client.post("/api/v1/rule-sets/policy_v3/approve", headers=users["komite"]).json()
@@ -286,6 +301,33 @@ def test_rule_set_backtest_and_two_approvals(client, users, app_id):
         from app.db.models import RuleSet
 
         session.get(RuleSet, "policy_v3").status = "ARSIV"
+
+
+def test_rule_set_needs_the_credit_committee():
+    """Two model managers alone cannot change risk appetite."""
+    from app.core.rules import policy_file_text
+    from app.db.models import RuleSet
+    from app.governance.inventory import GovernanceError, approve_rule_set, submit_rule_set
+
+    content = policy_file_text().replace("version: policy_v2", "version: policy_v9")
+    with session_scope() as session:
+        submit_rule_set(session, "policy_v9", content, "komite")
+        approve_rule_set(session, "policy_v9", "modelyon", "model_yoneticisi")
+        with pytest.raises(GovernanceError, match="komite"):
+            approve_rule_set(session, "policy_v9", "modelyon2", "model_yoneticisi")
+        assert session.get(RuleSet, "policy_v9").status == "TASLAK"
+        session.delete(session.get(RuleSet, "policy_v9"))
+
+
+def test_one_rule_set_in_force_at_a_time():
+    from sqlalchemy.exc import IntegrityError
+
+    from app.db.models import RuleSet
+
+    with pytest.raises(IntegrityError), session_scope() as session:
+        session.add(RuleSet(id="dup_a", content="x", status="YURURLUKTE"))
+        session.add(RuleSet(id="dup_b", content="x", status="YURURLUKTE"))
+        session.flush()
 
 
 def test_watchlist_after_disbursal(client, users):

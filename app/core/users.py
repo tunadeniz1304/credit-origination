@@ -23,6 +23,16 @@ DEMO_USERS: tuple[tuple[str, str, str], ...] = (
 )
 
 
+def active_demo_accounts(session: Session) -> list[str]:
+    """Demo usernames still active in the database (their password is public)."""
+    names = [username for username, _, _ in DEMO_USERS]
+    return sorted(
+        session.execute(
+            select(User.username).where(User.username.in_(names), User.active.is_(True))
+        ).scalars()
+    )
+
+
 def ensure_demo_users(session: Session, settings: Settings | None = None) -> int:
     settings = settings or get_settings()
     if not settings.seed_demo_users:

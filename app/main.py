@@ -56,10 +56,16 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     logger = get_logger("app.main")
     validate_llm_settings(settings)
     settings.refuse_unsafe_production("api")
-    from app.core.users import ensure_demo_users
+    from app.core.users import active_demo_accounts, ensure_demo_users
     from app.db.session import init_db, session_scope
 
     init_db(settings)
+    if settings.app_env == "prod":
+        with session_scope(settings, readonly=True) as session:
+            if demo := active_demo_accounts(session):
+                raise RuntimeError(
+                    "api: unsafe production settings: active demo accounts " + ", ".join(demo)
+                )
     from sqlalchemy.exc import IntegrityError
 
     try:
@@ -170,7 +176,10 @@ def _include_optional_routers(app: FastAPI) -> None:
     """Routers of later phases (workbench, governance, agent, demo)."""
     import importlib
 
-    for name in ("workbench", "governance", "agent", "demo"):
+    names = ["workbench", "governance", "agent"]
+    if get_settings().app_env != "prod":  # demo seeding endpoints never ship to production
+        names.append("demo")
+    for name in names:
         try:
             module = importlib.import_module(f"app.api.routes.{name}")
         except ModuleNotFoundError:

@@ -33,6 +33,11 @@ from app.validation.evidence import (
 )
 
 REQUIRED_APPROVALS = 2
+COMMITTEE_ROLES = frozenset({"komite", "admin"})
+# The engine serves the artifacts under MODELS_PATH; a promotion changes the
+# registry of record, and the release that ships the promoted artifact is what
+# changes scoring.
+SERVING_NOTE = "kayıt güncellendi; skorlama yeni artefakt yayımlanınca değişir"
 
 
 class GovernanceError(ValueError):
@@ -250,8 +255,15 @@ def approve_promotion(session: Session, model_id: str, approver: str) -> ModelRe
         payload={"approvals": len(approvals)},
     )
     if len(approvals) >= REQUIRED_APPROVALS:
+        # The challenger replaces whoever holds the PD slot, whatever its kind;
+        # the scorecard is a separate slot and keeps its champion.
+        scorecard = get_models().scorecard.version
         for other in session.execute(
-            select(ModelRecord).where(ModelRecord.role == "champion", ModelRecord.kind == row.kind)
+            select(ModelRecord).where(
+                ModelRecord.role == "champion",
+                ModelRecord.id != scorecard,
+                ModelRecord.id != row.id,
+            )
         ).scalars():
             other.role = "retired"
         row.role = "champion"
@@ -262,6 +274,7 @@ def approve_promotion(session: Session, model_id: str, approver: str) -> ModelRe
             action="MODEL_PROMOTED",
             entity_type="model",
             entity_id=model_id,
+            payload={"serving": SERVING_NOTE},
         )
     return row
 
@@ -320,7 +333,11 @@ def submit_rule_set(session: Session, version: str, content: str, actor: str) ->
     if session.get(RuleSet, version) is not None:
         raise GovernanceError("bu versiyon zaten mevcut")
     row = RuleSet(
-        id=version, content=content, status="TASLAK", backtest=backtest_rule_set(session, content)
+        id=version,
+        content=content,
+        status="TASLAK",
+        backtest=backtest_rule_set(session, content),
+        submitted_by=actor,
     )
     session.add(row)
     append_audit(
@@ -334,22 +351,32 @@ def submit_rule_set(session: Session, version: str, content: str, actor: str) ->
     return row
 
 
-def approve_rule_set(session: Session, version: str, approver: str) -> RuleSet:
+def approve_rule_set(
+    session: Session, version: str, approver: str, role: str = "komite"
+) -> RuleSet:
+    """Two approvals from people other than the submitter, one of them the
+    credit committee: a rule set changes risk appetite, not just a model."""
     row = session.get(RuleSet, version)
     if row is None:
         raise GovernanceError("kural seti bulunamadı", 404)
     if row.status != "TASLAK":
         raise GovernanceError("kural seti taslak durumda değil")
+    if row.submitted_by and approver == row.submitted_by:
+        raise GovernanceError("dört göz: taslağı sunan kişi onaylayamaz", 403)
     approvals = list(row.approvals or [])
     if approver in {a["by"] for a in approvals}:
         raise GovernanceError("dört göz: aynı kişi ikinci kez onay veremez", 403)
-    approvals.append({"by": approver, "at": utcnow().isoformat()})
+    committee = role in COMMITTEE_ROLES or any(a.get("role") in COMMITTEE_ROLES for a in approvals)
+    if len(approvals) + 1 >= REQUIRED_APPROVALS and not committee:
+        raise GovernanceError("kural seti için kredi komitesi onayı gerekli", 403)
+    approvals.append({"by": approver, "role": role, "at": utcnow().isoformat()})
     row.approvals = approvals
     if len(approvals) >= REQUIRED_APPROVALS:
         for active in session.execute(
-            select(RuleSet).where(RuleSet.status == "YURURLUKTE")
+            select(RuleSet).where(RuleSet.status == "YURURLUKTE").with_for_update()
         ).scalars():
             active.status = "ARSIV"
+        session.flush()  # archive first: the partial unique index allows one active row
         row.status = "YURURLUKTE"
         row.activated_at = utcnow()
         append_audit(

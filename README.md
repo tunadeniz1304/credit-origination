@@ -1,7 +1,7 @@
 # Anil2 — Explainable Hybrid Credit Origination Platform
 
 [![CI](https://github.com/tunadeniz1304/Anil2/actions/workflows/ci.yml/badge.svg)](https://github.com/tunadeniz1304/Anil2/actions/workflows/ci.yml)
-![tests](https://img.shields.io/badge/tests-231%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-89%25-brightgreen) ![python](https://img.shields.io/badge/python-3.11-blue)
+![tests](https://img.shields.io/badge/tests-401%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-93%25-brightgreen) ![python](https://img.shields.io/badge/python-3.11-blue)
 
 > **Human-in-the-loop, explainable hybrid credit decisioning designed with the BDDK credit allocation guidance and KVKK art. 11 in mind. Because the LLM layer is OpenAI-compatible, it can be moved to an on-premise model (vLLM/Ollama) with a one-line setting to support BDDK data-localisation requirements; designed with the EU AI Act high-risk requirements in mind. The methodology is validated on real public credit data; Turkish data is synthetic (see Limitations).**
 
@@ -20,7 +20,7 @@ Local development without Docker (SQLite + inline worker, no Redis required):
 ```bash
 pip install -r requirements.txt
 uvicorn app.main:app --reload       # models are already in artifacts/models
-python -m pytest -q --cov=app       # 231 tests, 89% coverage
+python -m pytest -q --cov=app       # 401 tests, 93% coverage
 ```
 
 **Demo users** (password `Demo123!`, dev only): `basvuran`, `basvuran2` (applicants) · `uzman`, `uzman2` (credit specialists) · `kidemli` (senior specialist) · `komite` (credit committee) · `modelyon`, `modelyon2` (model managers) · `admin`.
@@ -109,9 +109,12 @@ ideas, **not** a peer of these products.
 | Cash-flow underwriting (open banking) | 24 transaction features (income volatility, NSF, gambling share, savings rate …) |
 | Risk-based pricing | PD×LGD×EAD, Basel IRB other-retail capital, RAROC-solved rate, BSMV/KKDF, legal cap, APR, DSR re-check after pricing |
 | Model risk management (SR 26-2) | Inventory, model cards, real-data validation, PSI drift, evidence-gated champion/challenger with four-eyes |
+| Rule-set governance | Back-tested drafts; two approvers other than the submitter, one of them the credit committee; one rule set in force (DB-enforced) |
 
 ## Limitations
 
+* **Policy v2 is a draft risk appetite.** Until a rule set is activated through `/api/v1/rule-sets` (committee approval), the engine falls back to the shipped `rules/policy_v2.yaml`. A production deployment should activate its signed-off policy through that workflow before taking traffic.
+* **Promotion changes the registry, not the scorer.** The engine serves the artifacts under `MODELS_PATH`; a promoted challenger is scored once its artifact ships in a release.
 * **No real integrations.** KKB/Findeks, e-Devlet, SGK, GİB and open banking (GEÇİT) are mocks.
 * **Turkish data is synthetic.** The production model runs on Turkey-specific synthetic features. Its
   methodology (lane A) and the bureau behaviour sub-score are validated on **real public data** (UCI
@@ -190,7 +193,7 @@ Interactive docs: `http://localhost:8000/docs`.
 
 ## Quality gates
 
-`ruff check .` · `ruff format --check .` · `mypy app` (clean) · `pytest --cov=app` (231 tests, 89 %) · `docker compose build` — all enforced in [CI](.github/workflows/ci.yml).
+`ruff check .` · `ruff format --check .` · `mypy app` (clean) · `pytest --cov=app` (401 tests, 93 %) · `docker compose build` — all enforced in [CI](.github/workflows/ci.yml).
 
 ## Documentation
 

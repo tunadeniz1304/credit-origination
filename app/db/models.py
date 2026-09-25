@@ -313,12 +313,23 @@ class ModelRecord(TimestampMixin, Base):
 
 class RuleSet(TimestampMixin, Base):
     __tablename__ = "rule_sets"
+    # At most one rule set in force (concurrent activations cannot both win).
+    __table_args__ = (
+        Index(
+            "uq_rule_sets_one_active",
+            "status",
+            unique=True,
+            sqlite_where=text("status = 'YURURLUKTE'"),
+            postgresql_where=text("status = 'YURURLUKTE'"),
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     content: Mapped[str] = mapped_column(Text)
     status: Mapped[str] = mapped_column(String(16), default="TASLAK")  # TASLAK|YURURLUKTE|ARSIV
     backtest: Mapped[dict[str, Any]] = mapped_column(default=dict)
     approvals: Mapped[list[Any]] = mapped_column(default=list)
+    submitted_by: Mapped[str | None] = mapped_column(String(64))
     activated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 

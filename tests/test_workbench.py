@@ -343,3 +343,7 @@ def test_pending_review_index_exists_after_migration(tmp_path):
     command.upgrade(cfg, "head")
     indexes = {i["name"]: i for i in inspect(create_engine(url)).get_indexes("reviews")}
     assert indexes["uq_reviews_one_pending"]["unique"]
+    inspector = inspect(create_engine(url))
+    rule_indexes = {i["name"]: i for i in inspector.get_indexes("rule_sets")}
+    assert rule_indexes["uq_rule_sets_one_active"]["unique"]
+    assert "submitted_by" in {c["name"] for c in inspector.get_columns("rule_sets")}

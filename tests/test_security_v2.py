@@ -198,6 +198,29 @@ def test_prod_refuses_demo_users_and_a_local_revocation_list():
     assert any("SESSION_REVOCATION_BACKEND" in p for p in local)
 
 
+def test_prod_refuses_active_demo_accounts_and_hides_the_demo_router(monkeypatch, client):
+    """Audit v2.1 round 3: seeded demo accounts outlive SEED_DEMO_USERS=false."""
+    import asyncio
+
+    from fastapi import FastAPI
+
+    from app.main import _include_optional_routers, app, lifespan
+
+    monkeypatch.setattr("app.main.get_settings", lambda: _strong_prod())
+
+    async def start():
+        async with lifespan(app):
+            pass
+
+    with pytest.raises(RuntimeError, match="active demo accounts"):
+        asyncio.run(start())  # the test database holds the seeded demo users
+    bare = FastAPI()
+    _include_optional_routers(bare)
+    paths = set(bare.openapi()["paths"])
+    assert "/api/v1/governance/drift" in paths
+    assert not any(path.startswith("/api/v1/demo") for path in paths)
+
+
 def test_worker_refuses_unsafe_production_settings(monkeypatch):
     from app.worker import celery_app
 
@@ -273,6 +296,19 @@ def test_revocation_list_reprobes_redis_in_auto_mode(monkeypatch):
     assert revoked.contains("x", auto) is False  # not re-probed before the retry interval
     revoked._next_probe = 0.0  # interval elapsed
     assert revoked.contains("x", auto) is True  # Redis is back: its list counts again
+
+
+def test_runtime_redis_error_backs_off_in_auto_mode(monkeypatch):
+    from app.core.security import AuthError, _RevocationList
+
+    auto = Settings(_env_file=None, session_revocation_backend="auto")  # type: ignore[call-arg]
+    revoked = _RevocationList()
+    probes = []
+    monkeypatch.setattr("redis.Redis.from_url", lambda *a, **k: probes.append(1) or _BrokenRedis())
+    with pytest.raises(AuthError):
+        revoked.contains("y", auto)
+    assert revoked.contains("y", auto) is False  # no re-probe on every request after a failure
+    assert len(probes) == 1 and revoked._next_probe > 0
 
 
 def test_token_stops_working_when_the_user_is_deactivated_or_changes_role(client):
