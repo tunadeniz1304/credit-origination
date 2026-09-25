@@ -149,120 +149,120 @@
  "production_calibration": {
   "model": "pd_lgbm_v2",
   "test_rows": 16803,
-  "ece": 0.00513,
+  "ece": 0.00536,
   "hosmer_lemeshow": {
-   "statistic": 11.505,
+   "statistic": 13.572,
    "dof": 8,
-   "p_value": 0.174678
+   "p_value": 0.0936242
   },
   "low_risk": {
    "deciles": 3,
-   "predicted": 0.0226,
-   "observed": 0.0234,
-   "ratio_observed_to_predicted": 1.036
+   "predicted": 0.02143,
+   "observed": 0.02311,
+   "ratio_observed_to_predicted": 1.078
   },
   "low_risk_within_tolerance": true,
-  "low_risk_deciles_within_tolerance": true,
+  "low_risk_deciles_within_tolerance": false,
   "tolerance_ratio": 0.25,
   "deciles": [
    {
     "decile": 1,
-    "n": 1681,
+    "n": 752,
     "pd_min": 0.0005,
-    "pd_max": 0.02343,
-    "predicted": 0.01653,
-    "observed": 0.01963,
-    "defaults": 33,
-    "ratio_observed_to_predicted": 1.188
+    "pd_max": 0.01731,
+    "predicted": 0.008,
+    "observed": 0.01596,
+    "defaults": 12,
+    "ratio_observed_to_predicted": 1.994
    },
    {
     "decile": 2,
-    "n": 1681,
+    "n": 3197,
     "pd_min": 0.02343,
     "pd_max": 0.02343,
     "predicted": 0.02343,
-    "observed": 0.02558,
-    "defaults": 43,
-    "ratio_observed_to_predicted": 1.092
+    "observed": 0.02315,
+    "defaults": 74,
+    "ratio_observed_to_predicted": 0.988
    },
    {
     "decile": 3,
-    "n": 1681,
-    "pd_min": 0.02343,
-    "pd_max": 0.03231,
-    "predicted": 0.02783,
-    "observed": 0.02499,
-    "defaults": 42,
-    "ratio_observed_to_predicted": 0.898
-   },
-   {
-    "decile": 4,
-    "n": 1680,
-    "pd_min": 0.03231,
-    "pd_max": 0.05361,
-    "predicted": 0.03368,
-    "observed": 0.0375,
-    "defaults": 63,
-    "ratio_observed_to_predicted": 1.113
-   },
-   {
-    "decile": 5,
-    "n": 1680,
-    "pd_min": 0.05361,
-    "pd_max": 0.07412,
-    "predicted": 0.06109,
-    "observed": 0.07083,
-    "defaults": 119,
+    "n": 552,
+    "pd_min": 0.02812,
+    "pd_max": 0.02812,
+    "predicted": 0.02812,
+    "observed": 0.03261,
+    "defaults": 18,
     "ratio_observed_to_predicted": 1.16
    },
    {
+    "decile": 4,
+    "n": 2183,
+    "pd_min": 0.03231,
+    "pd_max": 0.04966,
+    "predicted": 0.03298,
+    "observed": 0.03436,
+    "defaults": 75,
+    "ratio_observed_to_predicted": 1.042
+   },
+   {
+    "decile": 5,
+    "n": 1570,
+    "pd_min": 0.05361,
+    "pd_max": 0.06831,
+    "predicted": 0.05966,
+    "observed": 0.07134,
+    "defaults": 112,
+    "ratio_observed_to_predicted": 1.196
+   },
+   {
     "decile": 6,
-    "n": 1680,
+    "n": 1602,
     "pd_min": 0.07412,
-    "pd_max": 0.15638,
-    "predicted": 0.10359,
-    "observed": 0.12143,
-    "defaults": 204,
-    "ratio_observed_to_predicted": 1.172
+    "pd_max": 0.15562,
+    "predicted": 0.09336,
+    "observed": 0.1005,
+    "defaults": 161,
+    "ratio_observed_to_predicted": 1.076
    },
    {
     "decile": 7,
-    "n": 1680,
+    "n": 2107,
     "pd_min": 0.15638,
     "pd_max": 0.21207,
-    "predicted": 0.17923,
-    "observed": 0.17976,
-    "defaults": 302,
-    "ratio_observed_to_predicted": 1.003
+    "predicted": 0.17988,
+    "observed": 0.19032,
+    "defaults": 401,
+    "ratio_observed_to_predicted": 1.058
    },
    {
     "decile": 8,
-    "n": 1680,
-    "pd_min": 0.21207,
+    "n": 1578,
+    "pd_min": 0.21351,
     "pd_max": 0.27835,
-    "predicted": 0.24593,
-    "observed": 0.24762,
-    "defaults": 416,
-    "ratio_observed_to_predicted": 1.007
+    "predicted": 0.25223,
+    "observed": 0.25475,
+    "defaults": 402,
+    "ratio_observed_to_predicted": 1.01
    },
    {
     "decile": 9,
-    "n": 1680,
-    "pd_min": 0.27835,
+    "n": 1617,
+    "pd_min": 0.30233,
     "pd_max": 0.38088,
-    "predicted": 0.35294,
-    "observed": 0.3494,
-    "defaults": 587,
-    "ratio_observed_to_predicted": 0.99
+    "predicted": 0.35807,
+    "observed": 0.35065,
+    "defaults": 567,
+    "ratio_observed_to_predicted": 0.979
    },
    {
     "decile": 10,
-    "n": 1680,
-    "pd_min": 0.38088,
+    "n": 1645,
+    "pd_min": 0.38889,
     "pd_max": 0.9995,
-    "predicted": 0.58466,
-    "observed": 0.57857,
-    "defaults": 972,
+    "predicted": 0.589,
+    "observed": 0.58298,
+    "defaults": 959,
     "ratio_observed_to_predicted": 0.99
    }
   ],
@@ -290,6 +290,54 @@
     "real_default_rate": 0.6287,
     "mean_predicted_pd": 0.6374,
     "n": 645
+   }
+  ],
+  "note": "Internal consistency only: the synthetic outcomes are drawn from the same anchored curve the model is trained on, so a match shows the level was imposed correctly, not that it is right for a 12-month 90+DPD loan PD."
+ },
+ "policy_cutoffs": {
+  "population": "anchored synthetic test set (application_month > 20)",
+  "test_rows": 16803,
+  "observed_default_rate": 0.1655,
+  "note": "Measured on the anchored synthetic population, whose PD level is imposed from a real proxy curve (next-month card default), not validated. Only the PD thresholds are applied; rule-based referrals and declines (DSR, fraud, documents) are not.",
+  "rows": [
+   {
+    "policy": "policy_v2",
+    "model": "pd_lgbm_v2",
+    "auto_approve_max_pd": 0.08,
+    "auto_decline_min_pd": 0.3,
+    "share_auto_approve": 0.5481,
+    "share_referred": 0.2578,
+    "share_auto_decline": 0.1941,
+    "bad_rate_auto_approved": 0.0403,
+    "bad_rate_referred": 0.2041,
+    "bad_rate_auto_declined": 0.4678,
+    "mean_pd_auto_approved": 0.0361
+   },
+   {
+    "policy": "policy_v1 thresholds",
+    "model": "pd_lgbm_v2",
+    "auto_approve_max_pd": 0.05,
+    "auto_decline_min_pd": 0.2,
+    "share_auto_approve": 0.3978,
+    "share_referred": 0.28,
+    "share_auto_decline": 0.3223,
+    "bad_rate_auto_approved": 0.0268,
+    "bad_rate_referred": 0.1144,
+    "bad_rate_auto_declined": 0.3812,
+    "mean_pd_auto_approved": 0.0252
+   },
+   {
+    "policy": "policy_v1",
+    "model": "pd_lgbm_v1 (retired; git history)",
+    "auto_approve_max_pd": 0.05,
+    "auto_decline_min_pd": 0.2,
+    "share_auto_approve": 0.5914,
+    "share_referred": 0.2988,
+    "share_auto_decline": 0.1098,
+    "bad_rate_auto_approved": 0.0479,
+    "bad_rate_referred": 0.2568,
+    "bad_rate_auto_declined": 0.5507,
+    "mean_pd_auto_approved": 0.0129
    }
   ]
  }

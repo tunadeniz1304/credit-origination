@@ -4,11 +4,12 @@
 version: policy_v2
 description: Bireysel ihtiyaç kredisi tahsis politikası (örnek, kurgusal)
 effective_from: "2026-09-25"
-# v2 değişikliği: PD modeli gerçek halka açık veriye çıpalanarak yeniden kalibre edildi
-# (pd_lgbm_v2; ortalama PD %10,6 → %16,3; eski model düşük risk bölgesinde riski ~2 kat
-# düşük tahmin ediyordu). Eşikler aynı risk iştahını yeni ölçekte ifade eder: otomatik onaylanan
-# portföyün gerçekleşen kötü oranı v1'de %4,8 idi; v2'de PD ≤ %8 ile %4,0 (sentetik test seti,
-# payı %55). Ayrıntı: docs/MODEL_CARD.md, "Policy recalibration".
+# v2 değişikliği: PD seviyesi gerçek bir vekil eğriden (sonraki ay kart temerrüdü) dayatıldı
+# (çapalama; doğrulama değildir). pd_lgbm_v2 ortalama PD %10,6 → %16,3. Eşikler aynı risk
+# iştahını yeni ölçekte ifade eder. Çapalanmış sentetik test setinde (ay > 20, yalnızca PD
+# eşikleri; scripts/run_lane_b.py → artifacts/validation/lane_b.json "policy_cutoffs"):
+# otomatik onaylanan portföyün kötü oranı v1'de %4,8 (payı %59); v2'de PD ≤ %8 ile %4,0
+# (payı %55, otomatik ret %19). Ayrıntı: docs/MODEL_CARD.md, "Policy recalibration".
 
 products:
   IHTIYAC:

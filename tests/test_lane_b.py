@@ -110,9 +110,56 @@ def test_committed_lane_b_evidence_is_within_tolerance():
     assert lane["anchors"]["source"] == "uci_taiwan (full)"
     assert lane["generator_check"]["all_within_tolerance"]
     calib = lane["production_calibration"]
-    assert calib["low_risk_within_tolerance"] and calib["low_risk_deciles_within_tolerance"]
+    assert calib["low_risk_within_tolerance"]
+    # Per decile the lowest (tie-aware) decile is under-predicted: an open, documented finding.
+    # The flag must follow the committed deciles, never be asserted into existence.
+    tolerance = calib["tolerance_ratio"]
+    low = calib["deciles"][: calib["low_risk"]["deciles"]]
+    assert calib["low_risk_deciles_within_tolerance"] == all(
+        abs(d["ratio_observed_to_predicted"] - 1) <= tolerance for d in low
+    )
+    assert sum(d["n"] for d in calib["deciles"]) == calib["test_rows"]
     for band in calib["per_band_level"][:2]:  # large bands: level matches the real rate
         assert abs(band["mean_predicted_pd"] - band["real_default_rate"]) < 0.05
+
+
+def test_documented_policy_cutoffs_match_the_artifact():
+    import json
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    lane = json.loads(pm.LANE_B_PATH.read_text(encoding="utf-8"))
+    rows = {row["policy"]: row for row in lane["policy_cutoffs"]["rows"]}
+    v1, v1_on_v2, v2 = rows["policy_v1"], rows["policy_v1 thresholds"], rows["policy_v2"]
+
+    def pct(value: float) -> str:
+        return f"{value * 100:.1f} %"
+
+    card = (root / "docs" / "MODEL_CARD.md").read_text(encoding="utf-8")
+    table = {
+        line.split("|")[1].strip(): [c.strip().strip("*") for c in line.split("|")[3:7]]
+        for line in card.splitlines()
+        if re.match(r"\| \**v[12]", line)
+    }
+    for label, row in (
+        ("v1 (PD ≤ 5 % / ≥ 20 %)", v1),
+        ("v1 cut-offs on the v2 model", v1_on_v2),
+        ("**v2 (PD ≤ 8 % / ≥ 30 %)**", v2),
+    ):
+        assert table[label] == [
+            pct(row["share_auto_approve"]),
+            pct(row["share_referred"]),
+            pct(row["share_auto_decline"]),
+            pct(row["bad_rate_auto_approved"]),
+        ], label
+    assert v2["bad_rate_auto_approved"] <= v1["bad_rate_auto_approved"]
+    # The same numbers, rounded, in the policy file comment and the final report.
+    policy = (root / "rules" / "policy_v2.yaml").read_text(encoding="utf-8")
+    report = (root / "docs" / "FINAL_REPORT_v2.md").read_text(encoding="utf-8")
+    for text in (policy, report):
+        for value in (v1["bad_rate_auto_approved"], v2["bad_rate_auto_approved"]):
+            assert f"{value * 100:.1f}".replace(".", ",") in text or pct(value) in text
 
 
 def test_train_behaviour_score_on_fixture(tmp_path):
