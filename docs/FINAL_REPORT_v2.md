@@ -182,3 +182,22 @@ synthetic population is under-predicted (observed/predicted 1.99, 12 defaults in
 | 8 | medium | Prod gaps: demo users could be forced on, worker skipped the checks, dev Fernet fallback, stale roles in tokens | Prod refuses `SEED_DEMO_USERS`; worker runs the same checks; crypto refuses the dev key in prod; tokens of deactivated users or changed roles stop working (`d941ace`) |
 | 9 | low | Lane B policy table not bound to the policy file or model | `policy_cutoffs` records thresholds and model SHA-256; test compares them with `policy_v2.yaml` and the committed model (`1b4bc45`) |
 
+
+### Round 3 — score 8.6 / 10, 8 findings (final round)
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | medium | Promotion retired champions of the same `kind` only, leaving two PD champions; the engine serves fixed artifacts | The challenger retires whoever holds the PD slot (the scorecard slot is separate); the response and audit entry state that scoring changes when the promoted artifact ships (`72ebed4`) |
+| 2 | medium | "Pending committee sign-off" not enforced: two model managers or the submitter could activate a rule set | Two approvers other than the submitter, one of them `komite`; the shipped `policy_v2.yaml` fallback is documented as a draft risk appetite to be activated through the workflow (`72ebed4`) |
+| 3 | medium | German AIR reported without sampling error | Within-group bootstrap interval for the minimum AIR and paired intervals for LDA gains; German age band 0.698 [0.545, 0.845] is *indicative, not statistically established* (`9b31444`) |
+| 4 | low | Same-family promotion refused with an unclear reason | Allowed explicitly with a same-family reason (`9b31444`) |
+| 5 | low | README quoted 231 tests / 89 % | 401 tests / 93 % (`72ebed4`) |
+| 6 | low | Auto revocation list re-probed a failing Redis on every request; unguarded local list | Back-off after runtime errors; lock around the local list (`72ebed4`) |
+| 7 | low | Two rule sets could be active at once | Partial unique index `uq_rule_sets_one_active` (migration 0003) and archive-then-activate under `FOR UPDATE` (`72ebed4`) |
+| 8 | low | Prod started with seeded demo accounts still active; demo router mounted | Prod refuses active demo accounts; the demo router is not mounted in prod (`72ebed4`) |
+
+Round 3 was the last round the spec allows. The score stayed below 9 / 10, but all eight findings
+are resolved. What remains is stated scope rather than a defect: the Turkish model is trained on
+synthetic data, the integrations are mocks, and policy v2 still needs sign-off from a real credit committee. Gate after the fixes:
+ruff, format and mypy clean; 401 passed, 1 skipped; 93 % coverage (governance 94.3 %, worker
+100 %, dispatcher 100 %); `docker compose build` OK.

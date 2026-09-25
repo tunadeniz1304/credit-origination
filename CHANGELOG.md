@@ -32,6 +32,9 @@ Closes the findings of the independent v2 audit (7.5/10) and validates the model
 - Prod refuses to start (API and worker) with a weak JWT secret, missing PII/blind-index keys, demo users, registration without CAPTCHA or a non-Redis revocation list; logout revokes the token (fail-closed check); deactivated users and changed roles invalidate existing tokens.
 - Champion chosen out-of-fold; promotion and LDA require evidence on both out-of-fold and hold-out; seeded tie-breaking with AIR ranges; policy v2 documented as a risk-appetite change pending committee sign-off; lane B cut-off table bound to the policy file and model hash.
 - CI enforces 90 % total coverage and per-area floors; tests are order independent.
+- Rule sets need two approvers other than the submitter, one from the credit committee; only one rule set can be in force (migration 0003). Promotion keeps a single PD champion.
+- Minimum AIR reported with a bootstrap interval and verdict; LDA gains with paired intervals; same-family promotion allowed explicitly.
+- Prod refuses active demo accounts and hides the demo router; the revocation list backs off after Redis errors.
 
 ## [2.0.0] — 2026-09-24
 
