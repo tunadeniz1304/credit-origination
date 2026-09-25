@@ -22,7 +22,7 @@
   <span class="spacer"></span>
   <span class="ai-badge" x-show="llm" x-text="llm && llm.mode === 'live' ? 'AI: Canlı (' + llm.model + ')' : 'AI: Demo'" :title="llm ? 'LLM çağrıları: ' + llm.calls : ''"></span>
   <button type="button" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'" :aria-pressed="theme === 'dark' ? 'true' : 'false'" x-text="theme === 'dark' ? '☀' : '☾'"></button>
-  <template x-if="user"><span><span x-text="user.full_name + ' · ' + user.role_label"></span> <button type="button" @click="logout()">Çıkış</button></span></template>
+  <template x-if="user"><span><span x-text="userLabel()"></span> <button type="button" @click="logout()">Çıkış</button></span></template>
 </header>
 
 <main id="main" tabindex="-1">
@@ -166,8 +166,8 @@
             <template x-if="current.decision">
               <div>
                 <p><span class="badge" :class="stateClass(current.decision.outcome)" x-text="current.decision.outcome_label"></span> <span class="badge warn" x-show="current.decision.conditional">Koşullu (karşı teklif)</span></p>
-                <ul><template x-for="r in current.decision.reason_codes"><li x-text="r.text"></li></template></ul>
-                <div x-show="current.decision.counterfactuals.length"><h3>Ne değişirse onaylanırsınız?</h3><ul><template x-for="c in current.decision.counterfactuals"><li x-text="c"></li></template></ul></div>
+                <ul><template x-for="r in current.decision.reason_codes"><li><span class="badge" :class="reasonKindClass(r)" x-show="reasonKindLabel(r)" x-text="reasonKindLabel(r)"></span> <span x-text="r.text"></span></li></template></ul>
+                <div x-show="current.decision.counterfactuals && current.decision.counterfactuals.length"><h3>Ne değişirse onaylanırsınız?</h3><ul><template x-for="c in current.decision.counterfactuals"><li x-text="c"></li></template></ul></div>
                 <details><summary>Bildirim mektubu</summary><div class="letter" x-text="current.decision.applicant_letter"></div></details>
                 <form x-show="current.decision.objection_right && (current.state === 'OTOMATIK_RET' || current.state === 'REDDEDILDI')" @submit.prevent="submitObjection()">
                   <h3>İtiraz (KVKK m.11)</h3>
@@ -248,10 +248,10 @@
               <td><button type="button" class="linklike" @click="openStaff(r.application_id)" x-text="r.application_id"></button></td>
               <td x-text="lbl('review_action', r.action) + (r.amount ? ' · ' + tl(r.amount) : '') + ' · hazırlayan ' + r.maker + ' · gerekli ' + lbl('role', r.required_role)"></td>
               <td x-text="r.justification"></td>
-              <td class="nowrap"><template x-if="r.maker !== user.username"><span>
+              <td class="nowrap"><template x-if="!isMine(r)"><span>
                 <button type="button" class="primary" @click="checkReview(r, true)" :aria-label="'Onayla: ' + r.application_id">Onayla</button>
                 <button type="button" class="danger" @click="checkReview(r, false)" :aria-label="'Reddet: ' + r.application_id">Reddet</button></span></template>
-                <span class="muted" x-show="r.maker === user.username">Sizin talebiniz</span></td>
+                <span class="muted" x-show="isMine(r)">Sizin talebiniz</span></td>
             </tr></template></tbody>
           </table>
           <p class="muted" x-show="!reviews.length">Onay bekleyen talep yok.</p>
@@ -273,7 +273,7 @@
         <div class="card muted" x-show="!staff">Ayrıntıları görmek için kuyruktan bir başvuru seçin.</div>
         <template x-if="staff">
           <div class="card" aria-labelledby="staff-title">
-            <div class="row"><h2 id="staff-title" class="flush" x-text="staff.detail.application_id + ' · ' + staff.detail.applicant.name"></h2><span class="badge" :class="stateClass(staff.detail.state)" x-text="staff.detail.state_label"></span><span class="spacer"></span>
+            <div class="row"><h2 id="staff-title" class="flush" x-text="staff.detail.application_id + ' · ' + (staff.detail.applicant ? staff.detail.applicant.name : '')"></h2><span class="badge" :class="stateClass(staff.detail.state)" x-text="staff.detail.state_label"></span><span class="spacer"></span>
               <button type="button" @click="download('/api/v1/applications/' + staff.detail.application_id + '/report?format=pdf', 'rapor.pdf')">Rapor (PDF)</button>
               <button type="button" @click="assign()">Üstlen</button></div>
             <p class="muted" x-text="lbl('product', staff.detail.product) + ' · ' + (staff.detail.assigned_to ? 'atanan: ' + staff.detail.assigned_to : 'atanmamış')"></p>
@@ -281,7 +281,7 @@
 
             <div role="tabpanel" aria-labelledby="tab-ozet" x-show="staff.tab === 'ozet'" class="grid">
               <div><div class="muted">Talep</div><div class="kpi" x-text="tl(staff.detail.requested_amount)"></div><div class="muted" x-text="staff.detail.requested_term_months + ' ay · beyan gelir ' + tl(staff.detail.declared_income)"></div></div>
-              <div x-show="staff.decision"><div class="muted">PD / bant / skor</div><div class="kpi" x-text="staff.decision ? pct(staff.decision.pd) + ' · ' + staff.decision.risk_band : ''"></div><div class="muted" x-text="staff.decision ? 'Skor kartı ' + round(staff.decision.score_points) + ' · challenger ' + pct(staff.decision.challenger.pd) : ''"></div></div>
+              <div x-show="staff.decision"><div class="muted">PD / bant / skor</div><div class="kpi" x-text="staff.decision ? pct(staff.decision.pd) + ' · ' + staff.decision.risk_band : ''"></div><div class="muted" x-text="decisionScores()"></div></div>
               <div><div class="muted">KYC</div><div x-text="staff.detail.kyc ? ('Yaptırım: ' + (staff.detail.kyc.sanctions_match ? 'OLASI EŞLEŞME' : 'yok') + ' · velocity ' + staff.detail.kyc.velocity_30d + ' · halka ' + staff.detail.kyc.fraud_ring_size + ' · anomali ' + staff.detail.kyc.anomaly_score) : '—'"></div></div>
               <div class="span-all"><h3>Zaman çizelgesi</h3><ul class="timeline"><template x-for="e in staff.detail.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor + ' · ' + e.reason"></span></li></template></ul></div>
             </div>
@@ -302,7 +302,7 @@
               </template>
             </div>
 
-            <div role="tabpanel" aria-labelledby="tab-kkb" x-show="staff.tab === 'kkb'"><template x-if="staff.decision"><table><tbody><template x-for="k in bureauKeys"><tr><th scope="row" x-text="k[1]"></th><td x-text="staff.decision.feature_snapshot[k[0]] === null ? '—' : staff.decision.feature_snapshot[k[0]]"></td></tr></template></tbody></table></template></div>
+            <div role="tabpanel" aria-labelledby="tab-kkb" x-show="staff.tab === 'kkb'"><template x-if="staff.decision"><table><tbody><template x-for="k in bureauKeys"><tr><th scope="row" x-text="k[1]"></th><td x-text="snapshotValue(k[0])"></td></tr></template></tbody></table></template></div>
 
             <div role="tabpanel" aria-labelledby="tab-nakit" x-show="staff.tab === 'nakit'">
               <div class="chart-box"><canvas id="cashChart" role="img" aria-label="Aylık gelir, harcama ve ay sonu bakiye grafiği; ayrıntılar aşağıdaki tabloda"></canvas></div>
@@ -313,10 +313,10 @@
             <div role="tabpanel" aria-labelledby="tab-karar" x-show="staff.tab === 'karar'"><template x-if="staff.decision"><div class="grid-2">
               <div><h3>SHAP katkıları (log-odds)</h3><div class="chart-box"><canvas id="shapChart" role="img" aria-label="SHAP katkıları grafiği; değerler yandaki tabloda"></canvas></div>
                 <table><caption class="sr-only">SHAP katkıları</caption><thead><tr><th scope="col">Özellik</th><th scope="col">Katkı</th></tr></thead><tbody><template x-for="x in shapRows()"><tr><td x-text="x.label"></td><td class="num" x-text="x.value"></td></tr></template></tbody></table></div>
-              <div><h3>Gerekçeler</h3><ul><template x-for="r in staff.decision.reason_codes"><li><span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
+              <div><h3>Gerekçeler</h3><ul><template x-for="r in staff.decision.reason_codes"><li><span class="badge" :class="reasonKindClass(r)" x-show="reasonKindLabel(r)" x-text="reasonKindLabel(r)"></span> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
                 <h3>Politika kuralları</h3><ul><template x-for="r in firedRules()"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="lbl('rule_action', r.action)"></span> <span x-text="r.description"></span></li></template></ul>
                 <h3>Karşı-olgusal</h3><ul><template x-for="c in staff.decision.counterfactuals"><li x-text="c"></li></template></ul>
-                <p class="muted" x-text="'Kural seti ' + staff.decision.rule_set_version + ' · model ' + staff.decision.model_version + ' · özet ' + staff.decision.feature_hash.slice(0,12)"></p>
+                <p class="muted" x-text="decisionMeta()"></p>
                 <button type="button" @click="replay()">Kararı yeniden üret (replay)</button> <span role="status" x-text="staff.replay"></span></div>
             </div></template></div>
 
@@ -380,7 +380,7 @@
       <div class="grid-2">
         <div class="card"><h2>Adillik (AIR, 4/5 kuralı)</h2>
           <template x-for="(s, attr) in (dash.fairness && dash.fairness.offline ? dash.fairness.offline.attributes : {})"><div><b x-text="lbl('fairness_attr', attr)"></b> <span class="badge" :class="s.passes_four_fifths ? 'ok' : 'bad'" x-text="'min AIR ' + s.min_air"></span></div></template>
-          <p class="muted" x-text="dash.fairness ? ('Canlı kararlar: ' + dash.fairness.live.decisions) : ''"></p></div>
+          <p class="muted" x-text="dash.fairness && dash.fairness.live ? ('Canlı kararlar: ' + dash.fairness.live.decisions) : ''"></p></div>
         <div class="card"><h2>Drift (PSI)</h2><table><thead><tr><th scope="col">Özellik</th><th scope="col">PSI</th><th scope="col">Durum</th></tr></thead><tbody><template x-for="(v,k) in (dash.drift ? dash.drift.features : {})"><tr><td x-text="k"></td><td class="num" x-text="v.psi"></td><td><span class="badge" :class="v.status === 'STABIL' ? 'ok' : (v.status === 'ORTA' ? 'warn' : 'bad')" x-text="lbl('drift', v.status)"></span></td></tr></template></tbody></table></div>
       </div>
       <div class="grid-2">
@@ -395,8 +395,8 @@
           </div></template>
           <p class="muted" x-show="dash.cc && dash.cc.validation && !dash.cc.validation.available">Gerçek veri doğrulama sonuçları bulunamadı.</p>
           <p class="error" role="alert" x-show="promoteError" x-text="promoteError"></p>
-          <table><thead><tr><th scope="col">Model</th><th scope="col">Rol</th><th scope="col">AUC (sentetik)</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead><tbody><template x-for="m in dash.models" :key="m.model_id"><tr><td x-text="m.model_id"></td><td x-text="lbl('model_role', m.role)"></td><td class="num" x-text="m.metrics.auc || '—'"></td><td><button type="button" x-show="user.role === 'model_yoneticisi' && m.role === 'challenger'" @click="promote(m.model_id)" :aria-label="'Terfi onayı: ' + m.model_id">Terfi onayı</button></td></tr></template></tbody></table></div>
-        <div class="card"><h2>Erken uyarı izleme listesi</h2><table><thead><tr><th scope="col">Başvuru</th><th scope="col">EWS skoru</th><th scope="col">Tetikleyiciler</th></tr></thead><tbody><template x-for="w in (dash.watchlist ? dash.watchlist.entries : [])"><tr><td x-text="w.application_id"></td><td class="num" x-text="w.ews_score"></td><td x-text="w.triggers.join(', ') || '—'"></td></tr></template></tbody></table>
+          <table><thead><tr><th scope="col">Model</th><th scope="col">Rol</th><th scope="col">AUC (sentetik)</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead><tbody><template x-for="m in dash.models" :key="m.model_id"><tr><td x-text="m.model_id"></td><td x-text="lbl('model_role', m.role)"></td><td class="num" x-text="m.metrics && m.metrics.auc ? m.metrics.auc : '—'"></td><td><button type="button" x-show="canPromote(m)" @click="promote(m.model_id)" :aria-label="'Terfi onayı: ' + m.model_id">Terfi onayı</button></td></tr></template></tbody></table></div>
+        <div class="card"><h2>Erken uyarı izleme listesi</h2><table><thead><tr><th scope="col">Başvuru</th><th scope="col">EWS skoru</th><th scope="col">Tetikleyiciler</th></tr></thead><tbody><template x-for="w in (dash.watchlist ? dash.watchlist.entries : [])"><tr><td x-text="w.application_id"></td><td class="num" x-text="w.ews_score"></td><td x-text="(w.triggers || []).join(', ') || '—'"></td></tr></template></tbody></table>
           <p class="muted" x-show="!dash.watchlist || !dash.watchlist.entries.length">İzlenen kredi yok.</p></div>
       </div>
     </div></template>
@@ -480,7 +480,36 @@
         <div class="card">
           <h2>Şerit B (çapalama)</h2>
           <p class="muted" x-show="!validation.lane_b">Şerit B sonuçları henüz üretilmedi.</p>
-          <template x-if="validation.lane_b"><table><tbody><template x-for="r in laneBRows()" :key="r[0]"><tr><th scope="row" x-text="r[0]"></th><td x-text="r[1]"></td></tr></template></tbody></table></template>
+          <template x-if="validation.lane_b"><div>
+            <p class="muted" x-text="laneBIntro()"></p>
+            <div class="grid-2">
+              <div class="table-scroll"><table>
+                <caption>Gerçek veride gecikme bandına göre temerrüt (çapa)</caption>
+                <thead><tr><th scope="col">Gecikme bandı (ay)</th><th scope="col">Temerrüt oranı</th><th scope="col">Pay</th><th scope="col">n</th></tr></thead>
+                <tbody><template x-for="r in laneBAnchors()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.rate"></td><td class="num" x-text="r.share"></td><td class="num" x-text="r.n"></td></tr></template></tbody>
+              </table></div>
+              <div class="table-scroll"><table>
+                <caption x-text="laneBGeneratorCaption()"></caption>
+                <thead><tr><th scope="col">Bant</th><th scope="col">Gerçek</th><th scope="col">Sentetik</th><th scope="col">Fark</th><th scope="col">Tolerans</th></tr></thead>
+                <tbody><template x-for="r in laneBGenerator()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.real"></td><td class="num" x-text="r.synthetic"></td><td class="num" x-text="r.gap"></td><td><span class="badge" :class="r.ok ? 'ok' : 'bad'" x-text="r.ok ? 'İçinde' : 'Dışında'"></span></td></tr></template></tbody>
+              </table></div>
+            </div>
+            <h3>Üretim modelinin kalibrasyonu (çapalanmış sentetik test seti)</h3>
+            <p class="muted" x-text="laneBCalibrationSummary()"></p>
+            <div class="grid-2">
+              <div class="table-scroll"><table>
+                <caption class="muted">Vurgulu satırlar düşük riskli dilimlerdir.</caption>
+                <thead><tr><th scope="col">Dilim</th><th scope="col">n</th><th scope="col">Tahmini</th><th scope="col">Gözlenen</th><th scope="col">Gözlenen/Tahmini</th></tr></thead>
+                <tbody><template x-for="d in laneBDeciles()" :key="d.decile"><tr :class="{lowrisk: d.lowRisk}"><th scope="row"><span x-text="d.decile"></span><span class="sr-only" x-show="d.lowRisk"> (düşük risk)</span></th><td class="num" x-text="d.n"></td><td class="num" x-text="d.predicted"></td><td class="num" x-text="d.observed"></td><td class="num" x-text="d.ratio"></td></tr></template></tbody>
+              </table></div>
+              <div class="table-scroll"><table>
+                <caption>Bant düzeyinde ortalama PD ve gerçek çapa</caption>
+                <thead><tr><th scope="col">Bant</th><th scope="col">Gerçek temerrüt</th><th scope="col">Ortalama PD</th><th scope="col">n</th></tr></thead>
+                <tbody><template x-for="r in laneBBandLevel()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.real"></td><td class="num" x-text="r.predicted"></td><td class="num" x-text="r.n"></td></tr></template></tbody>
+              </table></div>
+            </div>
+            <p class="muted" x-text="laneBBehaviour()"></p>
+          </div></template>
         </div>
       </div></template>
     </div>

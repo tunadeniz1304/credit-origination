@@ -149,7 +149,37 @@ function platform() {
       } catch (e) { this.error = e.message; }
     },
     demoLogin(username) { this.loginForm = { username, password: "Demo123!" }; return this.login(); },
-    clearSession() { this.user = null; this.current = null; this.staff = null; this.applications = []; this.queue = []; this.reviews = []; this.dash = {}; this.dashTab = "genel"; this.validation = null; this.promoteError = ""; },
+    clearSession() {
+      // Drop the role-specific data first and the user last, so no template bound
+      // to user.* re-renders against a null user.
+      clearTimeout(this.pollTimer); clearTimeout(this.searchTimer);
+      this.current = null; this.staff = null; this.applications = []; this.queue = []; this.reviews = [];
+      this.dash = {}; this.dashTab = "genel"; this.validation = null; this.promoteError = "";
+      this.user = null;
+    },
+    userLabel() { return this.user ? this.user.full_name + " · " + this.user.role_label : ""; },
+    isMine(r) { return !!this.user && r.maker === this.user.username; },
+    canPromote(m) { return !!this.user && this.user.role === "model_yoneticisi" && m.role === "challenger"; },
+    decisionScores() {
+      const d = this.staff && this.staff.decision;
+      if (!d) return "";
+      const parts = [];
+      if (d.score_points !== null && d.score_points !== undefined) parts.push("Skor kartı " + this.round(d.score_points));
+      if (d.challenger && d.challenger.pd !== undefined) parts.push("challenger " + this.pct(d.challenger.pd));
+      return parts.join(" · ") || this.lbl("decision_kind", d.kind);
+    },
+    decisionMeta() {
+      const d = this.staff && this.staff.decision;
+      if (!d) return "";
+      return "Kural seti " + (d.rule_set_version || "—") + " · model " + (d.model_version || "—") + " · özet " + (d.feature_hash ? d.feature_hash.slice(0, 12) : "—");
+    },
+    snapshotValue(key) {
+      const snap = this.staff && this.staff.decision && this.staff.decision.feature_snapshot;
+      const v = snap ? snap[key] : null;
+      return v === null || v === undefined ? "—" : v;
+    },
+    reasonKindLabel(r) { return { improvement: "İyileştirme alanı", condition: "Koşul", adverse: "Olumsuz etken" }[r && r.kind] || ""; },
+    reasonKindClass(r) { return { improvement: "ok", condition: "warn", adverse: "bad" }[r && r.kind] || ""; },
     async logout() {
       try { await this.api("/api/v1/auth/logout", { method: "POST" }); } catch (e) { /* cookies may already be gone */ }
       this.clearSession();
@@ -515,10 +545,42 @@ function platform() {
       return hit ? hit.legal_caveat : "";
     },
     proxyList() { return Object.entries((this.vs().lda || {}).proxy_strength || {}).slice(0, 5).map((e) => e[0] + " (" + this.num(e[1], 2) + ")").join(", ") || "—"; },
-    laneBRows() {
-      const b = this.validation && this.validation.lane_b;
-      if (!b) return [];
-      return Object.entries(b).filter((e) => e[1] === null || typeof e[1] !== "object").map((e) => [e[0], String(e[1])]);
+    laneB() { return (this.validation && this.validation.lane_b) || {}; },
+    laneBIntro() {
+      const a = this.laneB().anchors || {};
+      return "Şerit B, sentetik Türkiye verisini gerçek halka açık veriye çapalar: kaynak " + (a.source || "—") + ", " + this.num(a.rows, 0) + " kayıt, genel temerrüt " + this.pct(a.overall_default_rate) + ".";
+    },
+    laneBAnchors() {
+      const bands = (this.laneB().anchors || {}).delinquency_band_default || {};
+      return Object.keys(bands).map((band) => ({ band, rate: this.pct(bands[band].default_rate), share: this.pct(bands[band].share), n: this.num(bands[band].n, 0) }));
+    },
+    laneBGeneratorCaption() {
+      const g = this.laneB().generator_check || {};
+      return "Sentetik üreteç kontrolü (tolerans ±" + this.num(g.tolerance_abs, 2) + "): " + (g.all_within_tolerance ? "tüm bantlar tolerans içinde" : "tolerans dışı bant var");
+    },
+    laneBGenerator() {
+      return ((this.laneB().generator_check || {}).bands || []).map((r) => ({ band: r.band, real: this.pct(r.real_default_rate), synthetic: this.pct(r.synthetic_default_rate), gap: this.num(r.abs_gap, 4), ok: r.within_tolerance }));
+    },
+    laneBCalibrationSummary() {
+      const c = this.laneB().production_calibration;
+      if (!c) return "Üretim kalibrasyonu raporlanmadı.";
+      const hl = c.hosmer_lemeshow || {}, lr = c.low_risk || {};
+      return (c.model || "") + " · " + this.num(c.test_rows, 0) + " test kaydı · ECE " + this.num(c.ece, 4) + " · Hosmer-Lemeshow p " + this.pval(hl.p_value)
+        + " · düşük riskli ilk " + (lr.deciles || 0) + " dilim: tahmini " + this.pct(lr.predicted) + ", gözlenen " + this.pct(lr.observed) + " (oran " + this.num(lr.ratio_observed_to_predicted, 2) + ", "
+        + (c.low_risk_within_tolerance ? "tolerans içinde" : "tolerans dışında") + ")";
+    },
+    laneBDeciles() {
+      const c = this.laneB().production_calibration || {};
+      const low = (c.low_risk && c.low_risk.deciles) || 0;
+      return (c.deciles || []).map((d) => ({ decile: d.decile, n: this.num(d.n, 0), predicted: this.num(d.predicted, 4), observed: this.num(d.observed, 4), ratio: this.num(d.ratio_observed_to_predicted, 2), lowRisk: d.decile <= low }));
+    },
+    laneBBandLevel() {
+      return ((this.laneB().production_calibration || {}).per_band_level || []).map((r) => ({ band: r.band, real: this.pct(r.real_default_rate), predicted: this.pct(r.mean_predicted_pd), n: this.num(r.n, 0) }));
+    },
+    laneBBehaviour() {
+      const b = this.laneB().behaviour_score;
+      if (!b) return "";
+      return "Davranış skoru (" + (b.version || "—") + "): hold-out AUC " + this.num(b.holdout_auc, 3) + ", " + this.num(b.holdout_rows, 0) + " kayıt, ortalama PD " + this.pct(b.holdout_mean_pd) + " / gözlenen temerrüt " + this.pct(b.holdout_default_rate) + ".";
     },
     ccEvidence() {
       const v = this.dash.cc && this.dash.cc.validation;
