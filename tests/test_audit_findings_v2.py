@@ -175,7 +175,6 @@ def test_f10_half_open_admits_a_single_probe():
     assert breaker._allow_request() is False  # everyone else waits for the probe
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f11_single_pending_review_per_application(tmp_path):
     from sqlalchemy import create_engine
     from sqlalchemy.exc import IntegrityError

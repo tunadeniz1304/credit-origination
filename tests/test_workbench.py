@@ -301,3 +301,44 @@ def test_request_more_documents(client, users):
         headers=users["uzman"],
     ).json()
     assert response["state"] == "BELGE_BEKLENIYOR"
+
+
+def test_concurrent_submissions_leave_one_pending_review(client, users):
+    """Audit F11: two specialists submitting at once must not create two pending reviews."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    application_id = submit_complete(
+        client, users["basvuran"], "gri", monthly_income=42_000, requested_amount=220_000
+    )
+    state = client.get(f"/api/v1/applications/{application_id}", headers=users["uzman"]).json()
+    assert state["state"] == "UZMAN_INCELEMESI"
+    body = {
+        "action": "ONAY",
+        "justification": "Gelir istikrarlı, teminat yeterli.",
+        "amount": 218_000,
+    }
+
+    def submit(user: str) -> int:
+        return client.post(
+            f"/api/v1/workbench/{application_id}/decision", json=body, headers=users[user]
+        ).status_code
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        codes = list(pool.map(submit, ["uzman", "uzman2", "uzman", "uzman2"]))
+    assert codes.count(201) == 1 and all(c == 409 for c in codes if c != 201)
+
+
+def test_pending_review_index_exists_after_migration(tmp_path):
+    from alembic.config import Config
+    from sqlalchemy import create_engine, inspect
+
+    from alembic import command
+    from app.core.config import PROJECT_ROOT
+
+    url = f"sqlite:///{(tmp_path / 'mig.db').as_posix()}"
+    cfg = Config(str(PROJECT_ROOT / "alembic.ini"))
+    cfg.set_main_option("script_location", str(PROJECT_ROOT / "alembic"))
+    cfg.attributes["url"] = url
+    command.upgrade(cfg, "head")
+    indexes = {i["name"]: i for i in inspect(create_engine(url)).get_indexes("reviews")}
+    assert indexes["uq_reviews_one_pending"]["unique"]

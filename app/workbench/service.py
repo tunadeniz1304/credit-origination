@@ -6,6 +6,7 @@ from datetime import UTC
 from typing import Any
 
 from sqlalchemy import or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.agents.llm_service import LLMService
@@ -203,8 +204,12 @@ class Workbench:
             required_role=check.required_role,
             four_eyes=check.four_eyes,
         )
-        self.session.add(review)
-        self.session.flush()
+        try:
+            with self.session.begin_nested():  # the partial unique index settles races
+                self.session.add(review)
+                self.session.flush()
+        except IntegrityError as exc:
+            raise WorkbenchError("bu başvuru için onay bekleyen bir karar var") from exc
         self.service.audit(
             "REVIEW_SUBMITTED",
             app.id,
