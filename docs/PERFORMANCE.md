@@ -19,7 +19,7 @@ database per run (`loadrun` helper: one uvicorn process, five generated PDFs per
   taken at the start of every write transaction (avoids `SQLITE_BUSY_SNAPSHOT` upgrade deadlocks);
   audit appends retry inside a savepoint. Under 20 concurrent clients the latency is queueing behind the
   single SQLite writer — use the Docker topology (PostgreSQL + Celery) for throughput.
-* `tests/test_concurrency.py` runs 20 applications + 20 workbench actions in parallel against a live
+* `tests/test_concurrency.py` runs 20 applications (five uploads each) + 20 logins in parallel against a live
   server and asserts 0 HTTP 500s and a valid audit chain.
 
 Reproduce (inline):
