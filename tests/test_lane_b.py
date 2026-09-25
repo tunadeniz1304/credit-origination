@@ -153,13 +153,60 @@ def test_documented_policy_cutoffs_match_the_artifact():
             pct(row["share_auto_decline"]),
             pct(row["bad_rate_auto_approved"]),
         ], label
-    assert v2["bad_rate_auto_approved"] <= v1["bad_rate_auto_approved"]
-    # The same numbers, rounded, in the policy file comment and the final report.
+    # On the same v2 model the v2 cut-offs approve a riskier book than the v1 cut-offs: a
+    # loosening of risk appetite (the retired-v1 row is not a like-for-like baseline).
+    assert v2["bad_rate_auto_approved"] > v1_on_v2["bad_rate_auto_approved"]
+    assert v2["share_auto_approve"] > v1_on_v2["share_auto_approve"]
+    # The same numbers, rounded, in the policy file comment and the final report, framed
+    # as a risk-appetite change that needs credit committee sign-off.
     policy = (root / "rules" / "policy_v2.yaml").read_text(encoding="utf-8")
     report = (root / "docs" / "FINAL_REPORT_v2.md").read_text(encoding="utf-8")
     for text in (policy, report):
-        for value in (v1["bad_rate_auto_approved"], v2["bad_rate_auto_approved"]):
+        for row in (v1, v1_on_v2, v2):
+            value = row["bad_rate_auto_approved"]
             assert f"{value * 100:.1f}".replace(".", ",") in text or pct(value) in text
+    assert "aynı risk iştahını" not in policy and "kredi komitesi" in policy
+    for text in (card, report):
+        assert "at or below the v1 level" not in text
+        assert "risk-appetite change" in text and "credit committee" in text
+
+
+def test_policy_cutoffs_were_measured_with_current_thresholds_and_model():
+    """The committed table must describe *this* policy file and *this* model artifact."""
+    import json
+
+    from app.core.rules import load_policy_file
+    from scripts.run_lane_b import POLICY_V1, model_fingerprint
+
+    lane = json.loads(pm.LANE_B_PATH.read_text(encoding="utf-8"))
+    table = lane["policy_cutoffs"]
+    decision = load_policy_file().decision
+    v2 = table["thresholds"]["policy_v2"]
+    assert (v2["auto_approve_max_pd"], v2["auto_decline_min_pd"]) == (
+        decision.auto_approve_max_pd,
+        decision.auto_decline_min_pd,
+    )
+    rows = {row["policy"]: row for row in table["rows"]}
+    assert rows["policy_v2"]["auto_approve_max_pd"] == decision.auto_approve_max_pd
+    assert rows["policy_v2"]["auto_decline_min_pd"] == decision.auto_decline_min_pd
+    for label in ("policy_v1", "policy_v1 thresholds"):
+        assert rows[label]["auto_approve_max_pd"] == POLICY_V1["auto_approve_max_pd"]
+        assert rows[label]["auto_decline_min_pd"] == POLICY_V1["auto_decline_min_pd"]
+    # Produced by the current production model files (a retrain invalidates the table).
+    assert table["model"] == rows["policy_v2"]["model"] == "pd_lgbm_v2"
+    assert table["model_sha256"] == model_fingerprint("pd_lgbm_v2")
+    assert set(table["model_sha256"]) == {
+        "artifacts/models/pd_lgbm_v2.txt",
+        "artifacts/models/pd_lgbm_v2.meta.json",
+    }
+
+
+def test_artifact_hash_ignores_checkout_line_endings(tmp_path):
+    from scripts.run_lane_b import artifact_sha256
+
+    (tmp_path / "lf.txt").write_bytes(b"tree\nleaf=1\n")
+    (tmp_path / "crlf.txt").write_bytes(b"tree\r\nleaf=1\r\n")
+    assert artifact_sha256(tmp_path / "lf.txt") == artifact_sha256(tmp_path / "crlf.txt")
 
 
 def test_train_behaviour_score_on_fixture(tmp_path):

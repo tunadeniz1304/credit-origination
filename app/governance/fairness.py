@@ -22,10 +22,15 @@ Protected attributes are never model inputs; they are used here only to
   post-processing that ``ThresholdOptimizer`` performs), all re-thresholded to
   the same approval rate. Group-specific thresholds use the protected
   attribute at decision time and carry a legal caveat.
+* When ``cv_folds`` is given, every trained row also carries its pooled
+  out-of-fold AUC on the training part, and :func:`recommend_lda` requires the
+  AUC loss to stay within the limit on **both** the out-of-fold and the
+  hold-out basis (a small hold-out alone is too noisy to accept a loss).
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 import numpy as np
@@ -275,6 +280,39 @@ def _row(
     }
 
 
+def _eg_scores(
+    X_fit: pd.DataFrame,
+    y_fit: np.ndarray,
+    a_fit: pd.Series,
+    X_score: pd.DataFrame,
+    epsilon: float,
+) -> np.ndarray:
+    """ExponentiatedGradient (demographic parity) ranking scores for ``X_score``."""
+    from fairlearn.reductions import DemographicParity, ExponentiatedGradient
+
+    # The reduction re-weights samples, which a Pipeline does not forward: fit it on the
+    # imputed + standardised matrix with a bare logistic regression.
+    from sklearn.impute import SimpleImputer
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
+
+    imputer = SimpleImputer(strategy="median").fit(X_fit)
+    scaler = StandardScaler().fit(imputer.transform(X_fit))
+    xtr = scaler.transform(imputer.transform(X_fit))
+    xte = scaler.transform(imputer.transform(X_score))
+    mitigator = ExponentiatedGradient(
+        LogisticRegression(max_iter=2000, C=0.5), DemographicParity(difference_bound=epsilon)
+    )
+    mitigator.fit(xtr, y_fit, sensitive_features=np.asarray(a_fit).astype(str))
+    # Weighted mixture of the reduction's probabilistic predictors (a ranking score);
+    # ``_pmf_predict`` mixes hard 0/1 predictions and would understate the AUC.
+    scores = np.zeros(len(xte))
+    for weight, predictor in zip(mitigator.weights_, mitigator.predictors_, strict=True):
+        if weight > 0:
+            scores += weight * predictor.predict_proba(xte)[:, 1]
+    return scores
+
+
 def less_discriminatory_search(
     X_train: pd.DataFrame,
     y_train: np.ndarray,
@@ -291,6 +329,9 @@ def less_discriminatory_search(
     baseline_scores: np.ndarray | None = None,
     baseline_name: str = "Kısıtsız lojistik",
     alternatives: dict[str, np.ndarray] | None = None,
+    cv_folds: int = 0,
+    baseline_oof: np.ndarray | None = None,
+    alternatives_oof: dict[str, np.ndarray] | None = None,
     seed: int = 0,
 ) -> dict[str, Any]:
     """Performance–fairness trade-off table, every row at ``approval_rate``.
@@ -298,17 +339,52 @@ def less_discriminatory_search(
     ``alternatives`` are hold-out scores of the other model families that were
     already trained (e.g. the scorecard when LightGBM is champion): they are
     genuine less discriminatory alternative candidates and are ranked with the rest.
+
+    With ``cv_folds`` > 0 every row also gets ``oof_auc``: the pooled out-of-fold AUC
+    on the training part (stratified folds, ``seed``). Rows fitted here are refitted per
+    fold; the champion and the other families take their out-of-fold training scores
+    from ``baseline_oof`` / ``alternatives_oof`` (the scores the champion was selected on).
     """
     from fairlearn.postprocessing import ThresholdOptimizer
-    from fairlearn.reductions import DemographicParity, ExponentiatedGradient
+    from sklearn.metrics import roc_auc_score
+    from sklearn.model_selection import StratifiedKFold
 
     y_train = np.asarray(y_train).astype(int)
     y_test = np.asarray(y_test).astype(int)
     common: dict[str, Any] = {"air_threshold": air_threshold, "min_group_size": min_group_size}
     rows: list[dict[str, Any]] = []
+    splits = (
+        list(StratifiedKFold(cv_folds, shuffle=True, random_state=seed).split(X_train, y_train))
+        if cv_folds
+        else []
+    )
+
+    def oof_of(scores: np.ndarray | None) -> dict[str, Any]:
+        if not splits or scores is None:
+            return {}
+        return {"oof_auc": round(float(roc_auc_score(y_train, scores)), 4)}
+
+    def refit_oof(fit_score: Callable[[np.ndarray, np.ndarray], np.ndarray]) -> dict[str, Any]:
+        """``fit_score(fit_idx, val_idx)`` returns the scores of the validation rows."""
+        if not splits:
+            return {}
+        scores = np.zeros(len(y_train))
+        for fit_idx, val_idx in splits:
+            scores[val_idx] = fit_score(fit_idx, val_idx)
+        return oof_of(scores)
+
+    def lr_oof(columns: list[str]) -> dict[str, Any]:
+        return refit_oof(
+            lambda f, v: (
+                _logistic()
+                .fit(X_train.iloc[f][columns], y_train[f])
+                .predict_proba(X_train.iloc[v][columns])[:, 1]
+            )
+        )
 
     base = _logistic().fit(X_train, y_train)
     lr_scores = base.predict_proba(X_test)[:, 1]
+    lr_extra = lr_oof(list(X_train.columns))
     if baseline_scores is not None:
         rows.append(
             _row(
@@ -318,6 +394,7 @@ def less_discriminatory_search(
                 approve_at_rate(baseline_scores, approval_rate, seed),
                 a_test,
                 kind="champion",
+                **oof_of(baseline_oof),
                 **common,
             )
         )
@@ -329,6 +406,7 @@ def less_discriminatory_search(
             approve_at_rate(lr_scores, approval_rate, seed),
             a_test,
             kind="baseline",
+            **lr_extra,
             **common,
         )
     )
@@ -342,6 +420,7 @@ def less_discriminatory_search(
                 a_test,
                 kind="model_family",
                 family=family,
+                **oof_of((alternatives_oof or {}).get(family)),
                 **common,
             )
         )
@@ -362,31 +441,20 @@ def less_discriminatory_search(
             a_test,
             kind="proxy_removal",
             dropped_features=dropped,
+            **lr_oof(kept),
             **common,
         )
     )
 
-    # The reduction re-weights samples, which a Pipeline does not forward: fit it on the
-    # imputed + standardised matrix with a bare logistic regression.
-    from sklearn.impute import SimpleImputer
-    from sklearn.linear_model import LogisticRegression
-    from sklearn.preprocessing import StandardScaler
+    def eg_fold(eps: float) -> Callable[[np.ndarray, np.ndarray], np.ndarray]:
+        def fit_score(f: np.ndarray, v: np.ndarray) -> np.ndarray:
+            return _eg_scores(X_train.iloc[f], y_train[f], a_train.iloc[f], X_train.iloc[v], eps)
 
-    imputer = SimpleImputer(strategy="median").fit(X_train)
-    scaler = StandardScaler().fit(imputer.transform(X_train))
-    xtr = scaler.transform(imputer.transform(X_train))
-    xte = scaler.transform(imputer.transform(X_test))
+        return fit_score
+
     for eps in epsilons:
-        mitigator = ExponentiatedGradient(
-            LogisticRegression(max_iter=2000, C=0.5), DemographicParity(difference_bound=eps)
-        )
-        mitigator.fit(xtr, y_train, sensitive_features=np.asarray(a_train).astype(str))
-        # Weighted mixture of the reduction's probabilistic predictors (a ranking score);
-        # ``_pmf_predict`` mixes hard 0/1 predictions and would understate the AUC.
-        eg_scores = np.zeros(len(xte))
-        for weight, predictor in zip(mitigator.weights_, mitigator.predictors_, strict=True):
-            if weight > 0:
-                eg_scores += weight * predictor.predict_proba(xte)[:, 1]
+        eg_scores = _eg_scores(X_train, y_train, a_train, X_test, eps)
+        eg_extra = refit_oof(eg_fold(eps))
         rows.append(
             _row(
                 f"ExponentiatedGradient (demografik eşitlik, ε={eps})",
@@ -396,11 +464,14 @@ def less_discriminatory_search(
                 a_test,
                 kind="exponentiated_gradient",
                 epsilon=eps,
+                **eg_extra,
                 **common,
             )
         )
 
     reference = baseline_scores if baseline_scores is not None else lr_scores
+    # Group thresholds re-cut the reference scores: same ranking, same out-of-fold AUC.
+    reference_extra = oof_of(baseline_oof) if baseline_scores is not None else lr_extra
     rows.append(
         _row(
             "Grup bazlı eşik (demografik eşitlik, ThresholdOptimizer yaklaşımı)",
@@ -410,6 +481,7 @@ def less_discriminatory_search(
             a_test,
             kind="group_threshold",
             legal_caveat=GROUP_THRESHOLD_CAVEAT,
+            **reference_extra,
             **common,
         )
     )
@@ -450,11 +522,19 @@ def recommend_lda(table: dict[str, Any], max_auc_loss: float) -> dict[str, Any]:
     """Pick the fairest non-group-threshold row within the allowed AUC loss.
 
     Candidates include the other already-trained model families (``model_family``
-    rows), not only the purpose-built mitigations.
+    rows), not only the purpose-built mitigations. When the table carries
+    out-of-fold AUCs (``oof_auc``) the loss must stay within ``max_auc_loss`` on
+    **both** the out-of-fold and the hold-out basis; fairer rows that fail either
+    are listed under ``rejected`` with both losses.
     """
     rows = table["rows"]
     anchor = rows[0]
-    base = {"anchor": anchor["model"], "max_auc_loss": max_auc_loss}
+    use_oof = anchor.get("oof_auc") is not None
+    base: dict[str, Any] = {
+        "anchor": anchor["model"],
+        "max_auc_loss": max_auc_loss,
+        "basis": "out_of_fold_and_holdout" if use_oof else "holdout",
+    }
     if anchor["min_air"] is None:
         return {
             **base,
@@ -463,35 +543,57 @@ def recommend_lda(table: dict[str, Any], max_auc_loss: float) -> dict[str, Any]:
             "testable": False,
             "reason": "Korunan özellik test edilemiyor (karşılaştırılabilir ikinci grup yok).",
         }
-    candidates = [
+
+    def losses(r: dict[str, Any]) -> dict[str, Any]:
+        oof = None
+        if use_oof and r.get("oof_auc") is not None:
+            oof = round(anchor["oof_auc"] - r["oof_auc"], 4)
+        return {"auc_loss": round(anchor["auc"] - r["auc"], 4), "oof_auc_loss": oof}
+
+    def within(r: dict[str, Any]) -> bool:
+        loss = losses(r)
+        if loss["auc_loss"] > max_auc_loss:
+            return False
+        oof = loss["oof_auc_loss"]
+        return not use_oof or (oof is not None and oof <= max_auc_loss)
+
+    fairer = [
         r
         for r in rows[1:]
         if r["kind"] != "group_threshold"
         and r["min_air"] is not None
-        and anchor["auc"] - r["auc"] <= max_auc_loss
+        and r["min_air"] > anchor["min_air"]
     ]
-    better = [r for r in candidates if r["min_air"] > anchor["min_air"]]
+    better = [r for r in fairer if within(r)]
+    base["rejected"] = [
+        {"model": r["model"], "kind": r["kind"], "min_air": r["min_air"], **losses(r)}
+        for r in fairer
+        if not within(r)
+    ]
     if not better:
         return {
             **base,
             "recommended": None,
             "kind": None,
             "reason": (
-                f"İzin verilen AUC kaybı ({max_auc_loss:.3f}) içinde {anchor['model']} modelinden "
-                "daha yüksek AIR veren alternatif yok."
+                f"İzin verilen AUC kaybı ({max_auc_loss:.3f}"
+                + (", katlama dışı ve hold-out" if use_oof else "")
+                + f") içinde {anchor['model']} modelinden daha yüksek AIR veren alternatif yok."
             ),
         }
     best = max(better, key=lambda r: (r["min_air"], r["auc"]))
+    loss = losses(best)
+    oof_text = "" if loss["oof_auc_loss"] is None else f", katlama dışı {loss['oof_auc_loss']:.4f}"
     return {
         **base,
         "recommended": best["model"],
         "kind": best["kind"],
         "min_air_from": anchor["min_air"],
         "min_air_to": best["min_air"],
-        "auc_loss": round(anchor["auc"] - best["auc"], 4),
+        **loss,
         "reason": (
-            f"AIR {anchor['min_air']:.3f} → {best['min_air']:.3f}, AUC kaybı "
-            f"{anchor['auc'] - best['auc']:.4f} (sınır {max_auc_loss:.3f})."
+            f"AIR {anchor['min_air']:.3f} → {best['min_air']:.3f}, AUC kaybı hold-out "
+            f"{loss['auc_loss']:.4f}{oof_text} (sınır {max_auc_loss:.3f})."
         ),
     }
 

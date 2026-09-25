@@ -125,15 +125,19 @@ def summary_lines(results: dict[str, dict]) -> list[str]:
             if m["lda"]["attribute"] == worst and rec.get("recommended"):
                 threshold = load_validation().fairness.air_threshold
                 still = f", still below {threshold:.2f}" if rec["min_air_to"] < threshold else ""
+                oof = rec.get("oof_auc_loss")
                 follow = (
                     f"the LDA search finds a fairer alternative within the allowed AUC loss "
                     f"(min AIR {rec['min_air_from']:.3f} → {rec['min_air_to']:.3f}{still}, AUC loss "
-                    f"{rec['auc_loss']:.4f}); adopting it is the model risk committee's decision"
+                    f"{rec['auc_loss']:.4f} hold-out"
+                    + ("" if oof is None else f", {oof:.4f} out-of-fold")
+                    + "); adopting it is the model risk committee's decision"
                 )
             else:
                 follow = (
-                    "no less discriminatory alternative stays within the allowed AUC loss, so the "
-                    "finding goes to the model risk committee"
+                    "no less discriminatory alternative stays within the allowed AUC loss "
+                    f"({m['lda']['recommendation'].get('max_auc_loss', 0):.3f} on out-of-fold and "
+                    "hold-out), so the finding goes to the model risk committee"
                 )
             robust = ""
             if spread:

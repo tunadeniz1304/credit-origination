@@ -629,6 +629,7 @@ function platform() {
       return {
         rows: [row("Şampiyon", v.champion), row("Challenger", v.challenger)],
         summary: this.lbl("dataset", v.dataset) + " · ΔAUC (challenger − şampiyon) " + this.num(diff, 4) + " · DeLong p " + this.pval(v.delong_p_value)
+          + " · katlama dışı ΔAUC " + this.num(v.oof_auc_diff_challenger_minus_champion, 4) + ", p " + this.pval(v.oof_delong_p_value)
           + " · gerçek veride seçilen şampiyon: " + this.lbl("model_family", v.lane_a_champion),
         scope: v.evidence_scope || "",
       };

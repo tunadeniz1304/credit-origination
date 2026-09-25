@@ -74,6 +74,9 @@ def test_lane_a_on_fixture_produces_complete_metrics(fixture_run):
         "MARRIAGE",
     }
     assert {r["approval_rate"] for r in m["lda"]["rows"]} == {0.7}
+    # Every LDA row carries an out-of-fold AUC on the same folds as the champion selection.
+    assert all(0.5 < r["oof_auc"] < 1 for r in m["lda"]["rows"])
+    assert m["lda"]["recommendation"]["basis"] == "out_of_fold_and_holdout"
     assert m["shap_top_features"][0]["mean_abs_shap"] > 0
     # protected attributes are never model inputs
     assert not {"SEX", "AGE", "EDUCATION", "MARRIAGE"} & set(m["design"]["features"])
@@ -185,6 +188,49 @@ def test_promotion_gate_checks_every_dataset_and_refuses_unknown_families():
     worse = {d["dataset"]: d["significantly_worse"] for d in decision["datasets"]}
     assert worse == {"uci_taiwan": True, "german_credit": False}
     assert decision["allowed"] is False and decision["families"]["challenger"] == "scorecard"
+    assert decision["bases"] == ["out_of_fold", "holdout"]
+    rows = {d["dataset"]: d for d in decision["datasets"]}
+    assert rows["uci_taiwan"]["worse_on"] == ["out_of_fold", "holdout"]
+
+
+def test_promotion_of_lightgbm_over_scorecard_is_refused_on_out_of_fold_evidence():
+    """German: LightGBM is significantly worse out-of-fold (the selection basis) but not on the
+    small hold-out; the gate must not rely on the hold-out alone."""
+    from app.validation import evidence
+
+    decision = evidence.promotion_evidence("optbinning_woe_logistic", "lightgbm_monotone")
+    assert decision["allowed"] is False
+    assert decision["families"] == {"champion": "scorecard", "challenger": "lightgbm"}
+    german = next(d for d in decision["datasets"] if d["dataset"] == "german_credit")
+    assert german["worse_on"] == ["out_of_fold"] and german["significantly_worse"] is True
+    oof, holdout = german["out_of_fold"], german["holdout"]
+    assert oof["auc_diff_challenger_minus_champion"] < 0 and oof["delong_p_value"] < 0.05
+    assert holdout["significantly_worse"] is False and holdout["delong_p_value"] >= 0.05
+    assert "katlama dışı" in decision["reason"]
+    # Still allowed where no dataset shows a significant loss on either basis.
+    assert evidence.promotion_evidence("logistic_regression", "lightgbm_monotone")["allowed"]
+
+
+def test_promotion_is_refused_when_only_the_holdout_is_significantly_worse(monkeypatch):
+    from app.validation import evidence
+
+    real = evidence.load_metrics
+
+    def only_holdout_worse(name: str):
+        metrics = json.loads(json.dumps(real(name)))
+        for key in ("delong", "delong_oof"):
+            test = metrics[key]["lightgbm_vs_scorecard"]
+            test["auc_diff"], test["p_value"] = (
+                (0.01, 0.2) if key == "delong_oof" else (0.03, 0.001)
+            )
+        return metrics
+
+    monkeypatch.setattr(evidence, "load_metrics", only_holdout_worse)
+    decision = evidence.promotion_evidence("lightgbm_monotone", "optbinning_woe_logistic")
+    assert decision["allowed"] is False
+    assert {d["dataset"]: d["worse_on"] for d in decision["datasets"]} == {
+        name: ["holdout"] for name in evidence.available_sets()
+    }
 
 
 def test_committed_evidence_uses_out_of_fold_selection_and_reports_untestable_groups():
@@ -198,6 +244,12 @@ def test_committed_evidence_uses_out_of_fold_selection_and_reports_untestable_gr
     foreign = german["fairness"]["by_model"]["scorecard"]["FOREIGN_WORKER"]
     assert foreign["testable"] is False and foreign["min_air"] is None
     assert foreign["passes_four_fifths"] is None and foreign["min_air_spread"] is None
+    # The LDA loss is judged out-of-fold and on the hold-out: LightGBM is fairer and within the
+    # limit on the small hold-out, but not out-of-fold, so nothing is recommended (open finding).
+    limit = load_validation().lda.max_auc_loss
     rec = german["lda"]["recommendation"]
-    assert rec["kind"] == "model_family" and rec["recommended"] == "lightgbm"
-    assert rec["min_air_to"] < load_validation().fairness.air_threshold  # still an open finding
+    assert rec["recommended"] is None and rec["basis"] == "out_of_fold_and_holdout"
+    rejected = {r["model"]: r for r in rec["rejected"]}
+    assert rejected["lightgbm"]["auc_loss"] <= limit < rejected["lightgbm"]["oof_auc_loss"]
+    assert all(max(r["auc_loss"], r["oof_auc_loss"]) > limit for r in rec["rejected"])
+    assert all("oof_auc" in r for r in german["lda"]["rows"])

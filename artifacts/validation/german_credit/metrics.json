@@ -1,6 +1,6 @@
 {
  "dataset": "german_credit",
- "generated_at": "2026-09-25T09:27:18+00:00",
+ "generated_at": "2026-09-25T10:11:55+00:00",
  "config_version": "validation_v1",
  "design": {
   "rows": 1000,
@@ -1111,7 +1111,8 @@
     "tpr_gap": 0.1601,
     "fpr_gap": 0.447,
     "passes_four_fifths": false,
-    "kind": "champion"
+    "kind": "champion",
+    "oof_auc": 0.7961
    },
    {
     "model": "Kısıtsız lojistik",
@@ -1128,7 +1129,8 @@
     "tpr_gap": 0.1333,
     "fpr_gap": 0.3864,
     "passes_four_fifths": false,
-    "kind": "baseline"
+    "kind": "baseline",
+    "oof_auc": 0.7743
    },
    {
     "model": "lightgbm",
@@ -1146,7 +1148,8 @@
     "fpr_gap": 0.322,
     "passes_four_fifths": false,
     "kind": "model_family",
-    "family": "lightgbm"
+    "family": "lightgbm",
+    "oof_auc": 0.7758
    },
    {
     "model": "Proxy zayıflatılmış lojistik",
@@ -1172,7 +1175,8 @@
      "credit_history_A32",
      "telephone_A191",
      "telephone_A192"
-    ]
+    ],
+    "oof_auc": 0.7785
    },
    {
     "model": "ExponentiatedGradient (demografik eşitlik, ε=0.05)",
@@ -1190,7 +1194,8 @@
     "fpr_gap": 0.3864,
     "passes_four_fifths": false,
     "kind": "exponentiated_gradient",
-    "epsilon": 0.05
+    "epsilon": 0.05,
+    "oof_auc": 0.7718
    },
    {
     "model": "ExponentiatedGradient (demografik eşitlik, ε=0.02)",
@@ -1208,7 +1213,8 @@
     "fpr_gap": 0.4167,
     "passes_four_fifths": false,
     "kind": "exponentiated_gradient",
-    "epsilon": 0.02
+    "epsilon": 0.02,
+    "oof_auc": 0.771
    },
    {
     "model": "Grup bazlı eşik (demografik eşitlik, ThresholdOptimizer yaklaşımı)",
@@ -1226,7 +1232,8 @@
     "fpr_gap": 0.375,
     "passes_four_fifths": true,
     "kind": "group_threshold",
-    "legal_caveat": "Grup bazlı eşik, korunan özelliğin karar anında kullanılması demektir; ayrımcılık yasağı (Anayasa m.10, 6701 sayılı Kanun, AB/ABD mevzuatı) altında doğrudan ayrımcılık sayılabilir. Yalnızca ödünleşimi göstermek için raporlanır, üretimde kullanılmaz."
+    "legal_caveat": "Grup bazlı eşik, korunan özelliğin karar anında kullanılması demektir; ayrımcılık yasağı (Anayasa m.10, 6701 sayılı Kanun, AB/ABD mevzuatı) altında doğrudan ayrımcılık sayılabilir. Yalnızca ödünleşimi göstermek için raporlanır, üretimde kullanılmaz.",
+    "oof_auc": 0.7961
    }
   ],
   "reference_rows": [
@@ -1254,12 +1261,47 @@
   "recommendation": {
    "anchor": "Champion: WoE skor kartı (optbinning + lojistik)",
    "max_auc_loss": 0.01,
-   "recommended": "lightgbm",
-   "kind": "model_family",
-   "min_air_from": 0.6978,
-   "min_air_to": 0.7799,
-   "auc_loss": 0.0087,
-   "reason": "AIR 0.698 → 0.780, AUC kaybı 0.0087 (sınır 0.010)."
+   "basis": "out_of_fold_and_holdout",
+   "rejected": [
+    {
+     "model": "Kısıtsız lojistik",
+     "kind": "baseline",
+     "min_air": 0.7161,
+     "auc_loss": 0.0207,
+     "oof_auc_loss": 0.0218
+    },
+    {
+     "model": "lightgbm",
+     "kind": "model_family",
+     "min_air": 0.7799,
+     "auc_loss": 0.0087,
+     "oof_auc_loss": 0.0203
+    },
+    {
+     "model": "Proxy zayıflatılmış lojistik",
+     "kind": "proxy_removal",
+     "min_air": 0.7318,
+     "auc_loss": 0.0205,
+     "oof_auc_loss": 0.0176
+    },
+    {
+     "model": "ExponentiatedGradient (demografik eşitlik, ε=0.05)",
+     "kind": "exponentiated_gradient",
+     "min_air": 0.7161,
+     "auc_loss": 0.0198,
+     "oof_auc_loss": 0.0243
+    },
+    {
+     "model": "ExponentiatedGradient (demografik eşitlik, ε=0.02)",
+     "kind": "exponentiated_gradient",
+     "min_air": 0.7274,
+     "auc_loss": 0.0188,
+     "oof_auc_loss": 0.0251
+    }
+   ],
+   "recommended": null,
+   "kind": null,
+   "reason": "İzin verilen AUC kaybı (0.010, katlama dışı ve hold-out) içinde Champion: WoE skor kartı (optbinning + lojistik) modelinden daha yüksek AIR veren alternatif yok."
   }
  },
  "shap_top_features": [

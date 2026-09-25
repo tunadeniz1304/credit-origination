@@ -41,11 +41,15 @@ significantly weaker out-of-fold), which is recorded as a caveat: the advantage 
 depends on sample size.
 
 **Promotion gate.** `approve_promotion` checks the committed real-data evidence for the model
-*family* of the challenger against the champion's family on **every** real dataset: promotion is
-refused if the challenger family is significantly worse on any set (hold-out DeLong ΔAUC < 0 and
-p < 0.05), if evidence for a set is missing, or if the family is unknown (no evidence is borrowed from
-another family). Four-eyes still applies. The logistic-regression challenger is significantly weaker
-on Taiwan (ΔAUC −0.021, p = 4.4e-7), so its promotion is refused. **Limitation:** this is evidence
+*family* of the challenger against the champion's family on **every** real dataset and on **both**
+bases — the out-of-fold CV predictions (the basis the champion is chosen on) and the hold-out:
+promotion is refused if the challenger family is significantly worse on any set on either basis
+(DeLong ΔAUC < 0 and p < 0.05), if evidence for a set is missing, or if the family is unknown (no
+evidence is borrowed from another family). Four-eyes still applies. The logistic-regression
+challenger is significantly weaker on Taiwan (hold-out ΔAUC −0.021, p = 4.4e-7), so its promotion is
+refused. A LightGBM challenger to a scorecard champion is refused too: on German Credit it is
+significantly weaker out-of-fold (ΔAUC −0.020, p = 0.026) even though the hold-out difference is not
+significant (−0.009, p = 0.63). **Limitation:** this is evidence
 for the recipe/family, not for the artifact: the production artifact is trained on synthetic data,
 so real-data evidence tied to its hash is impossible; the API response states this
 (`evidence_scope`).
@@ -116,9 +120,12 @@ inherits the proxy PD level and is not real-portfolio evidence.
 | v1 cut-offs on the v2 model | pd_lgbm_v2 | 39.8 % | 28.0 % | 32.2 % | 2.7 % |
 | **v2 (PD ≤ 8 % / ≥ 30 %)** | pd_lgbm_v2 | **54.8 %** | 25.8 % | **19.4 %** | **4.0 %** |
 
-v2 keeps the realised bad rate of the auto-approved book (4.0 %) at or below the v1 level (4.8 %)
-while approving a similar share; keeping the v1 cut-offs on the new scale would have cut automatic
-approvals to 40 %. Risk bands A ≤ 3 %, B ≤ 8 %, C ≤ 15 %, D ≤ 30 %. The authority matrix PD limits
+**v2 is a risk-appetite change and needs credit committee sign-off.** The like-for-like comparison
+is on the same v2 model: the v1 cut-offs give an auto-approved book with a 2.7 % bad rate (40 %
+auto-approved), the v2 cut-offs 4.0 % (55 % auto-approved) — about +50 % relative, i.e. the v2
+cut-offs *loosen* the risk appetite rather than re-express the v1 appetite on the new scale. The
+retired v1 model with the v1 cut-offs shows 4.8 %, but that is not a like-for-like baseline: on this
+population it under-predicts the auto-approved book about 3.7× (mean PD 1.3 %, realised 4.8 %). Risk bands A ≤ 3 %, B ≤ 8 %, C ≤ 15 %, D ≤ 30 %. The authority matrix PD limits
 moved accordingly (specialist ≤ 15 %, senior ≤ 30 %, four-eyes above 20 %). Both files are versioned;
 the RAG policy text was updated with them.
 
@@ -128,9 +135,12 @@ Real-data fairness (UCI Taiwan, German Credit) at the same approval rate for eve
 order) and every minimum AIR is reported with its spread over 20 tie-break seeds. On Taiwan every
 attribute passes the four-fifths rule (worst: education 0.877, seeds 0.874–0.882). On German Credit
 the scorecard champion **fails for age band (0.698; no ties, so no spread)** — an open model-risk
-finding. The LDA search, which now also considers the other trained families, finds LightGBM raises
-the age-band AIR to 0.780 for an AUC loss of 0.009 (within the 0.010 limit), but that is still below
-0.80 and passes for only 25 % of the tie-break seeds (0.734–0.830), so it does not fix the finding.
+finding. The LDA search also considers the other trained families and requires the AUC loss to be
+within the 0.010 limit both out-of-fold and on the hold-out. No alternative qualifies: LightGBM
+would raise the age-band AIR to 0.780 (still below 0.80) for a hold-out loss of 0.009 but an
+out-of-fold loss of 0.020; the proxy-weakened logistic regression (AIR 0.732) costs 0.021 / 0.018.
+The finding goes to the model risk committee with no less discriminatory alternative within the
+limit.
 German `FOREIGN_WORKER` is **not testable** (only one group meets the minimum group size) and is
 reported as n/a, not as a pass. Synthetic results: `docs/FAIRNESS_REPORT.md`.
 

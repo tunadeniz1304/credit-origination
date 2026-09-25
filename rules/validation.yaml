@@ -24,9 +24,11 @@ promotion:
   # artefaktı sentetik veriyle eğitildiği için artefakt özetine bağlı gerçek veri kanıtı yoktur.
   # Kural: (1) aile kulvar A'da tanımlı olmalı — bilinmeyen aile reddedilir, başka ailenin
   # kanıtı ödünç alınmaz; (2) en az bir gerçek veri seti bulunmalı; (3) challenger, champion'a
-  # göre HİÇBİR veri setinde hold-out DeLong testinde anlamlı biçimde daha zayıf olmamalı
-  # (ΔAUC < 0 ve p < significance_level ise ret).
-  evidence: holdout
+  # göre HİÇBİR veri setinde, İKİ temelden HERHANGİ BİRİNDE anlamlı biçimde daha zayıf
+  # olmamalı (ΔAUC < 0 ve p < significance_level ise ret): champion seçiminin yapıldığı
+  # katlama dışı (out-of-fold) DeLong testi ve hold-out DeLong testi. Küçük bir hold-out
+  # (ör. German Credit'te 200 satır) katlama dışı kanıtı geçersiz kılamaz.
+  evidence: out_of_fold_and_holdout
   require_every_dataset: true
 
 fairness:
@@ -44,7 +46,9 @@ lda:
   attribute: auto               # auto = champion'da en düşük AIR'a sahip korunan özellik
   proxy_auc_threshold: 0.60     # özellik tek başına korunan özelliği bu AUC ile ayırıyorsa proxy
   eg_epsilons: [0.05, 0.02]     # ExponentiatedGradient demografik eşitlik sınırları
-  max_auc_loss: 0.01            # kabul edilebilir AUC kaybı (LDA önerisi için)
+  # Kabul edilebilir AUC kaybı (LDA önerisi için). Hem katlama dışı (seçim temeli) hem
+  # hold-out AUC kaybı bu sınır içinde olmalıdır.
+  max_auc_loss: 0.01
 
 lane_b:
   # Kulvar B: sentetik üretici ile gerçek veri arasındaki gecikme-bandı temerrüt eğrisi toleransı

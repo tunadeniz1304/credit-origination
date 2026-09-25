@@ -298,6 +298,24 @@
   "population": "anchored synthetic test set (application_month > 20)",
   "test_rows": 16803,
   "observed_default_rate": 0.1655,
+  "model": "pd_lgbm_v2",
+  "model_sha256": {
+   "artifacts/models/pd_lgbm_v2.txt": "52303803e7f7285965c5c50e007cea60c547b3672bfa5fdb63ea9a77502de9bc",
+   "artifacts/models/pd_lgbm_v2.meta.json": "44a3b9614fc79b7c80146da4e71f0bc05f2191502ec98b27237081ce740580cf"
+  },
+  "thresholds": {
+   "policy_v2": {
+    "source": "rules/policy_v2.yaml",
+    "version": "policy_v2",
+    "auto_approve_max_pd": 0.08,
+    "auto_decline_min_pd": 0.3
+   },
+   "policy_v1": {
+    "source": "retired rules/policy_v1.yaml",
+    "auto_approve_max_pd": 0.05,
+    "auto_decline_min_pd": 0.2
+   }
+  },
   "note": "Measured on the anchored synthetic population, whose PD level is imposed from a real proxy curve (next-month card default), not validated. Only the PD thresholds are applied; rule-based referrals and declines (DSR, fraud, documents) are not.",
   "rows": [
    {

@@ -83,17 +83,36 @@ def _lda_name(row: dict[str, Any], champion: str) -> str:
 def _recommendation(rec: dict[str, Any], rows: list[dict[str, Any]], champion: str) -> str:
     if rec.get("testable") is False:
         return "not testable — only one group of the attribute meets the minimum size."
+    basis = (
+        "out-of-fold and hold-out" if rec.get("basis") == "out_of_fold_and_holdout" else "hold-out"
+    )
     if not rec.get("recommended"):
-        return (
+        text = (
             f"keep the champion — no alternative raises the minimum AIR within the allowed AUC loss "
-            f"({rec.get('max_auc_loss', 0):.3f})."
+            f"({rec.get('max_auc_loss', 0):.3f}, {basis})."
         )
+        rejected = [
+            f"{_lda_name(next(r for r in rows if r['model'] == x['model']), champion)} "
+            f"(min AIR {x['min_air']:.3f}, AUC loss {_loss(x)})"
+            for x in rec.get("rejected", [])
+        ]
+        if rejected:
+            text += " Fairer but outside the limit: " + "; ".join(rejected) + "."
+        return text
     row = next(r for r in rows if r["model"] == rec["recommended"])
     return (
         f"{_lda_name(row, champion)} — min AIR {rec['min_air_from']:.3f} → {rec['min_air_to']:.3f} "
-        f"for an AUC loss of {rec['auc_loss']:.4f} (limit {rec['max_auc_loss']:.3f}); the model risk "
-        "committee decides whether to adopt it."
+        f"for an AUC loss of {_loss(rec)} (limit {rec['max_auc_loss']:.3f} on {basis}); the model "
+        "risk committee decides whether to adopt it."
     )
+
+
+def _loss(x: dict[str, Any]) -> str:
+    """AUC loss text: hold-out, plus out-of-fold when the table carries it."""
+    text = f"{x['auc_loss']:.4f} hold-out"
+    if x.get("oof_auc_loss") is not None:
+        text += f", {x['oof_auc_loss']:.4f} out-of-fold"
+    return text
 
 
 def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
@@ -317,11 +336,21 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
         "",
     ]
     out += _table(
-        ["Alternative", "AUC", "Approval", "Bad rate of approved", "Min AIR", "TPR gap", "FPR gap"],
+        [
+            "Alternative",
+            "Hold-out AUC",
+            "Out-of-fold AUC",
+            "Approval",
+            "Bad rate of approved",
+            "Min AIR",
+            "TPR gap",
+            "FPR gap",
+        ],
         [
             [
                 _lda_name(r, champion["model"]),
                 f"{r['auc']:.4f}",
+                f"{r['oof_auc']:.4f}" if r.get("oof_auc") is not None else "—",
                 _pct(r["approval_rate"]),
                 _pct(r["bad_rate_approved"]),
                 _num(r["min_air"]),
@@ -356,6 +385,44 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
     )
     out.append("")
     return out
+
+
+def _policy_reading(policy: dict[str, Any]) -> list[str]:
+    """Provenance of the policy table and the two comparisons behind the v2 cut-offs."""
+    out: list[str] = []
+    digests = policy.get("model_sha256") or {}
+    if digests:
+        out += [
+            "Scored model files (SHA-256, LF line endings): "
+            + ", ".join(f"`{path}` `{digest[:16]}…`" for path, digest in digests.items())
+            + ". Thresholds read from `rules/policy_v2.yaml`.",
+            "",
+        ]
+    rows = {r["policy"]: r for r in policy["rows"]}
+    v2, same_model = rows.get("policy_v2"), rows.get("policy_v1 thresholds")
+    if not v2 or not same_model:
+        return out
+    before, after = same_model["bad_rate_auto_approved"], v2["bad_rate_auto_approved"]
+    text = (
+        f"**Risk appetite.** On the same v2 model, the v2 cut-offs raise the auto-approved share "
+        f"from {_pct(same_model['share_auto_approve'])} to {_pct(v2['share_auto_approve'])} and the "
+        f"bad rate of the auto-approved book from {_pct(before)} to {_pct(after)} "
+        f"({after / before - 1:+.0%} relative): the v2 cut-offs **loosen** the risk appetite; they "
+        "do not re-express the v1 appetite on the new scale."
+    )
+    retired = rows.get("policy_v1")
+    if retired and retired.get("mean_pd_auto_approved"):
+        under = retired["bad_rate_auto_approved"] / retired["mean_pd_auto_approved"]
+        text += (
+            f" The comparison with the retired v1 model ({_pct(retired['bad_rate_auto_approved'])} "
+            f"→ {_pct(after)}) is not a like-for-like baseline: on this population that model "
+            f"under-predicts the auto-approved book about {under:.1f}× (mean PD "
+            f"{_pct(retired['mean_pd_auto_approved'])}, realised {_pct(retired['bad_rate_auto_approved'])})."
+        )
+    text += (
+        " Adopting the v2 cut-offs is a risk-appetite change that needs credit committee sign-off."
+    )
+    return [*out, text, ""]
 
 
 def lane_b_section(lane: dict[str, Any]) -> list[str]:
@@ -488,6 +555,7 @@ def lane_b_section(lane: dict[str, Any]) -> list[str]:
             ],
         )
         out.append("")
+        out += _policy_reading(policy)
     out += [
         "**Reading this honestly.** The anchoring transfers the *shape* of real credit risk "
         "(how default rises with arrears) into the synthetic population and imposes a PD level "

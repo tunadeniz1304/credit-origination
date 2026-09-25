@@ -121,9 +121,10 @@ def main() -> int:
     lines += [
         "",
         "The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real "
-        "data: on German Credit the champion fails the four-fifths rule for age band. The fairest alternative within "
-        "the allowed AUC loss (the LightGBM family) raises the age-band AIR but still stays below 0.8, so the finding "
-        "is open (see the LDA tables in `VALIDATION_REPORT.md`).",
+        "data: on German Credit the champion fails the four-fifths rule for age band. No less discriminatory "
+        "alternative stays within the allowed AUC loss on both out-of-fold and hold-out data (the LightGBM family "
+        "would raise the age-band AIR to 0.780, still below 0.8, but loses 0.020 AUC out-of-fold), so the finding "
+        "is open and goes to the model risk committee (see the LDA tables in `VALIDATION_REPORT.md`).",
         "",
         "## Interpretation",
         "",

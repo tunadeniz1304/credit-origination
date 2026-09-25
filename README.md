@@ -119,8 +119,13 @@ ideas, **not** a peer of these products.
   (card default vs. 90+ DPD). The PD level is imposed from a real proxy curve (anchoring), not
   validated. A real bank portfolio is required for re-training and independent validation.
 * **Fairness is not solved.** On German Credit the champion fails the four-fifths rule for age band;
-  the fairest alternative within the allowed AUC loss (LightGBM, AIR 0.780) is still below 0.80 (open
-  finding).
+  no less discriminatory alternative stays within the allowed AUC loss on both out-of-fold and hold-out
+  data (LightGBM would reach AIR 0.780, still below 0.80, but loses 0.020 AUC out-of-fold) — an open
+  finding for the model risk committee.
+* **Policy v2 loosens risk appetite.** On the same v2 model the v2 cut-offs raise the bad rate of the
+  auto-approved book from 2.7 % (v1 cut-offs) to 4.0 % (+50 % relative); the retired v1 model's 4.8 %
+  is not a like-for-like baseline (it under-predicts about 3.7×). Adopting v2 is a risk-appetite
+  change that needs credit committee sign-off.
 * **Single-process limits.** Local/inline mode uses SQLite with one writer at a time; scale-out needs
   the Docker topology (PostgreSQL + Celery). The 20-application concurrency test is a functional check,
   not a capacity figure.

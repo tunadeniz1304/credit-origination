@@ -60,8 +60,11 @@ generator is anchored so that the default rate per delinquency band matches the 
 90+DPD loan PD. Real validation is lane A (methodology) plus the behaviour sub-score. The PD scale
 therefore moved up and the policy/authority cut-offs were recalibrated; on the anchored synthetic
 test set (PD thresholds only, `policy_cutoffs` in `artifacts/validation/lane_b.json`) the realised
-bad rate of the auto-approved book is 4.8 % under v1 (old model, 59 % auto-approved) and 4.0 % under
-v2 (55 % auto-approved, 19 % auto-declined). On the same population the lowest PD decile is
+bad rate of the auto-approved book is 4.0 % under v2 (55 % auto-approved, 19 % auto-declined). This
+is a **risk-appetite change that needs credit committee sign-off**: on the same v2 model the v1
+cut-offs give 2.7 % (40 % auto-approved), so v2 loosens the appetite by about +50 % relative. The
+retired v1 model with the v1 cut-offs shows 4.8 % (59 % auto-approved), but it is not a like-for-like
+baseline: it under-predicts that book about 3.7× (mean PD 1.3 %). On the same population the lowest PD decile is
 under-predicted (observed/predicted 1.99; 752 applicants, 12 defaults) — an open finding.
 
 ## Champion
@@ -77,8 +80,10 @@ the hold-out only confirms the choice.
   p = 0.026; hold-out −0.009, p = 0.63) → scorecard. Recorded as a caveat: the boosting advantage
   depends on sample size.
 * Model promotion through the governance API needs real-data evidence for the challenger's model
-  family on every dataset: refused if it is significantly worse on any set, if evidence is missing,
-  or if the family is unknown (no borrowed evidence). The evidence is family-level; the artifact is
+  family on every dataset: refused if it is significantly worse on any set on either basis
+  (out-of-fold or hold-out DeLong), if evidence is missing, or if the family is unknown (no borrowed
+  evidence). A LightGBM challenger to the scorecard is therefore refused (German out-of-fold ΔAUC
+  −0.020, p = 0.026). The evidence is family-level; the artifact is
   trained on synthetic data, so evidence tied to its hash is impossible. Four-eyes still applies.
 
 ## Fairness
@@ -90,9 +95,10 @@ on real data:
 * **UCI Taiwan:** every attribute passes the four-fifths rule (worst: education, AIR 0.877, seeds
   0.874–0.882).
 * **German Credit:** the champion **fails for age band (AIR 0.698)**. The less-discriminatory-alternative
-  search, which now includes the other trained families, finds LightGBM raises it to 0.780 for an AUC
-  loss of 0.009 (limit 0.010) — still below 0.80, passing for only 25 % of tie-break seeds. This is an
-  **open model-risk finding**, not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
+  search includes the other trained families and requires the AUC loss to stay within 0.010 both
+  out-of-fold and on the hold-out; none qualifies (LightGBM would reach AIR 0.780, still below 0.80,
+  but loses 0.020 AUC out-of-fold against 0.009 on the hold-out). This is an
+  **open model-risk finding** for the model risk committee, not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
   `FOREIGN_WORKER` is not testable (one group only above the minimum size) and is reported as n/a.
 * The synthetic generator now contains proxy correlations (tenure ↔ age, income ↔ province/gender), so
   the synthetic fairness results are no longer good by construction.
@@ -122,7 +128,9 @@ Playwright).
   sub-score are validated on real (non-Turkish) data. The PD level is imposed from a real proxy curve
   (anchoring), not validated.
 * No reject inference and no real out-of-time test (the public sets have no usable time axis).
-* The German Credit age-band fairness finding is open.
+* The German Credit age-band fairness finding is open (no less discriminatory alternative within the
+  AUC-loss limit on both bases).
+* The v2 policy cut-offs loosen risk appetite and are pending credit committee sign-off.
 * Inline/SQLite is a single-writer mode; throughput needs the Docker topology.
 
 ## Audit rounds

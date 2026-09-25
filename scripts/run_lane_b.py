@@ -23,8 +23,9 @@ Usage: python scripts/run_lane_b.py [--rows 100000] [--fixture] [--policy-only]
 
 ``--policy-only`` keeps the trained models and the anchors: it regenerates the
 (deterministic) synthetic population and refreshes only the production
-calibration and the policy table. ``--v1-model-dir`` points at the retired
-``pd_lgbm_v1`` artifact (``pd_lgbm_v1.txt`` + ``.meta.json``; removed from the
+calibration and the policy table (which records the SHA-256 of the scored model
+files and the thresholds read from ``rules/policy_v2.yaml``). ``--v1-model-dir``
+points at the retired ``pd_lgbm_v1`` artifact (``pd_lgbm_v1.txt`` + ``.meta.json``; removed from the
 tree in commit 569ca14, recover with ``git show 569ca14^:artifacts/models/...``)
 to add the historical row "v1 policy on the v1 model".
 """
@@ -32,6 +33,7 @@ to add the historical row "v1 policy on the v1 model".
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from datetime import UTC, datetime
@@ -50,6 +52,20 @@ from app.validation.datasets import FIXTURE_PATH, dataset_path, load_frame  # no
 MODELS = ROOT / "artifacts" / "models"
 # Thresholds of the retired rules/policy_v1.yaml (renamed to policy_v2 in b81b771).
 POLICY_V1 = {"auto_approve_max_pd": 0.05, "auto_decline_min_pd": 0.20}
+
+
+def artifact_sha256(path: Path) -> str:
+    """SHA-256 of a text artifact with LF line endings (as committed, see .gitattributes).
+
+    The digest therefore does not depend on the checkout's line-ending conversion.
+    """
+    return hashlib.sha256(path.read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+
+
+def model_fingerprint(version: str, model_dir: Path = MODELS) -> dict[str, str]:
+    """Digest of every file the production PD model is loaded from."""
+    files = [model_dir / f"{version}.txt", model_dir / f"{version}.meta.json"]
+    return {f"artifacts/models/{f.name}": artifact_sha256(f) for f in files}
 
 
 def policy_row(
@@ -83,7 +99,8 @@ def policy_cutoffs(test, pd_v2: np.ndarray, version: str, v1_model_dir: Path | N
     from app.core.rules import load_policy_file
 
     y = test["target"].to_numpy()
-    decision = load_policy_file().decision
+    policy = load_policy_file()
+    decision = policy.decision
     rows = [
         {
             "policy": "policy_v2",
@@ -122,6 +139,18 @@ def policy_cutoffs(test, pd_v2: np.ndarray, version: str, v1_model_dir: Path | N
         "population": "anchored synthetic test set (application_month > 20)",
         "test_rows": len(y),
         "observed_default_rate": round(float(y.mean()), 4),
+        # Provenance: the table is valid only for these model files and thresholds.
+        "model": version,
+        "model_sha256": model_fingerprint(version),
+        "thresholds": {
+            "policy_v2": {
+                "source": "rules/policy_v2.yaml",
+                "version": policy.version,
+                "auto_approve_max_pd": decision.auto_approve_max_pd,
+                "auto_decline_min_pd": decision.auto_decline_min_pd,
+            },
+            "policy_v1": {"source": "retired rules/policy_v1.yaml", **POLICY_V1},
+        },
         "note": (
             "Measured on the anchored synthetic population, whose PD level is imposed from a real "
             "proxy curve (next-month card default), not validated. Only the PD thresholds are "

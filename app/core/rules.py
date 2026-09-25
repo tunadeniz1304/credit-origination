@@ -189,7 +189,7 @@ class ChampionSelection(BaseModel):
 
 
 class PromotionConfig(BaseModel):
-    evidence: str = "holdout"
+    evidence: str = "out_of_fold_and_holdout"
     require_every_dataset: bool = True
 
 

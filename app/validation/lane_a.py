@@ -20,7 +20,8 @@ Design (no time axis in the public sets):
   separately), ECE and Hosmer–Lemeshow;
 * fairness at the same approval rate (ties broken in a seeded random order,
   AIR spread over ``fairness.tie_break_seeds`` seeds) and the LDA trade-off
-  table, which also lists the other trained model families as alternatives.
+  table, which also lists the other trained model families as alternatives;
+  its AUC-loss limit is checked on the out-of-fold *and* the hold-out AUC.
 """
 
 from __future__ import annotations
@@ -333,6 +334,13 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
             name: predictions[name]
             for name in builders
             if name not in (champion["model"], "logistic")
+        },
+        # Out-of-fold AUC of every row (same folds as the champion selection): the AUC-loss
+        # limit of the LDA recommendation is checked on out-of-fold *and* hold-out.
+        cv_folds=cfg.cv_folds,
+        baseline_oof=oof[champion["model"]],
+        alternatives_oof={
+            name: oof[name] for name in builders if name not in (champion["model"], "logistic")
         },
         seed=seed,
     )

@@ -5,11 +5,16 @@ version: policy_v2
 description: Bireysel ihtiyaç kredisi tahsis politikası (örnek, kurgusal)
 effective_from: "2026-09-25"
 # v2 değişikliği: PD seviyesi gerçek bir vekil eğriden (sonraki ay kart temerrüdü) dayatıldı
-# (çapalama; doğrulama değildir). pd_lgbm_v2 ortalama PD %10,6 → %16,3. Eşikler aynı risk
-# iştahını yeni ölçekte ifade eder. Çapalanmış sentetik test setinde (ay > 20, yalnızca PD
-# eşikleri; scripts/run_lane_b.py → artifacts/validation/lane_b.json "policy_cutoffs"):
-# otomatik onaylanan portföyün kötü oranı v1'de %4,8 (payı %59); v2'de PD ≤ %8 ile %4,0
-# (payı %55, otomatik ret %19). Ayrıntı: docs/MODEL_CARD.md, "Policy recalibration".
+# (çapalama; doğrulama değildir). pd_lgbm_v2 ortalama PD %10,6 → %16,3.
+# RİSK İŞTAHI DEĞİŞİKLİĞİDİR: yeni eşikler v1 risk iştahını yeni ölçekte ifade ETMEZ, onu
+# gevşetir; kredi komitesi onayı gerekir. Çapalanmış sentetik test setinde (ay > 20, yalnızca
+# PD eşikleri; scripts/run_lane_b.py → artifacts/validation/lane_b.json "policy_cutoffs"),
+# otomatik onaylanan portföyün kötü oranı:
+#   - AYNI v2 modelinde: v1 eşikleri (PD ≤ %5 / ≥ %20) %2,7 (payı %40) → v2 eşikleri
+#     (PD ≤ %8 / ≥ %30) %4,0 (payı %55, otomatik ret %19): göreli +%50 daha riskli portföy;
+#   - emekli v1 modeliyle v1 eşikleri %4,8 (payı %59); ancak bu taban eşdeğer değildir:
+#     v1 modeli bu popülasyonda riski ~3,7 kat eksik tahmin eder (ortalama PD %1,3).
+# Ayrıntı: docs/MODEL_CARD.md, "Policy recalibration".
 
 products:
   IHTIYAC:

@@ -24,6 +24,9 @@ KIND_TO_FAMILY = {
     "logistic_regression": "logistic",
     "optbinning_woe_logistic": "scorecard",
 }
+# Promotion is refused when the challenger is significantly worse on either basis.
+BASES = ("out_of_fold", "holdout")
+BASE_LABELS = {"out_of_fold": "katlama dışı", "holdout": "hold-out"}
 EVIDENCE_SCOPE = (
     "Kanıt, model ailesi / modelleme tarifi içindir (kulvar A: aynı tarif gerçek halka açık "
     "veride). Üretim artefaktı sentetik veriyle eğitildiğinden artefakt özetine bağlı gerçek "
@@ -57,9 +60,15 @@ def available_sets() -> list[str]:
     return sorted(p.parent.name for p in VALIDATION_DIR.glob("*/metrics.json"))
 
 
-def pair_test(metrics: dict[str, Any], a: str, b: str) -> dict[str, Any] | None:
-    """DeLong result for ``a`` vs ``b`` whatever order it was stored in."""
-    tests = metrics.get("delong", {})
+def pair_test(
+    metrics: dict[str, Any], a: str, b: str, basis: str = "holdout"
+) -> dict[str, Any] | None:
+    """DeLong result for ``a`` vs ``b`` whatever order it was stored in.
+
+    ``basis`` is ``"holdout"`` (``delong``) or ``"out_of_fold"`` (``delong_oof``, the
+    pooled out-of-fold scores the champion was selected on).
+    """
+    tests = metrics.get("delong_oof" if basis == "out_of_fold" else "delong", {})
     if f"{a}_vs_{b}" in tests:
         return dict(tests[f"{a}_vs_{b}"])
     if f"{b}_vs_{a}" in tests:
@@ -83,6 +92,7 @@ def family_evidence(champion: str, challenger: str, name: str = PRIMARY_SET) -> 
         return {"available": False, "dataset": name}
     holdout, calibration = metrics["holdout"], metrics["calibration"]
     test = pair_test(metrics, challenger, champion)
+    test_oof = pair_test(metrics, challenger, champion, "out_of_fold")
 
     def view(family: str) -> dict[str, Any]:
         return {
@@ -105,6 +115,8 @@ def family_evidence(champion: str, challenger: str, name: str = PRIMARY_SET) -> 
         },
         "delong_p_value": test["p_value"] if test else None,
         "auc_diff_challenger_minus_champion": test["auc_diff"] if test else None,
+        "oof_delong_p_value": test_oof["p_value"] if test_oof else None,
+        "oof_auc_diff_challenger_minus_champion": test_oof["auc_diff"] if test_oof else None,
         "lane_a_champion": metrics["champion"]["model"],
         "generated_at": metrics.get("generated_at"),
     }
@@ -116,15 +128,21 @@ def promotion_evidence(champion_kind: str, challenger_kind: str) -> dict[str, An
     * both kinds must map to a lane-A family — an unknown family is refused;
     * at least one real dataset must be available, and (``require_every_dataset``)
       every available dataset must hold evidence for both families;
-    * the challenger must not be significantly worse than the champion (hold-out
-      DeLong, ΔAUC < 0 and p < α) on **any** dataset.
+    * the challenger must not be significantly worse than the champion (paired DeLong,
+      ΔAUC < 0 and p < α) on **any** dataset on **either** basis: the pooled out-of-fold
+      scores (the basis the lane-A champion is chosen on, ``delong_oof``) or the hold-out
+      (``delong``). A small hold-out cannot overrule the out-of-fold evidence.
 
     The evidence is for the family / recipe, not for the production artifact.
     """
     cfg = load_validation()
     champion = KIND_TO_FAMILY.get(champion_kind)
     challenger = KIND_TO_FAMILY.get(challenger_kind)
-    base: dict[str, Any] = {"evidence_scope": EVIDENCE_SCOPE, "rule": "not_worse_on_any_dataset"}
+    base: dict[str, Any] = {
+        "evidence_scope": EVIDENCE_SCOPE,
+        "rule": "not_worse_on_any_dataset",
+        "bases": list(BASES),
+    }
     if champion is None or challenger is None:
         unknown = [k for k in (champion_kind, challenger_kind) if k not in KIND_TO_FAMILY]
         return {
@@ -142,19 +160,21 @@ def promotion_evidence(champion_kind: str, challenger_kind: str) -> dict[str, An
     for name in names:
         metrics = load_metrics(name) or {}
         holdout = metrics.get("holdout", {})
-        test = pair_test(metrics, challenger, champion) if metrics else None
-        if champion not in holdout or challenger not in holdout or test is None:
+        tests = {b: test for b in BASES if (test := pair_test(metrics, challenger, champion, b))}
+        if champion not in holdout or challenger not in holdout or len(tests) < len(BASES):
             missing.append(name)
             continue
-        diff, p = float(test["auc_diff"]), float(test["p_value"])
-        per_set.append(
-            {
-                "dataset": name,
+        row: dict[str, Any] = {"dataset": name}
+        for b, test in tests.items():
+            diff, p = float(test["auc_diff"]), float(test["p_value"])
+            row[b] = {
                 "auc_diff_challenger_minus_champion": diff,
                 "delong_p_value": p,
                 "significantly_worse": diff < 0 and p < alpha,
             }
-        )
+        row["worse_on"] = [b for b in BASES if row[b]["significantly_worse"]]
+        row["significantly_worse"] = bool(row["worse_on"])
+        per_set.append(row)
     base |= {"families": {"champion": champion, "challenger": challenger}, "datasets": per_set}
     if not per_set or (missing and cfg.promotion.require_every_dataset):
         return {
@@ -164,8 +184,12 @@ def promotion_evidence(champion_kind: str, challenger_kind: str) -> dict[str, An
         }
     worse = [d for d in per_set if d["significantly_worse"]]
     detail = "; ".join(
-        f"{d['dataset']}: ΔAUC={d['auc_diff_challenger_minus_champion']:+.4f}, "
-        f"DeLong p={d['delong_p_value']:.3g}"
+        f"{d['dataset']} "
+        + ", ".join(
+            f"{BASE_LABELS[b]} ΔAUC={d[b]['auc_diff_challenger_minus_champion']:+.4f} "
+            f"(DeLong p={d[b]['delong_p_value']:.3g})"
+            for b in BASES
+        )
         for d in (worse or per_set)
     )
     reason = (

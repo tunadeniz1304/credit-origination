@@ -123,6 +123,84 @@ def test_recommend_lda_considers_other_model_families():
     assert rec["min_air_to"] == 0.78
 
 
+def test_recommend_lda_requires_out_of_fold_loss_within_limit():
+    """A fairer row within the limit on a small hold-out but not out-of-fold is rejected."""
+    table = {
+        "rows": [
+            {
+                "model": "scorecard",
+                "kind": "champion",
+                "auc": 0.779,
+                "oof_auc": 0.796,
+                "min_air": 0.70,
+            },
+            {
+                "model": "lightgbm",
+                "kind": "model_family",
+                "auc": 0.770,
+                "oof_auc": 0.776,
+                "min_air": 0.78,
+            },
+            {
+                "model": "thr",
+                "kind": "group_threshold",
+                "auc": 0.779,
+                "oof_auc": 0.796,
+                "min_air": 1.0,
+            },
+        ]
+    }
+    rec = recommend_lda(table, 0.01)
+    assert rec["recommended"] is None and rec["basis"] == "out_of_fold_and_holdout"
+    assert rec["rejected"] == [
+        {
+            "model": "lightgbm",
+            "kind": "model_family",
+            "min_air": 0.78,
+            "auc_loss": 0.009,
+            "oof_auc_loss": 0.02,
+        }
+    ]
+    # Within the limit on both bases: recommended, with both losses reported.
+    table["rows"][1]["oof_auc"] = 0.790
+    rec = recommend_lda(table, 0.01)
+    assert rec["recommended"] == "lightgbm" and rec["rejected"] == []
+    assert (rec["auc_loss"], rec["oof_auc_loss"]) == (0.009, 0.006)
+    # Out-of-fold within, hold-out outside the limit: rejected as well.
+    table["rows"][1]["auc"] = 0.760
+    assert recommend_lda(table, 0.01)["recommended"] is None
+    # A row without an out-of-fold AUC cannot pass when the anchor has one.
+    del table["rows"][1]["oof_auc"]
+    table["rows"][1]["auc"] = 0.779
+    assert recommend_lda(table, 0.01)["recommended"] is None
+
+
+def test_lda_search_reports_out_of_fold_auc_for_every_row():
+    data, tr, te = _fixture_split()
+    rng = np.random.default_rng(0)
+    table = less_discriminatory_search(
+        data.X.iloc[tr],
+        data.y[tr],
+        data.X.iloc[te],
+        data.y[te],
+        data.protected.SEX.iloc[tr],
+        data.protected.SEX.iloc[te],
+        approval_rate=0.7,
+        epsilons=[0.05],
+        proxy_auc_threshold=0.99,
+        baseline_scores=rng.random(len(te)),
+        alternatives={"other": rng.random(len(te))},
+        cv_folds=3,
+        baseline_oof=rng.random(len(tr)),
+        alternatives_oof={"other": rng.random(len(tr))},
+    )
+    for row in table["rows"]:
+        assert 0.3 < row["oof_auc"] < 1, row["model"]
+    fitted = [r for r in table["rows"] if r["kind"] in ("baseline", "proxy_removal")]
+    assert all(r["oof_auc"] > 0.65 for r in fitted)  # genuinely refitted per fold
+    assert recommend_lda(table, 0.01)["basis"] == "out_of_fold_and_holdout"
+
+
 def test_recommend_lda_reports_untestable_attribute():
     table = {"rows": [{"model": "champ", "kind": "baseline", "auc": 0.8, "min_air": None}]}
     rec = recommend_lda(table, 0.01)
