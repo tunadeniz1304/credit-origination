@@ -114,12 +114,13 @@ ideas, **not** a peer of these products.
 
 * **No real integrations.** KKB/Findeks, e-Devlet, SGK, GİB and open banking (GEÇİT) are mocks.
 * **Turkish data is synthetic.** The production model runs on Turkey-specific synthetic features. Its
-  methodology, the bureau behaviour sub-score and the calibration level are validated on **real public
-  data** (UCI Taiwan, German Credit — `docs/VALIDATION_REPORT.md`), which is neither Turkish nor the same
-  target (card default vs. 90+ DPD). A real bank portfolio is required for re-training and independent
-  validation.
-* **Fairness is not solved.** On German Credit the champion fails the four-fifths rule for age band and
-  no alternative within the allowed AUC loss fixes it (open finding).
+  methodology (lane A) and the bureau behaviour sub-score are validated on **real public data** (UCI
+  Taiwan, German Credit — `docs/VALIDATION_REPORT.md`), which is neither Turkish nor the same target
+  (card default vs. 90+ DPD). The PD level is imposed from a real proxy curve (anchoring), not
+  validated. A real bank portfolio is required for re-training and independent validation.
+* **Fairness is not solved.** On German Credit the champion fails the four-fifths rule for age band;
+  the fairest alternative within the allowed AUC loss (LightGBM, AIR 0.780) is still below 0.80 (open
+  finding).
 * **Single-process limits.** Local/inline mode uses SQLite with one writer at a time; scale-out needs
   the Docker topology (PostgreSQL + Celery). The 20-application concurrency test is a functional check,
   not a capacity figure.
@@ -150,17 +151,21 @@ Walkthrough script: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 
 | Model | AUC [95 % bootstrap CI] | Brier | Low-risk deciles obs/pred |
 |---|---|---|---|
-| **Monotone LightGBM + isotonic** (champion by evidence) | 0.779 [0.765, 0.792] | 0.1351 | 1.036 |
-| WoE scorecard | 0.767 [0.752, 0.781] | 0.1370 | 0.96 |
+| **Monotone LightGBM + isotonic** (champion by evidence) | 0.779 [0.765, 0.792] | 0.1351 | 1.053 |
+| WoE scorecard | 0.767 [0.752, 0.781] | 0.1370 | 0.959 |
 | Logistic regression | 0.758 [0.743, 0.773] | 0.1402 | 0.987 |
 
-LightGBM beats the scorecard by ΔAUC +0.0121 (DeLong p = 5.1e-05) and
-logistic regression by +0.0209 (p = 4.4e-07); on the 1,000-row German set the
-simpler scorecard wins. Full report: [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md).
+The champion is selected on the pooled out-of-fold CV predictions (LightGBM vs
+scorecard ΔAUC +0.0138, DeLong p = 6.8e-18) and only confirmed on the hold-out
+(ΔAUC +0.0121, p = 5.1e-05; vs logistic regression +0.0209, p = 4.4e-07); on
+the 1,000-row German set the scorecard wins (LightGBM significantly weaker
+out-of-fold, ΔAUC −0.020, p = 0.026). Full report: [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md).
 
 **Production model on the anchored synthetic population** (time-based test set, n = 16,803):
 pd_lgbm_v2 AUC 0.827, scorecard_woe_v2 0.823, challenger_lr_v2 0.825 — these
-synthetic numbers are not evidence of real-world performance. See [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md),
+synthetic numbers are not evidence of real-world performance. The PD level is
+imposed from a real proxy curve (anchoring: next-month card default used as the
+level of a 12-month 90+DPD loan PD), not validated. See [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md),
 [`docs/FAIRNESS_REPORT.md`](docs/FAIRNESS_REPORT.md) and [`docs/DATA.md`](docs/DATA.md).
 
 

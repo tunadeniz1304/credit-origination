@@ -40,7 +40,8 @@ official source in `docs/COMPLIANCE.md`; CFPB Circular 2022-03 is marked as with
 
 Public data with pinned checksums (`docs/DATA.md`): UCI Taiwan default of credit card clients (30,000)
 and Statlog German Credit (1,000). Stratified 5-fold CV plus a 20 % hold-out; bootstrap 95 % AUC CIs;
-own DeLong implementation (checked against hand computation and sklearn AUC); ECE, Hosmer–Lemeshow and decile calibration.
+own DeLong implementation (checked against hand computation and sklearn AUC); ECE, Hosmer–Lemeshow and decile calibration
+(deciles on average ranks, so tied PDs stay in one decile).
 
 | Hold-out AUC [95 % CI] | UCI Taiwan | German Credit |
 |---|---|---|
@@ -51,32 +52,48 @@ own DeLong implementation (checked against hand computation and sklearn AUC); EC
 Full report: `docs/VALIDATION_REPORT.md`; machine-readable: `artifacts/validation/*/metrics.json`,
 served by `GET /api/v1/models/validation` and shown in the UI's model validation tab.
 
-**Lane B.** Taiwan repayment status is mapped onto the platform's bureau features; a behaviour
-sub-score learnt on real defaults feeds the production model; the synthetic generator is anchored so
-that the default rate per delinquency band matches the real curve (11.7 / 25.0 / 43.5 / 62.9 %,
-tolerance test ±5 points). The PD scale therefore moved up and the policy/authority cut-offs were
-recalibrated to keep the realised bad rate of the auto-approved book at or below v1 (4.8 % → 4.0 %).
+**Lane B (anchoring, not validation).** Taiwan repayment status is mapped onto the platform's bureau
+features; a behaviour sub-score learnt on real defaults feeds the production model; the synthetic
+generator is anchored so that the default rate per delinquency band matches the real curve (11.7 /
+25.0 / 43.5 / 62.9 %, tolerance test ±5 points). The PD level is imposed from a real proxy curve
+(anchoring), not validated: the anchor is next-month card default, used as the level of a 12-month
+90+DPD loan PD. Real validation is lane A (methodology) plus the behaviour sub-score. The PD scale
+therefore moved up and the policy/authority cut-offs were recalibrated; on the anchored synthetic
+test set (PD thresholds only, `policy_cutoffs` in `artifacts/validation/lane_b.json`) the realised
+bad rate of the auto-approved book is 4.8 % under v1 (old model, 59 % auto-approved) and 4.0 % under
+v2 (55 % auto-approved, 19 % auto-declined). On the same population the lowest PD decile is
+under-predicted (observed/predicted 1.99; 752 applicants, 12 defaults) — an open finding.
 
 ## Champion
 
 Rule in `rules/validation.yaml`: start from the simplest family; a more complex one wins only with
-DeLong p < 0.05 **and** ΔAUC ≥ 0.005 on the hold-out.
+DeLong p < 0.05 **and** ΔAUC ≥ 0.005 on the pooled **out-of-fold** CV predictions of the training part;
+the hold-out only confirms the choice.
 
-* **UCI Taiwan:** LightGBM beats the scorecard by +0.012 (p = 5.1e-5) → **LightGBM is champion**; its
-  low-risk deciles are well calibrated (observed/predicted 1.04, ECE 0.010, HL p = 0.64).
-* **German Credit:** the scorecard is not beaten (ΔAUC −0.009, p = 0.63) → scorecard. Recorded as a
-  caveat: the boosting advantage depends on sample size.
-* Model promotion through the governance API is refused unless the committed evidence supports it
-  (four-eyes still applies).
+* **UCI Taiwan:** LightGBM beats the scorecard out-of-fold by +0.014 (p = 6.8e-18) → **LightGBM is
+  champion**; hold-out confirmation +0.012 (p = 5.1e-5). Its low-risk deciles are well calibrated
+  (observed/predicted 1.05, ECE 0.012, HL p = 0.42).
+* **German Credit:** LightGBM is significantly weaker than the scorecard out-of-fold (ΔAUC −0.020,
+  p = 0.026; hold-out −0.009, p = 0.63) → scorecard. Recorded as a caveat: the boosting advantage
+  depends on sample size.
+* Model promotion through the governance API needs real-data evidence for the challenger's model
+  family on every dataset: refused if it is significantly worse on any set, if evidence is missing,
+  or if the family is unknown (no borrowed evidence). The evidence is family-level; the artifact is
+  trained on synthetic data, so evidence tied to its hash is impossible. Four-eyes still applies.
 
 ## Fairness
 
-Compared at the **same approval rate** for every model (`approve_at_rate`), on real data:
+Compared at the **same approval rate** for every model (`approve_at_rate`; tied PDs at the cut-off
+are approved in a seeded random order and each minimum AIR is reported with its range over 20 seeds),
+on real data:
 
-* **UCI Taiwan:** every attribute passes the four-fifths rule (worst: education, AIR 0.878).
-* **German Credit:** the champion **fails for age band (AIR 0.698)**; the less-discriminatory-alternative
-  search finds no model within the allowed AUC loss that passes. This is an **open model-risk finding**,
-  not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
+* **UCI Taiwan:** every attribute passes the four-fifths rule (worst: education, AIR 0.877, seeds
+  0.874–0.882).
+* **German Credit:** the champion **fails for age band (AIR 0.698)**. The less-discriminatory-alternative
+  search, which now includes the other trained families, finds LightGBM raises it to 0.780 for an AUC
+  loss of 0.009 (limit 0.010) — still below 0.80, passing for only 25 % of tie-break seeds. This is an
+  **open model-risk finding**, not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
+  `FOREIGN_WORKER` is not testable (one group only above the minimum size) and is reported as n/a.
 * The synthetic generator now contains proxy correlations (tenure ↔ age, income ↔ province/gender), so
   the synthetic fairness results are no longer good by construction.
 
@@ -101,8 +118,9 @@ Playwright).
 
 ## Remaining limitations
 
-* Production features remain Turkish **synthetic** data; only the methodology, the behaviour sub-score
-  and the calibration level are validated on real (non-Turkish) data.
+* Production features remain Turkish **synthetic** data; only the methodology and the behaviour
+  sub-score are validated on real (non-Turkish) data. The PD level is imposed from a real proxy curve
+  (anchoring), not validated.
 * No reject inference and no real out-of-time test (the public sets have no usable time axis).
 * The German Credit age-band fairness finding is open.
 * Inline/SQLite is a single-writer mode; throughput needs the Docker topology.

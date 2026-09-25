@@ -6,7 +6,8 @@ The platform uses two kinds of data:
    because its inputs — KKB score, DSR, open-banking cash-flow features — do not exist in any public
    dataset.
 2. **Real public credit-default data** to validate the methodology (lane A), to train the
-   behaviour sub-score and to anchor the calibration of the production model (lane B).
+   behaviour sub-score and to anchor the PD level of the production model (lane B). The anchoring
+   imposes the level from a real proxy curve; it is not a validation of that level.
 
 ## Public datasets
 
@@ -98,7 +99,8 @@ Known differences, stated rather than hidden:
 * **Window.** The public history covers 6 months, KKB features cover 24 months.
 * **Target.** Taiwan: default on the next monthly card payment. Platform: 90+ days past due within
   12 months on an instalment loan. The anchoring transfers the *shape* of the arrears→default curve
-  and a realistic level, not a validated Turkish PD.
+  and imposes the next-month card default rate as the level of a 12-month 90+DPD loan PD — a proxy
+  level, not a validated Turkish PD.
 * **Population.** The synthetic generator keeps a Turkish applicant mix (80 % without recent arrears
   vs. 66 % in the card book); only the default rate *within* each delinquency band is anchored.
 
