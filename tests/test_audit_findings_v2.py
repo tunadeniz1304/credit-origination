@@ -202,7 +202,6 @@ def test_f11_single_pending_review_per_application(tmp_path):
 
 
 # ------------------------------------------------------------------ E. security
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f13_csp_without_unsafe_eval():
     from fastapi.testclient import TestClient
 
@@ -261,7 +260,6 @@ def test_f17_queue_is_paginated():
     assert len(body["items"]) <= 5
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f18_every_form_control_is_labelled():
     html = (PROJECT_ROOT / "app" / "static" / "index.html").read_text(encoding="utf-8")
     controls = re.findall(r"<(input|select|textarea)\b([^>]*)>", html)

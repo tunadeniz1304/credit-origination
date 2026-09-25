@@ -109,4 +109,4 @@ def test_index_served(seeded):
     client, _ = seeded
     page = client.get("/")
     assert page.status_code == 200 and "Kredi Tahsis Platformu" in page.text
-    assert client.get("/static/vendor/alpine.min.js").status_code == 200
+    assert client.get("/static/vendor/alpine-csp-3.17.4.min.js").status_code == 200

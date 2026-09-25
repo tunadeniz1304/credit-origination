@@ -4,99 +4,122 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Anil2 — Kredi Tahsis Platformu</title>
+  <link rel="icon" href="data:,">
   <link rel="stylesheet" href="/static/app.css">
   <script defer src="/static/vendor/chart.umd.min.js"></script>
   <script defer src="/static/app.js"></script>
-  <script defer src="/static/vendor/alpine.min.js"></script>
+  <script defer src="/static/vendor/alpine-csp-3.17.4.min.js"></script>
 </head>
-<body x-data="platform()" x-init="init()" :data-theme="theme">
+<body x-data="platform" :data-theme="theme">
+<a class="skip-link" href="#main">İçeriğe geç</a>
 <header>
   <h1>Anil2 · Kredi Tahsis Platformu</h1>
   <nav x-show="user" aria-label="Ana menü">
     <template x-for="v in views()" :key="v.id">
-      <button :class="{active: view === v.id}" @click="go(v.id)" x-text="v.label"></button>
+      <button type="button" :class="{active: view === v.id}" :aria-current="view === v.id ? 'page' : 'false'" @click="go(v.id)" x-text="v.label"></button>
     </template>
   </nav>
   <span class="spacer"></span>
   <span class="ai-badge" x-show="llm" x-text="llm && llm.mode === 'live' ? 'AI: Canlı (' + llm.model + ')' : 'AI: Demo'" :title="llm ? 'LLM çağrıları: ' + llm.calls : ''"></span>
-  <button @click="toggleTheme()" aria-label="Tema değiştir" x-text="theme === 'dark' ? '☀' : '☾'"></button>
-  <template x-if="user"><span><span x-text="user.full_name + ' · ' + user.role_label"></span> <button @click="logout()">Çıkış</button></span></template>
+  <button type="button" @click="toggleTheme()" :aria-label="theme === 'dark' ? 'Açık temaya geç' : 'Koyu temaya geç'" :aria-pressed="theme === 'dark' ? 'true' : 'false'" x-text="theme === 'dark' ? '☀' : '☾'"></button>
+  <template x-if="user"><span><span x-text="userLabel()"></span> <button type="button" @click="logout()">Çıkış</button></span></template>
 </header>
 
-<main>
+<main id="main" tabindex="-1">
   <!-- ============================== LOGIN -->
-  <section x-show="!user" class="card" style="max-width:520px;margin:40px auto">
-    <h2>Giriş</h2>
+  <section x-show="!user" class="card login" aria-labelledby="login-title">
+    <h2 id="login-title">Giriş</h2>
     <form @submit.prevent="login()">
-      <label for="u">Kullanıcı adı</label><input id="u" x-model="loginForm.username" autocomplete="username">
-      <label for="p">Parola</label><input id="p" type="password" x-model="loginForm.password" autocomplete="current-password">
-      <p class="error" x-text="error"></p>
+      <label for="u">Kullanıcı adı</label><input id="u" x-model="loginForm.username" autocomplete="username" required>
+      <label for="p">Parola</label><input id="p" type="password" x-model="loginForm.password" autocomplete="current-password" required>
+      <p class="error" role="alert" x-text="user ? '' : error"></p>
       <button class="primary" type="submit">Giriş yap</button>
     </form>
-    <h3>Demo kullanıcılar (parola: Demo123!)</h3>
-    <div class="row">
-      <template x-for="d in demoUsers" :key="d[0]">
-        <button @click="loginForm.username = d[0]; loginForm.password = 'Demo123!'; login()" x-text="d[1]"></button>
-      </template>
+    <div x-show="authConfig.demo_mode">
+      <h3>Demo kullanıcılar (parola: Demo123!)</h3>
+      <div class="row">
+        <template x-for="d in demoUsers" :key="d[0]">
+          <button type="button" @click="demoLogin(d[0])" x-text="d[1]"></button>
+        </template>
+      </div>
+    </div>
+    <div x-show="authConfig.registration_enabled">
+      <h3>Hesabınız yok mu?</h3>
+      <form @submit.prevent="register()">
+        <label for="reg-user">Kullanıcı adı</label><input id="reg-user" x-model="registerForm.username" autocomplete="username" minlength="3" required>
+        <label for="reg-name">Ad Soyad</label><input id="reg-name" x-model="registerForm.full_name" autocomplete="name" minlength="3" required>
+        <label for="reg-pass">Parola (en az 6 karakter)</label><input id="reg-pass" type="password" x-model="registerForm.password" autocomplete="new-password" minlength="6" required>
+        <div x-show="authConfig.captcha"><label for="reg-captcha">Güvenlik doğrulama kodu</label><input id="reg-captcha" x-model="registerForm.captcha_token" autocomplete="off"></div>
+        <button type="submit">Başvuran olarak kaydol</button>
+      </form>
     </div>
   </section>
 
   <!-- ============================== APPLICANT PORTAL -->
-  <section x-show="user && view === 'portal'">
+  <section x-show="user && view === 'portal'" aria-labelledby="portal-title">
     <div class="card">
-      <div class="row"><h2 style="margin:0">Başvurularım</h2><span class="spacer"></span><button class="primary" @click="startWizard()">Yeni başvuru</button></div>
-      <table>
-        <thead><tr><th>No</th><th>Durum</th><th>Tutar</th><th>Vade</th><th>Tarih</th></tr></thead>
+      <div class="row"><h2 id="portal-title" class="flush">Başvurularım</h2><span class="spacer"></span><button type="button" class="primary" @click="startWizard()">Yeni başvuru</button></div>
+      <div class="table-scroll"><table aria-labelledby="portal-title">
+        <thead><tr><th scope="col">Başvuru</th><th scope="col">Ürün</th><th scope="col">Durum</th><th scope="col">Tutar</th><th scope="col">Vade</th><th scope="col">Tarih</th></tr></thead>
         <tbody>
           <template x-for="a in applications" :key="a.application_id">
-            <tr class="clickable" @click="openApp(a.application_id)">
-              <td x-text="a.application_id"></td><td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td>
-              <td x-text="tl(a.requested_amount)"></td><td x-text="a.requested_term_months + ' ay'"></td><td x-text="date(a.created_at)"></td>
+            <tr class="clickable" :class="{selected: current && current.application_id === a.application_id}" @click="openApp(a.application_id)">
+              <td><button type="button" class="linklike" @click.stop="openApp(a.application_id)" x-text="a.application_id"></button></td>
+              <td x-text="lbl('product', a.product)"></td>
+              <td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td>
+              <td class="num" x-text="tl(a.requested_amount)"></td><td x-text="a.requested_term_months + ' ay'"></td><td x-text="date(a.created_at)"></td>
             </tr>
           </template>
         </tbody>
-      </table>
+      </table></div>
       <p class="muted" x-show="!applications.length">Henüz başvurunuz yok.</p>
     </div>
 
     <!-- wizard -->
-    <div class="card" x-show="wizard.open">
-      <h2>Yeni kredi başvurusu</h2>
-      <div class="steps"><span :class="{on: wizard.step===1}">1 · Kişisel bilgiler</span><span :class="{on: wizard.step===2}">2 · Gelir ve talep</span><span :class="{on: wizard.step===3}">3 · KVKK ve rızalar</span></div>
-      <div x-show="wizard.step === 1" class="grid">
-        <div><label>Ad Soyad</label><input x-model="form.name"></div>
-        <div><label>T.C. Kimlik No</label><input x-model="form.identity_no" inputmode="numeric" maxlength="11"></div>
-        <div><label>Doğum tarihi</label><input type="date" x-model="form.birth_date"></div>
-        <div><label>Cep telefonu</label><input x-model="form.phone"></div>
-        <div><label>E-posta</label><input x-model="form.email"></div>
-        <div><label>IBAN</label><input x-model="form.iban"></div>
-        <div style="grid-column:1/-1"><label>Adres</label><input x-model="form.address"></div>
-        <div><label>Demo kimliği seç</label><select @change="pickDemo($event.target.value)"><option value="">—</option><template x-for="(t,k) in demoTckn" :key="k"><option :value="k" x-text="k"></option></template></select></div>
-      </div>
-      <div x-show="wizard.step === 2" class="grid">
-        <div><label>Aylık net gelir (TL)</label><input type="number" x-model.number="form.monthly_income"></div>
-        <div><label>Çalışma şekli</label><select x-model="form.employment_type"><option value="MAASLI">Maaşlı</option><option value="SERBEST">Serbest meslek</option><option value="EMEKLI">Emekli</option></select></div>
-        <div><label>İşveren</label><input x-model="form.employer_name"></div>
-        <div><label>Ürün</label><select x-model="form.product"><option value="IHTIYAC">İhtiyaç kredisi</option><option value="TASIT">Taşıt kredisi</option></select></div>
-        <div><label>Talep edilen tutar (TL)</label><input type="number" x-model.number="form.requested_amount"></div>
-        <div><label>Vade (ay)</label><input type="number" x-model.number="form.requested_term_months"></div>
-        <div style="grid-column:1/-1" x-show="quote"><p class="muted">Tahmini (B bandı) taksit: <b x-text="quote ? tl(quote.instalment) : ''"></b> · yıllık maliyet oranı <b x-text="quote ? pct(quote.apr) : ''"></b></p></div>
-      </div>
-      <div x-show="wizard.step === 3">
+    <form class="card" x-show="wizard.open" aria-labelledby="wizard-title" @submit.prevent="wizardSubmit()">
+      <h2 id="wizard-title">Yeni kredi başvurusu</h2>
+      <ol class="steps" aria-label="Adımlar">
+        <li :class="{on: wizard.step === 1}" :aria-current="wizard.step === 1 ? 'step' : 'false'">1 · Kişisel bilgiler</li>
+        <li :class="{on: wizard.step === 2}" :aria-current="wizard.step === 2 ? 'step' : 'false'">2 · Gelir ve talep</li>
+        <li :class="{on: wizard.step === 3}" :aria-current="wizard.step === 3 ? 'step' : 'false'">3 · KVKK ve rızalar</li>
+      </ol>
+      <fieldset x-show="wizard.step === 1" class="grid plain">
+        <legend class="sr-only">Kişisel bilgiler</legend>
+        <div><label for="f-name">Ad Soyad</label><input id="f-name" x-model="form.name" autocomplete="name"></div>
+        <div><label for="f-tckn">T.C. Kimlik No</label><input id="f-tckn" x-model="form.identity_no" inputmode="numeric" maxlength="11" autocomplete="off"></div>
+        <div><label for="f-birth">Doğum tarihi</label><input id="f-birth" type="date" x-model="form.birth_date" autocomplete="bday"></div>
+        <div><label for="f-phone">Cep telefonu</label><input id="f-phone" x-model="form.phone" inputmode="tel" autocomplete="tel"></div>
+        <div><label for="f-email">E-posta</label><input id="f-email" type="email" x-model="form.email" autocomplete="email"></div>
+        <div><label for="f-iban">IBAN</label><input id="f-iban" x-model="form.iban" autocomplete="off"></div>
+        <div class="span-all"><label for="f-address">Adres</label><input id="f-address" x-model="form.address" autocomplete="street-address"></div>
+        <div x-show="authConfig.demo_mode"><label for="f-demo">Demo kimliği seç</label><select id="f-demo" @change="pickDemo($event.target.value)"><option value="">—</option><template x-for="(t,k) in demoTckn" :key="k"><option :value="k" x-text="lbl('persona', k)"></option></template></select></div>
+      </fieldset>
+      <fieldset x-show="wizard.step === 2" class="grid plain">
+        <legend class="sr-only">Gelir ve talep</legend>
+        <div><label for="f-income">Aylık net gelir (TL)</label><input id="f-income" type="number" min="0" x-model.number="form.monthly_income"></div>
+        <div><label for="f-employment">Çalışma şekli</label><select id="f-employment" x-model="form.employment_type"><template x-for="e in labelEntries('employment_type')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
+        <div><label for="f-employer">İşveren</label><input id="f-employer" x-model="form.employer_name" autocomplete="organization"></div>
+        <div><label for="f-product">Ürün</label><select id="f-product" x-model="form.product"><template x-for="e in labelEntries('product')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select></div>
+        <div><label for="f-amount">Talep edilen tutar (TL)</label><input id="f-amount" type="number" min="0" x-model.number="form.requested_amount"></div>
+        <div><label for="f-term">Vade (ay)</label><input id="f-term" type="number" min="1" max="120" x-model.number="form.requested_term_months"></div>
+        <div class="span-all" x-show="quote"><p class="muted">Tahmini (B bandı) taksit: <b x-text="quote ? tl(quote.instalment) : ''"></b> · yıllık maliyet oranı <b x-text="quote ? pct(quote.apr) : ''"></b></p></div>
+      </fieldset>
+      <fieldset x-show="wizard.step === 3" class="plain">
+        <legend class="sr-only">KVKK ve rızalar</legend>
         <p class="letter">Kişisel verileriniz 6698 sayılı KVKK kapsamında kredi değerlendirmesi amacıyla işlenir. KKB, e-Devlet ve (onay verirseniz) açık bankacılık verileri yalnızca rızanızla sorgulanır. Kararın otomatik verilmesi halinde itiraz ve insan incelemesi talep etme hakkınız vardır (KVKK m.11).</p>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.kvkk_aydinlatma"> Aydınlatma metnini okudum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.acik_riza"> Otomatik değerlendirme ve profillemeye açık rıza veriyorum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.kkb_sorgu"> KKB/Findeks sorgusuna izin veriyorum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.edevlet_sorgu"> e-Devlet/SGK sorgusuna izin veriyorum</label>
-        <label><input type="checkbox" style="width:auto" x-model="form.consents.acik_bankacilik"> Açık bankacılık (GEÇİT) ile son 12 ay hesap hareketlerimin paylaşılmasına 90 gün süreyle izin veriyorum</label>
-      </div>
-      <p class="error" x-text="error"></p>
+        <div class="check"><input id="c-kvkk" type="checkbox" x-model="form.consents.kvkk_aydinlatma"><label for="c-kvkk">Aydınlatma metnini okudum</label></div>
+        <div class="check"><input id="c-riza" type="checkbox" x-model="form.consents.acik_riza"><label for="c-riza">Otomatik değerlendirme ve profillemeye açık rıza veriyorum</label></div>
+        <div class="check"><input id="c-kkb" type="checkbox" x-model="form.consents.kkb_sorgu"><label for="c-kkb">KKB/Findeks sorgusuna izin veriyorum</label></div>
+        <div class="check"><input id="c-edevlet" type="checkbox" x-model="form.consents.edevlet_sorgu"><label for="c-edevlet">e-Devlet/SGK sorgusuna izin veriyorum</label></div>
+        <div class="check"><input id="c-ob" type="checkbox" x-model="form.consents.acik_bankacilik"><label for="c-ob">Açık bankacılık (GEÇİT) ile son 12 ay hesap hareketlerimin paylaşılmasına 90 gün süreyle izin veriyorum</label></div>
+      </fieldset>
+      <p class="error" role="alert" x-text="user ? error : ''"></p>
       <div class="row">
-        <button @click="wizard.step > 1 ? wizard.step-- : wizard.open = false" x-text="wizard.step > 1 ? 'Geri' : 'Vazgeç'"></button>
-        <button class="primary" x-show="wizard.step < 3" @click="wizard.step++; if (wizard.step === 3) loadQuote()">İleri</button>
-        <button class="primary" x-show="wizard.step === 3" @click="submitApplication()" :disabled="busy">Başvuruyu gönder</button>
+        <button type="button" @click="wizardBack()" x-text="wizard.step > 1 ? 'Geri' : 'Vazgeç'"></button>
+        <button type="submit" class="primary" x-show="wizard.step < 3">İleri</button>
+        <button type="submit" class="primary" x-show="wizard.step === 3" :disabled="busy">Başvuruyu gönder</button>
       </div>
-    </div>
+    </form>
 
     <!-- applicant detail -->
     <template x-if="current">
@@ -104,33 +127,37 @@
         <div>
           <div class="card">
             <h2 x-text="current.application_id"></h2>
-            <p><span class="badge" :class="stateClass(current.state)" x-text="current.state_label"></span> <span class="muted" x-text="tl(current.requested_amount) + ' · ' + current.requested_term_months + ' ay'"></span></p>
+            <p><span class="badge" :class="stateClass(current.state)" x-text="current.state_label"></span> <span class="muted" x-text="lbl('product', current.product) + ' · ' + tl(current.requested_amount) + ' · ' + current.requested_term_months + ' ay'"></span></p>
+            <p class="muted" role="status" x-text="processing ? 'Başvurunuz değerlendiriliyor…' : ''"></p>
             <h3>Zaman çizelgesi</h3>
             <ul class="timeline"><template x-for="e in current.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor"></span><div class="muted" x-text="e.reason"></div></li></template></ul>
           </div>
-          <div class="card" x-show="current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI'">
-            <h2>Belgelerim</h2>
-            <div class="row"><select x-model="upload.code"><template x-for="d in current.required_documents"><option :value="d.code" x-text="d.description + (current.missing_documents.includes(d.code) ? ' (eksik)' : ' ✓')"></option></template></select></div>
-            <div class="drop" :class="{over: upload.over}" @dragover.prevent="upload.over = true" @dragleave="upload.over = false" @drop.prevent="upload.over = false; uploadFile($event.dataTransfer.files[0])">
-              Dosyayı buraya sürükleyin veya <input type="file" style="width:auto" @change="uploadFile($event.target.files[0])" accept=".pdf,.png,.jpg,.jpeg">
+          <div class="card" x-show="(current.state === 'BELGE_BEKLENIYOR' || current.state === 'GONDERILDI') && !processing">
+            <h2 id="docs-title">Belgelerim</h2>
+            <p class="notice" role="note" x-show="ocrMissing">OCR yok — taranmış belgeler uzman incelemesine yönlendirilir.</p>
+            <label for="doc-code">Yüklenecek belge</label>
+            <select id="doc-code" x-model="upload.code"><template x-for="d in current.required_documents" :key="d.code"><option :value="d.code" x-text="d.description + (current.missing_documents.includes(d.code) ? ' (eksik)' : ' ✓')"></option></template></select>
+            <div class="drop" :class="{over: upload.over}" @dragover.prevent="upload.over = true" @dragleave="upload.over = false" @drop.prevent="onDrop($event)">
+              <label for="doc-file">Dosyayı buraya sürükleyin veya seçin (PDF, PNG, JPG)</label>
+              <input id="doc-file" type="file" class="file" @change="onFileChosen($event)" accept=".pdf,.png,.jpg,.jpeg">
             </div>
-            <p class="muted" x-text="'Eksik: ' + (current.missing_documents.join(', ') || 'yok')"></p>
+            <p class="muted" role="status" x-text="'Eksik: ' + (current.missing_documents.length ? lblList('document', current.missing_documents) : 'yok')"></p>
           </div>
         </div>
         <div>
-          <div class="card" x-show="current.offer">
-            <h2>Kredi teklifiniz</h2>
+          <div class="card" x-show="current.offer" aria-labelledby="offer-title">
+            <h2 id="offer-title">Kredi teklifiniz</h2>
             <template x-if="current.offer">
               <div>
                 <div class="grid">
-                  <div><div class="muted">Tutar</div><div class="kpi" x-text="tl(current.offer.amount)"></div></div>
-                  <div><div class="muted">Aylık taksit</div><div class="kpi" x-text="tl(current.offer.instalment)"></div></div>
+                  <div><div class="muted">Tutar</div><div class="kpi" data-testid="offer-amount" x-text="tl(current.offer.amount)"></div></div>
+                  <div><div class="muted">Aylık taksit</div><div class="kpi" data-testid="offer-instalment" x-text="tl(current.offer.instalment)"></div></div>
                 </div>
                 <p class="muted" x-text="'Yıllık akdi faiz ' + pct(current.offer.annual_rate) + ' · yıllık maliyet oranı ' + pct(current.offer.apr) + ' · toplam geri ödeme ' + tl(current.offer.total_payment) + ' · geçerlilik ' + date(current.offer.valid_until)"></p>
-                <button class="primary" x-show="current.state === 'TEKLIF_SUNULDU'" @click="act('offer/accept')">Teklifi kabul et</button>
-                <button x-show="current.reports_contract || current.state === 'SOZLESME_HAZIR' || current.state === 'KULLANDIRILDI'" @click="download('/api/v1/applications/' + current.application_id + '/contract', 'sozlesme.pdf')">Sözleşme öncesi bilgi formu</button>
-                <details><summary>Ödeme planı</summary><table><thead><tr><th>Ay</th><th>Taksit</th><th>Faiz</th><th>Vergiler</th><th>Anapara</th><th>Kalan</th></tr></thead>
-                  <tbody><template x-for="r in current.offer.schedule"><tr><td x-text="r.period"></td><td x-text="tl(r.instalment)"></td><td x-text="tl(r.interest)"></td><td x-text="tl(r.kkdf + r.bsmv)"></td><td x-text="tl(r.principal)"></td><td x-text="tl(r.closing_balance)"></td></tr></template></tbody></table></details>
+                <button type="button" class="primary" x-show="current.state === 'TEKLIF_SUNULDU'" @click="act('offer/accept')">Teklifi kabul et</button>
+                <button type="button" x-show="current.reports_contract || current.state === 'SOZLESME_HAZIR' || current.state === 'KULLANDIRILDI'" @click="download('/api/v1/applications/' + current.application_id + '/contract', 'sozlesme.pdf')">Sözleşme öncesi bilgi formu</button>
+                <details><summary>Ödeme planı</summary><div class="table-scroll"><table><thead><tr><th scope="col">Ay</th><th scope="col">Taksit</th><th scope="col">Faiz</th><th scope="col">Vergiler</th><th scope="col">Anapara</th><th scope="col">Kalan</th></tr></thead>
+                  <tbody><template x-for="r in current.offer.schedule"><tr><td x-text="r.period"></td><td class="num" x-text="tl(r.instalment)"></td><td class="num" x-text="tl(r.interest)"></td><td class="num" x-text="tl(r.kkdf + r.bsmv)"></td><td class="num" x-text="tl(r.principal)"></td><td class="num" x-text="tl(r.closing_balance)"></td></tr></template></tbody></table></div></details>
               </div>
             </template>
           </div>
@@ -139,18 +166,19 @@
             <template x-if="current.decision">
               <div>
                 <p><span class="badge" :class="stateClass(current.decision.outcome)" x-text="current.decision.outcome_label"></span> <span class="badge warn" x-show="current.decision.conditional">Koşullu (karşı teklif)</span></p>
-                <ul><template x-for="r in current.decision.reason_codes"><li x-text="r.text"></li></template></ul>
-                <div x-show="current.decision.counterfactuals.length"><h3>Ne değişirse onaylanırsınız?</h3><ul><template x-for="c in current.decision.counterfactuals"><li x-text="c"></li></template></ul></div>
+                <ul><template x-for="r in current.decision.reason_codes"><li><span class="badge" :class="reasonKindClass(r)" x-show="reasonKindLabel(r)" x-text="reasonKindLabel(r)"></span> <span x-text="r.text"></span></li></template></ul>
+                <div x-show="current.decision.counterfactuals && current.decision.counterfactuals.length"><h3>Ne değişirse onaylanırsınız?</h3><ul><template x-for="c in current.decision.counterfactuals"><li x-text="c"></li></template></ul></div>
                 <details><summary>Bildirim mektubu</summary><div class="letter" x-text="current.decision.applicant_letter"></div></details>
-                <div x-show="current.decision.objection_right && (current.state === 'OTOMATIK_RET' || current.state === 'REDDEDILDI')">
+                <form x-show="current.decision.objection_right && (current.state === 'OTOMATIK_RET' || current.state === 'REDDEDILDI')" @submit.prevent="submitObjection()">
                   <h3>İtiraz (KVKK m.11)</h3>
-                  <textarea x-model="objection" placeholder="İtiraz gerekçeniz (en az 10 karakter)"></textarea>
-                  <button class="primary" @click="submitObjection()">İtiraz et ve insan incelemesi talep et</button>
-                </div>
+                  <label for="objection-text">İtiraz gerekçeniz (en az 10 karakter)</label>
+                  <textarea id="objection-text" x-model="objection" minlength="10"></textarea>
+                  <button type="submit" class="primary">İtiraz et ve insan incelemesi talep et</button>
+                </form>
               </div>
             </template>
           </div>
-          <div class="card" x-show="current.letters && current.letters.eksik_belge">
+          <div class="card" x-show="current.letters && current.letters.eksik_belge && current.missing_documents.length">
             <h2>Eksik belge yazısı</h2><div class="letter" x-text="current.letters ? current.letters.eksik_belge : ''"></div>
           </div>
         </div>
@@ -159,91 +187,181 @@
   </section>
 
   <!-- ============================== WORKBENCH -->
-  <section x-show="user && view === 'workbench'">
-    <div class="card">
-      <div class="row"><h2 style="margin:0">İnceleme kuyruğu</h2><span class="spacer"></span><button @click="loadQueue()">Yenile</button></div>
-      <table>
-        <thead><tr><th>No</th><th>Durum</th><th>Tutar</th><th>PD</th><th>Gerekçe</th><th>SLA</th><th>Atanan</th></tr></thead>
-        <tbody><template x-for="q in queue" :key="q.application_id">
-          <tr class="clickable" @click="openStaff(q.application_id)">
-            <td x-text="q.application_id"></td><td><span class="badge warn" x-text="q.state"></span> <span class="badge" x-show="q.pending_review_id">4 göz bekliyor</span></td>
-            <td x-text="tl(q.requested_amount)"></td><td x-text="pct(q.pd)"></td><td x-text="q.reason_codes.slice(0,2).join(', ')"></td>
-            <td><span class="badge" :class="q.sla_breached ? 'bad' : (q.sla_remaining_hours < 4 ? 'warn' : 'ok')" x-text="q.sla_remaining_hours === null ? '—' : q.sla_remaining_hours + ' sa'"></span></td><td x-text="q.assigned_to || '—'"></td>
-          </tr></template></tbody>
-      </table>
-      <h3>Tüm başvurular</h3>
-      <table><thead><tr><th>No</th><th>Başvuran</th><th>Durum</th><th>Tutar</th><th>Senaryo</th></tr></thead>
-        <tbody><template x-for="a in applications" :key="a.application_id"><tr class="clickable" @click="openStaff(a.application_id)"><td x-text="a.application_id"></td><td x-text="a.applicant_name"></td><td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td><td x-text="tl(a.requested_amount)"></td><td x-text="a.persona || ''"></td></tr></template></tbody></table>
-    </div>
-
-    <template x-if="staff">
-      <div class="card">
-        <div class="row"><h2 style="margin:0" x-text="staff.detail.application_id + ' · ' + staff.detail.applicant.name"></h2><span class="badge" :class="stateClass(staff.detail.state)" x-text="staff.detail.state_label"></span><span class="spacer"></span>
-          <button @click="download('/api/v1/applications/' + staff.detail.application_id + '/report?format=pdf', 'rapor.pdf')">Rapor (PDF)</button>
-          <button @click="assign()">Üstlen</button></div>
-        <div class="tabs"><template x-for="t in staffTabs" :key="t[0]"><button :class="{active: staff.tab === t[0]}" @click="staffTab(t[0])" x-text="t[1]"></button></template></div>
-
-        <div x-show="staff.tab === 'ozet'" class="grid">
-          <div><div class="muted">Talep</div><div class="kpi" x-text="tl(staff.detail.requested_amount)"></div><div class="muted" x-text="staff.detail.requested_term_months + ' ay · beyan gelir ' + tl(staff.detail.declared_income)"></div></div>
-          <div x-show="staff.decision"><div class="muted">PD / bant / skor</div><div class="kpi" x-text="staff.decision ? pct(staff.decision.pd) + ' · ' + staff.decision.risk_band : ''"></div><div class="muted" x-text="staff.decision ? 'Skor kartı ' + Math.round(staff.decision.score_points) + ' · challenger ' + pct(staff.decision.challenger.pd) : ''"></div></div>
-          <div><div class="muted">KYC</div><div x-text="staff.detail.kyc ? ('Yaptırım: ' + (staff.detail.kyc.sanctions_match ? 'OLASI EŞLEŞME' : 'yok') + ' · velocity ' + staff.detail.kyc.velocity_30d + ' · halka ' + staff.detail.kyc.fraud_ring_size + ' · anomali ' + staff.detail.kyc.anomaly_score) : '—'"></div></div>
-          <div style="grid-column:1/-1"><h3>Zaman çizelgesi</h3><ul class="timeline"><template x-for="e in staff.detail.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor + ' · ' + e.reason"></span></li></template></ul></div>
+  <section x-show="user && view === 'workbench'" aria-labelledby="wb-title">
+    <div class="workbench">
+      <div class="wb-list">
+        <div class="card">
+          <div class="row"><h2 id="wb-title" class="flush">İnceleme kuyruğu</h2><span class="spacer"></span>
+            <span class="badge bad" x-show="queuePage.sla_breached > 0" x-text="queuePage.sla_breached + ' SLA aşımı'"></span>
+            <button type="button" @click="loadQueue()">Yenile</button></div>
+          <form class="filters" role="search" aria-label="Kuyruk filtreleri" @submit.prevent="applyFilters()">
+            <div class="f-search"><label for="q-search">Ara (başvuru no / senaryo)</label>
+              <input id="q-search" type="search" maxlength="64" x-model="queueFilter.q" @input="onSearchInput()" placeholder="ör. APP-1A2B" autocomplete="off"></div>
+            <div><label for="q-state">Durum</label>
+              <select id="q-state" x-model="queueFilter.state" @change="applyFilters()">
+                <option value="">Tümü</option>
+                <option value="UZMAN_INCELEMESI" x-text="lbl('state', 'UZMAN_INCELEMESI')"></option>
+                <option value="ITIRAZ_INCELEMESI" x-text="lbl('state', 'ITIRAZ_INCELEMESI')"></option>
+              </select></div>
+            <div><label for="q-product">Ürün</label>
+              <select id="q-product" x-model="queueFilter.product" @change="applyFilters()">
+                <option value="">Tümü</option>
+                <template x-for="e in labelEntries('product')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template>
+              </select></div>
+            <div><label for="q-sla">SLA</label>
+              <select id="q-sla" x-model="queueFilter.sla" @change="applyFilters()">
+                <option value="">Tümü</option><option value="true">Süresi aşılmış</option><option value="false">Süresi içinde</option>
+              </select></div>
+            <div class="f-check"><input id="q-mine" type="checkbox" x-model="queueFilter.mine" @change="applyFilters()"><label for="q-mine">Yalnızca bana atananlar</label></div>
+          </form>
+          <p class="sr-only" role="status" aria-live="polite" x-text="queueStatus()"></p>
+          <div class="queue-scroll" tabindex="-1">
+            <table class="queue">
+              <caption class="sr-only">İnceleme kuyruğu; satırlar ok tuşlarıyla gezilebilir, Enter ile açılır.</caption>
+              <thead><tr><th scope="col">Başvuru</th><th scope="col">Durum</th><th scope="col">Tutar</th><th scope="col">PD</th><th scope="col">SLA</th></tr></thead>
+              <tbody><template x-for="q in queue" :key="q.application_id">
+                <tr class="clickable" :class="{selected: isSelected(q.application_id)}" @click="openStaff(q.application_id)">
+                  <td><button type="button" class="linklike queue-open" :aria-current="isSelected(q.application_id) ? 'true' : 'false'" @click.stop="openStaff(q.application_id)" @keydown.down.prevent="focusRow($event, 1)" @keydown.up.prevent="focusRow($event, -1)" x-text="q.application_id"></button>
+                    <div class="muted" x-text="q.product_label + (q.assigned_to ? ' · ' + q.assigned_to : '')"></div></td>
+                  <td><span class="badge warn" x-text="lbl('state', q.state)"></span> <span class="badge" x-show="q.pending_review_id">4 göz bekliyor</span></td>
+                  <td class="num" x-text="tl(q.requested_amount)"></td><td class="num" x-text="pct(q.pd)"></td>
+                  <td><span class="badge" :class="slaClass(q)" x-text="slaText(q)"></span></td>
+                </tr></template></tbody>
+            </table>
+            <p class="muted pad" x-show="!queue.length" x-text="queueLoading ? 'Yükleniyor…' : 'Filtrelere uyan başvuru yok.'"></p>
+          </div>
+          <nav class="pager" aria-label="Kuyruk sayfaları">
+            <label for="q-size">Sayfa boyutu</label>
+            <select id="q-size" x-model.number="queueFilter.limit" @change="applyFilters()"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select>
+            <span class="spacer"></span>
+            <span x-text="pageRange()"></span>
+            <button type="button" @click="pageQueue(-1)" :disabled="!hasPrevPage()" aria-label="Önceki sayfa">‹ Önceki</button>
+            <button type="button" @click="pageQueue(1)" :disabled="!hasNextPage()" aria-label="Sonraki sayfa">Sonraki ›</button>
+          </nav>
         </div>
 
-        <div x-show="staff.tab === 'belgeler'">
-          <template x-for="d in staff.documents"><div class="card">
-            <div class="row"><b x-text="d.code"></b><span class="badge" :class="d.fraud_score >= 0.6 ? 'bad' : (d.fraud_score > 0 ? 'warn' : 'ok')" x-text="'sahtecilik ' + d.fraud_score"></span><span class="badge" x-text="d.status"></span><span class="spacer"></span><button @click="download('/api/v1/applications/' + staff.detail.application_id + '/documents/' + d.document_id + '/file', d.filename)">Görüntüle</button></div>
-            <ul><template x-for="s in d.fraud_signals"><li class="error" x-text="s.label + (s.detail ? ' — ' + s.detail : '')"></li></template></ul>
-            <table><thead><tr><th>Alan</th><th>Değer</th><th>Güven</th><th>Sayfa</th><th></th></tr></thead><tbody><template x-for="f in d.fields"><tr><td x-text="f.name"></td><td x-text="f.value"></td><td x-text="f.confidence"></td><td x-text="f.page"></td><td><button @click="correctField(f)">Düzelt</button></td></tr></template></tbody></table>
-          </div></template>
+        <div class="card">
+          <h2 id="reviews-title">Onay bekleyen dört göz talepleri</h2>
+          <table aria-labelledby="reviews-title">
+            <thead><tr><th scope="col">Başvuru</th><th scope="col">Talep</th><th scope="col">Gerekçe</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead>
+            <tbody><template x-for="r in reviews" :key="r.review_id"><tr>
+              <td><button type="button" class="linklike" @click="openStaff(r.application_id)" x-text="r.application_id"></button></td>
+              <td x-text="lbl('review_action', r.action) + (r.amount ? ' · ' + tl(r.amount) : '') + ' · hazırlayan ' + r.maker + ' · gerekli ' + lbl('role', r.required_role)"></td>
+              <td x-text="r.justification"></td>
+              <td class="nowrap"><template x-if="!isMine(r)"><span>
+                <button type="button" class="primary" @click="checkReview(r, true)" :aria-label="'Onayla: ' + r.application_id">Onayla</button>
+                <button type="button" class="danger" @click="checkReview(r, false)" :aria-label="'Reddet: ' + r.application_id">Reddet</button></span></template>
+                <span class="muted" x-show="isMine(r)">Sizin talebiniz</span></td>
+            </tr></template></tbody>
+          </table>
+          <p class="muted" x-show="!reviews.length">Onay bekleyen talep yok.</p>
         </div>
 
-        <div x-show="staff.tab === 'kkb'"><template x-if="staff.decision"><table><tbody><template x-for="k in bureauKeys"><tr><td x-text="k[1]"></td><td x-text="staff.decision.feature_snapshot[k[0]] === null ? '—' : staff.decision.feature_snapshot[k[0]]"></td></tr></template></tbody></table></template></div>
-
-        <div x-show="staff.tab === 'nakit'"><div class="chart-box"><canvas id="cashChart"></canvas></div><table><tbody><template x-for="(v,k) in (staff.cashflow ? staff.cashflow.features : {})"><tr><td x-text="k"></td><td x-text="v"></td></tr></template></tbody></table></div>
-
-        <div x-show="staff.tab === 'karar'"><template x-if="staff.decision"><div class="grid-2">
-          <div><h3>SHAP katkıları (log-odds)</h3><div class="chart-box"><canvas id="shapChart"></canvas></div></div>
-          <div><h3>Gerekçe kodları</h3><ul><template x-for="r in staff.decision.reason_codes"><li><b x-text="r.code"></b> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
-            <h3>Politika kuralları</h3><ul><template x-for="r in staff.decision.rule_results.filter(x => x.fired)"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="r.action"></span> <span x-text="r.id + ' — ' + r.description"></span></li></template></ul>
-            <h3>Karşı-olgusal</h3><ul><template x-for="c in staff.decision.counterfactuals"><li x-text="c"></li></template></ul>
-            <p class="muted" x-text="'Kural seti ' + staff.decision.rule_set_version + ' · model ' + staff.decision.model_version + ' · özet ' + staff.decision.feature_hash.slice(0,12)"></p>
-            <button @click="replay()">Kararı yeniden üret (replay)</button> <span x-text="staff.replay"></span></div>
-        </div></template></div>
-
-        <div x-show="staff.tab === 'fiyat'"><template x-if="staff.decision && staff.decision.pricing"><table><tbody><template x-for="k in pricingKeys"><tr><td x-text="k[1]"></td><td x-text="k[2](staff.decision.pricing[k[0]])"></td></tr></template></tbody></table></template></div>
-
-        <div x-show="staff.tab === 'halka'"><p class="muted" x-text="staff.network ? ('Halka büyüklüğü ' + staff.network.ring_size + ' · ortak tanımlayıcılar: ' + (staff.network.shared_identifiers || []).join(', ')) : ''"></p><svg id="ringSvg" width="100%" height="320" viewBox="0 0 600 320" role="img" aria-label="Başvuru halkası grafiği"></svg></div>
-
-        <div x-show="staff.tab === 'memo'"><button class="primary" @click="generateMemo()" :disabled="busy">AI kredi memorandumu üret</button>
-          <template x-if="staff.memo"><div><p class="muted" x-text="'Mod: ' + staff.memo.mode + ' · adımlar: ' + staff.memo.steps.map(s => s.tool).join(' → ')"></p>
-            <template x-for="s in staff.memo.sections"><div><h3 x-text="s.title"></h3><p x-text="s.text"></p></div></template><h3>Öneri</h3><p x-text="staff.memo.recommendation"></p></div></template></div>
-
-        <div x-show="staff.tab === 'politika'"><label>Politika / mevzuat sorusu</label><input x-model="policyQ" @keydown.enter="askPolicy()"><button @click="askPolicy()">Sor</button>
-          <template x-if="policyA"><div><div class="letter" x-text="policyA.answer"></div><ul><template x-for="s in policyA.sources"><li class="muted" x-text="s.chunk_id + ' — ' + s.title"></li></template></ul></div></template></div>
-
-        <div x-show="staff.tab === 'karar_ver'">
-          <template x-if="staff.detail.state === 'UZMAN_INCELEMESI' || staff.detail.state === 'ITIRAZ_INCELEMESI'"><div>
-            <p class="muted" x-show="staff.authority" x-text="staff.authority ? ('Gerekli yetki: ' + staff.authority.required_role + (staff.authority.four_eyes ? ' · DÖRT GÖZ: ' + staff.authority.reasons.join('; ') : '')) : ''"></p>
-            <div x-show="staff.detail.state === 'ITIRAZ_INCELEMESI'"><h3>İtiraz çözümü</h3><textarea x-model="decisionForm.justification" placeholder="İnceleme notu"></textarea><button class="primary" @click="resolveObjection(true)">İtirazı kabul et (yeniden incele)</button> <button class="danger" @click="resolveObjection(false)">İtirazı reddet</button></div>
-            <div x-show="staff.detail.state === 'UZMAN_INCELEMESI'">
-              <label>Karar</label><select x-model="decisionForm.action"><option value="ONAY">Onay</option><option value="RET">Ret</option><option value="BELGE_ISTE">Ek belge iste</option></select>
-              <div class="grid"><div><label>Tutar (opsiyonel)</label><input type="number" x-model.number="decisionForm.amount"></div><div><label>Vade (opsiyonel)</label><input type="number" x-model.number="decisionForm.term_months"></div></div>
-              <label>Zorunlu gerekçe</label><textarea x-model="decisionForm.justification"></textarea>
-              <button class="primary" @click="submitDecision()">Kararı gönder</button></div>
-          </div></template>
-          <h3>Onay bekleyen dört göz talepleri</h3>
-          <table><tbody><template x-for="r in reviews" :key="r.review_id"><tr><td x-text="r.application_id"></td><td x-text="r.action + ' · ' + (r.amount ? tl(r.amount) : '') + ' · ' + r.maker + ' · gerekli ' + r.required_role"></td><td x-text="r.justification"></td>
-            <td><button class="primary" @click="checkReview(r, true)">Onayla</button> <button class="danger" @click="checkReview(r, false)">Reddet</button></td></tr></template></tbody></table>
-          <div x-show="staff.detail.state === 'SOZLESME_HAZIR'"><button class="primary" @click="disburse()">Krediyi kullandır</button></div>
-        </div>
+        <details class="card">
+          <summary>Tüm başvurular (son 100)</summary>
+          <div class="table-scroll">
+            <table><thead><tr><th scope="col">Başvuru</th><th scope="col">Başvuran</th><th scope="col">Durum</th><th scope="col">Tutar</th><th scope="col">Senaryo</th></tr></thead>
+              <tbody><template x-for="a in applications" :key="a.application_id"><tr>
+                <td><button type="button" class="linklike" @click="openStaff(a.application_id)" x-text="a.application_id"></button></td><td x-text="a.applicant_name"></td>
+                <td><span class="badge" :class="stateClass(a.state)" x-text="a.state_label"></span></td><td class="num" x-text="tl(a.requested_amount)"></td>
+                <td x-text="a.persona ? lbl('persona', a.persona) : '—'"></td></tr></template></tbody></table>
+          </div>
+        </details>
       </div>
-    </template>
+
+      <div class="wb-detail">
+        <div class="card muted" x-show="!staff">Ayrıntıları görmek için kuyruktan bir başvuru seçin.</div>
+        <template x-if="staff">
+          <div class="card" aria-labelledby="staff-title">
+            <div class="row"><h2 id="staff-title" class="flush" x-text="staff.detail.application_id + ' · ' + (staff.detail.applicant ? staff.detail.applicant.name : '')"></h2><span class="badge" :class="stateClass(staff.detail.state)" x-text="staff.detail.state_label"></span><span class="spacer"></span>
+              <button type="button" @click="download('/api/v1/applications/' + staff.detail.application_id + '/report?format=pdf', 'rapor.pdf')">Rapor (PDF)</button>
+              <button type="button" @click="assign()">Üstlen</button></div>
+            <p class="muted" x-text="lbl('product', staff.detail.product) + ' · ' + (staff.detail.assigned_to ? 'atanan: ' + staff.detail.assigned_to : 'atanmamış')"></p>
+            <div class="tabs" role="tablist" aria-label="Başvuru ayrıntıları"><template x-for="t in staffTabs" :key="t[0]"><button type="button" role="tab" :id="'tab-' + t[0]" :aria-selected="staff.tab === t[0] ? 'true' : 'false'" :tabindex="staff.tab === t[0] ? '0' : '-1'" :class="{active: staff.tab === t[0]}" @click="staffTab(t[0])" @keydown.right.prevent="tabKey(1)" @keydown.left.prevent="tabKey(-1)" x-text="t[1]"></button></template></div>
+
+            <div role="tabpanel" aria-labelledby="tab-ozet" x-show="staff.tab === 'ozet'" class="grid">
+              <div><div class="muted">Talep</div><div class="kpi" x-text="tl(staff.detail.requested_amount)"></div><div class="muted" x-text="staff.detail.requested_term_months + ' ay · beyan gelir ' + tl(staff.detail.declared_income)"></div></div>
+              <div x-show="staff.decision"><div class="muted">PD / bant / skor</div><div class="kpi" x-text="staff.decision ? pct(staff.decision.pd) + ' · ' + staff.decision.risk_band : ''"></div><div class="muted" x-text="decisionScores()"></div></div>
+              <div><div class="muted">KYC</div><div x-text="staff.detail.kyc ? ('Yaptırım: ' + (staff.detail.kyc.sanctions_match ? 'OLASI EŞLEŞME' : 'yok') + ' · velocity ' + staff.detail.kyc.velocity_30d + ' · halka ' + staff.detail.kyc.fraud_ring_size + ' · anomali ' + staff.detail.kyc.anomaly_score) : '—'"></div></div>
+              <div class="span-all"><h3>Zaman çizelgesi</h3><ul class="timeline"><template x-for="e in staff.detail.timeline"><li><b x-text="e.to_label"></b> <span class="muted" x-text="date(e.at) + ' · ' + e.actor + ' · ' + e.reason"></span></li></template></ul></div>
+            </div>
+
+            <div role="tabpanel" aria-labelledby="tab-belgeler" x-show="staff.tab === 'belgeler'">
+              <p class="notice" role="note" x-show="ocrMissing">OCR yok — taranmış belgeler uzman incelemesine yönlendirilir.</p>
+              <template x-for="d in staff.documents"><div class="card">
+                <div class="row"><b x-text="lbl('document', d.code)"></b><span class="badge" :class="d.fraud_score >= 0.6 ? 'bad' : (d.fraud_score > 0 ? 'warn' : 'ok')" x-text="'sahtecilik ' + d.fraud_score"></span><span class="badge" x-text="lbl('document_status', d.status)"></span><span class="spacer"></span><button type="button" @click="download('/api/v1/applications/' + staff.detail.application_id + '/documents/' + d.document_id + '/file', d.filename)">Görüntüle</button></div>
+                <ul><template x-for="s in d.fraud_signals"><li class="error" x-text="s.label + (s.detail ? ' — ' + s.detail : '')"></li></template></ul>
+                <div class="table-scroll"><table><thead><tr><th scope="col">Alan</th><th scope="col">Değer</th><th scope="col">Güven</th><th scope="col">Sayfa</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead><tbody><template x-for="f in d.fields"><tr><td x-text="f.name"></td><td x-text="f.value"></td><td x-text="f.confidence"></td><td x-text="f.page"></td><td><button type="button" @click="correctField(f)" :aria-label="'Düzelt: ' + f.name">Düzelt</button></td></tr></template></tbody></table></div>
+              </div></template>
+              <template x-if="fieldEdit">
+                <form class="card" @submit.prevent="saveField()">
+                  <label for="field-value" x-text="'Yeni değer: ' + fieldEdit.name"></label>
+                  <input id="field-value" x-model="fieldEdit.value">
+                  <div class="row"><button type="submit" class="primary">Kaydet</button><button type="button" @click="fieldEdit = null">Vazgeç</button></div>
+                </form>
+              </template>
+            </div>
+
+            <div role="tabpanel" aria-labelledby="tab-kkb" x-show="staff.tab === 'kkb'"><template x-if="staff.decision"><table><tbody><template x-for="k in bureauKeys"><tr><th scope="row" x-text="k[1]"></th><td x-text="snapshotValue(k[0])"></td></tr></template></tbody></table></template></div>
+
+            <div role="tabpanel" aria-labelledby="tab-nakit" x-show="staff.tab === 'nakit'">
+              <div class="chart-box"><canvas id="cashChart" role="img" aria-label="Aylık gelir, harcama ve ay sonu bakiye grafiği; ayrıntılar aşağıdaki tabloda"></canvas></div>
+              <div class="table-scroll"><table><caption>Aylık nakit akışı</caption><thead><tr><th scope="col">Ay</th><th scope="col">Gelir</th><th scope="col">Harcama</th><th scope="col">Ay sonu bakiye</th></tr></thead>
+                <tbody><template x-for="m in (staff.cashflow ? staff.cashflow.monthly : [])" :key="m.month"><tr><td x-text="m.month"></td><td class="num" x-text="tl(m.income)"></td><td class="num" x-text="tl(m.spending)"></td><td class="num" x-text="tl(m.end_balance)"></td></tr></template></tbody></table></div>
+              <table><caption>Nakit akışı göstergeleri</caption><tbody><template x-for="(v,k) in (staff.cashflow ? staff.cashflow.features : {})"><tr><th scope="row" x-text="k"></th><td x-text="v"></td></tr></template></tbody></table></div>
+
+            <div role="tabpanel" aria-labelledby="tab-karar" x-show="staff.tab === 'karar'"><template x-if="staff.decision"><div class="grid-2">
+              <div><h3>SHAP katkıları (log-odds)</h3><div class="chart-box"><canvas id="shapChart" role="img" aria-label="SHAP katkıları grafiği; değerler yandaki tabloda"></canvas></div>
+                <table><caption class="sr-only">SHAP katkıları</caption><thead><tr><th scope="col">Özellik</th><th scope="col">Katkı</th></tr></thead><tbody><template x-for="x in shapRows()"><tr><td x-text="x.label"></td><td class="num" x-text="x.value"></td></tr></template></tbody></table></div>
+              <div><h3>Gerekçeler</h3><ul><template x-for="r in staff.decision.reason_codes"><li><span class="badge" :class="reasonKindClass(r)" x-show="reasonKindLabel(r)" x-text="reasonKindLabel(r)"></span> <span x-text="r.text"></span> <span class="muted" x-show="r.points_lost > 0" x-text="'(−' + r.points_lost + ' puan)'"></span></li></template></ul>
+                <h3>Politika kuralları</h3><ul><template x-for="r in firedRules()"><li><span class="badge" :class="r.action === 'decline' ? 'bad' : 'warn'" x-text="lbl('rule_action', r.action)"></span> <span x-text="r.description"></span></li></template></ul>
+                <h3>Karşı-olgusal</h3><ul><template x-for="c in staff.decision.counterfactuals"><li x-text="c"></li></template></ul>
+                <p class="muted" x-text="decisionMeta()"></p>
+                <button type="button" @click="replay()">Kararı yeniden üret (replay)</button> <span role="status" x-text="staff.replay"></span></div>
+            </div></template></div>
+
+            <div role="tabpanel" aria-labelledby="tab-fiyat" x-show="staff.tab === 'fiyat'"><template x-if="staff.decision && staff.decision.pricing"><table><tbody><template x-for="k in pricingKeys"><tr><th scope="row" x-text="k[1]"></th><td x-text="pricingValue(k)"></td></tr></template></tbody></table></template></div>
+
+            <div role="tabpanel" aria-labelledby="tab-halka" x-show="staff.tab === 'halka'"><p class="muted" x-text="staff.network ? ('Halka büyüklüğü ' + staff.network.ring_size + ' · ortak tanımlayıcılar: ' + (staff.network.shared_identifiers || []).join(', ')) : ''"></p><svg id="ringSvg" width="100%" height="320" viewBox="0 0 600 320" role="img" aria-label="Başvuru halkası grafiği; düğümler aşağıda listelenir"></svg>
+              <ul class="muted"><template x-for="n in (staff.network ? staff.network.nodes : [])" :key="n.id"><li x-text="lbl('node_kind', n.kind) + ': ' + n.label"></li></template></ul></div>
+
+            <div role="tabpanel" aria-labelledby="tab-memo" x-show="staff.tab === 'memo'"><button type="button" class="primary" @click="generateMemo()" :disabled="busy">AI kredi memorandumu üret</button>
+              <template x-if="staff.memo"><div><p class="muted" x-text="'Mod: ' + lbl('llm_mode', staff.memo.mode) + ' · adımlar: ' + memoSteps()"></p>
+                <template x-for="s in staff.memo.sections"><div><h3 x-text="s.title"></h3><p x-text="s.text"></p></div></template><h3>Öneri</h3><p x-text="staff.memo.recommendation"></p></div></template></div>
+
+            <div role="tabpanel" aria-labelledby="tab-politika" x-show="staff.tab === 'politika'">
+              <form @submit.prevent="askPolicy()"><label for="policy-q">Politika / mevzuat sorusu</label><div class="row nowrap-row"><input id="policy-q" x-model="policyQ"><button type="submit">Sor</button></div></form>
+              <template x-if="policyA"><div><div class="letter" x-text="policyA.answer"></div><ul><template x-for="s in policyA.sources"><li class="muted" x-text="s.chunk_id + ' — ' + s.title"></li></template></ul></div></template></div>
+
+            <div role="tabpanel" aria-labelledby="tab-karar_ver" x-show="staff.tab === 'karar_ver'">
+              <template x-if="staff.detail.state === 'UZMAN_INCELEMESI' || staff.detail.state === 'ITIRAZ_INCELEMESI'"><div>
+                <p class="muted" x-show="staff.authority" x-text="staff.authority ? ('Gerekli yetki: ' + lbl('role', staff.authority.required_role) + (staff.authority.four_eyes ? ' · DÖRT GÖZ: ' + staff.authority.reasons.join('; ') : '')) : ''"></p>
+                <div x-show="staff.detail.state === 'ITIRAZ_INCELEMESI'"><h3>İtiraz çözümü</h3><label for="objection-note">İnceleme notu</label><textarea id="objection-note" x-model="decisionForm.justification"></textarea><button type="button" class="primary" @click="resolveObjection(true)">İtirazı kabul et (yeniden incele)</button> <button type="button" class="danger" @click="resolveObjection(false)">İtirazı reddet</button></div>
+                <form x-show="staff.detail.state === 'UZMAN_INCELEMESI'" @submit.prevent="submitDecision()">
+                  <label for="dec-action">Karar</label><select id="dec-action" x-model="decisionForm.action"><template x-for="e in labelEntries('review_action')" :key="e[0]"><option :value="e[0]" x-text="e[1]"></option></template></select>
+                  <div class="grid"><div><label for="dec-amount">Tutar (TL, opsiyonel)</label><input id="dec-amount" type="number" min="0" x-model.number="decisionForm.amount"></div><div><label for="dec-term">Vade (ay, opsiyonel)</label><input id="dec-term" type="number" min="1" x-model.number="decisionForm.term_months"></div></div>
+                  <label for="dec-just">Zorunlu gerekçe (en az 15 karakter)</label><textarea id="dec-just" x-model="decisionForm.justification" required></textarea>
+                  <button type="submit" class="primary">Kararı gönder</button></form>
+              </div></template>
+              <p class="muted" x-show="staff.detail.state !== 'UZMAN_INCELEMESI' && staff.detail.state !== 'ITIRAZ_INCELEMESI' && staff.detail.state !== 'SOZLESME_HAZIR'">Bu başvuru için bekleyen bir uzman kararı yok.</p>
+              <div x-show="staff.detail.state === 'SOZLESME_HAZIR'"><button type="button" class="primary" @click="disburse()">Krediyi kullandır</button></div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
   </section>
 
   <!-- ============================== DASHBOARD -->
-  <section x-show="user && view === 'dashboard'">
-    <div class="row" style="margin-bottom:12px"><button @click="loadDashboard()">Yenile</button><button class="primary" x-show="user && user.role === 'admin'" @click="seedDemo()" :disabled="busy">Demo senaryosu yükle (6 persona)</button><span class="muted" x-text="seedResult"></span></div>
+  <section x-show="user && view === 'dashboard'" aria-labelledby="dash-title">
+    <h2 id="dash-title" class="sr-only">Yönetim panosu</h2>
+    <div class="row mb"><button type="button" @click="loadDashboard()">Yenile</button><button type="button" class="primary" x-show="user && user.role === 'admin'" @click="seedDemo()" :disabled="busy">Demo senaryosu yükle (6 persona)</button><span class="muted" role="status" x-text="seedResult"></span></div>
+    <div class="tabs" role="tablist" aria-label="Pano bölümleri" x-show="canValidate()">
+      <button type="button" role="tab" id="dtab-genel" :aria-selected="dashTab === 'genel' ? 'true' : 'false'" :tabindex="dashTab === 'genel' ? '0' : '-1'" :class="{active: dashTab === 'genel'}" @click="setDashTab('genel')" @keydown.right.prevent="setDashTab('dogrulama', true)" @keydown.left.prevent="setDashTab('dogrulama', true)">Genel bakış</button>
+      <button type="button" role="tab" id="dtab-dogrulama" :aria-selected="dashTab === 'dogrulama' ? 'true' : 'false'" :tabindex="dashTab === 'dogrulama' ? '0' : '-1'" :class="{active: dashTab === 'dogrulama'}" @click="setDashTab('dogrulama')" @keydown.right.prevent="setDashTab('genel', true)" @keydown.left.prevent="setDashTab('genel', true)">Model doğrulama</button>
+    </div>
+
+    <div x-show="dashTab === 'genel'" role="tabpanel" aria-labelledby="dtab-genel">
     <template x-if="dash.metrics"><div>
       <div class="grid">
         <div class="card"><div class="muted">Toplam başvuru</div><div class="kpi" x-text="dash.metrics.total_applications"></div></div>
@@ -251,26 +369,152 @@
         <div class="card"><div class="muted">Onay oranı</div><div class="kpi" x-text="pct(dash.metrics.approval_rate)"></div></div>
         <div class="card"><div class="muted">Ort. karar süresi</div><div class="kpi" x-text="(dash.metrics.average_decision_latency_ms || 0) + ' ms'"></div></div>
         <div class="card"><div class="muted">İnceleme kuyruğu</div><div class="kpi" x-text="dash.metrics.review_queue_depth"></div></div>
-        <div class="card"><div class="muted">LLM çağrıları</div><div class="kpi" x-text="llm ? llm.calls : 0"></div><div class="muted" x-text="llm ? ('fallback ' + llm.fallbacks + ' · mod ' + llm.mode) : ''"></div></div>
+        <div class="card"><div class="muted">LLM çağrıları</div><div class="kpi" x-text="llm ? llm.calls : 0"></div><div class="muted" x-text="llm ? ('fallback ' + llm.fallbacks + ' · mod ' + lbl('llm_mode', llm.mode)) : ''"></div></div>
       </div>
       <div class="grid-2">
-        <div class="card"><h2>Durum dağılımı</h2><div class="chart-box"><canvas id="stateChart"></canvas></div></div>
-        <div class="card"><h2>Portföy PD dağılımı</h2><div class="chart-box"><canvas id="pdChart"></canvas></div></div>
+        <div class="card"><h2 id="state-title">Durum dağılımı</h2><div class="chart-box"><canvas id="stateChart" role="img" aria-label="Başvuruların duruma göre dağılımı; değerler aşağıdaki tabloda"></canvas></div>
+          <details><summary>Tablo olarak göster</summary><table aria-labelledby="state-title"><thead><tr><th scope="col">Durum</th><th scope="col">Başvuru</th></tr></thead><tbody><template x-for="r in pairs(dash.metrics.by_state_labels)" :key="r[0]"><tr><td x-text="r[0]"></td><td class="num" x-text="r[1]"></td></tr></template></tbody></table></details></div>
+        <div class="card"><h2 id="pd-title">Portföy PD dağılımı</h2><div class="chart-box"><canvas id="pdChart" role="img" aria-label="Kararların PD aralığına göre dağılımı; değerler aşağıdaki tabloda"></canvas></div>
+          <details><summary>Tablo olarak göster</summary><table aria-labelledby="pd-title"><thead><tr><th scope="col">PD aralığı</th><th scope="col">Karar</th></tr></thead><tbody><template x-for="r in pairs(dash.metrics.pd_distribution)" :key="r[0]"><tr><td x-text="r[0]"></td><td class="num" x-text="r[1]"></td></tr></template></tbody></table></details></div>
       </div>
       <div class="grid-2">
         <div class="card"><h2>Adillik (AIR, 4/5 kuralı)</h2>
-          <template x-for="(s, attr) in (dash.fairness && dash.fairness.offline ? dash.fairness.offline.attributes : {})"><div><b x-text="attr"></b> <span class="badge" :class="s.passes_four_fifths ? 'ok' : 'bad'" x-text="'min AIR ' + s.min_air"></span></div></template>
-          <p class="muted" x-text="dash.fairness ? ('Canlı kararlar: ' + dash.fairness.live.decisions) : ''"></p></div>
-        <div class="card"><h2>Drift (PSI)</h2><table><tbody><template x-for="(v,k) in (dash.drift ? dash.drift.features : {})"><tr><td x-text="k"></td><td x-text="v.psi"></td><td><span class="badge" :class="v.status === 'STABIL' ? 'ok' : (v.status === 'ORTA' ? 'warn' : 'bad')" x-text="v.status"></span></td></tr></template></tbody></table></div>
+          <template x-for="(s, attr) in (dash.fairness && dash.fairness.offline ? dash.fairness.offline.attributes : {})"><div><b x-text="lbl('fairness_attr', attr)"></b> <span class="badge" :class="s.passes_four_fifths ? 'ok' : 'bad'" x-text="'min AIR ' + s.min_air"></span></div></template>
+          <p class="muted" x-text="dash.fairness && dash.fairness.live ? ('Canlı kararlar: ' + dash.fairness.live.decisions) : ''"></p></div>
+        <div class="card"><h2>Drift (PSI)</h2><table><thead><tr><th scope="col">Özellik</th><th scope="col">PSI</th><th scope="col">Durum</th></tr></thead><tbody><template x-for="(v,k) in (dash.drift ? dash.drift.features : {})"><tr><td x-text="k"></td><td class="num" x-text="v.psi"></td><td><span class="badge" :class="v.status === 'STABIL' ? 'ok' : (v.status === 'ORTA' ? 'warn' : 'bad')" x-text="lbl('drift', v.status)"></span></td></tr></template></tbody></table></div>
       </div>
       <div class="grid-2">
-        <div class="card"><h2>Champion / Challenger</h2><template x-if="dash.cc && dash.cc.decisions"><div><p x-text="'Karar uyumu ' + pct(dash.cc.decision_agreement) + ' · ortalama PD ' + pct(dash.cc.mean_pd.champion) + ' / ' + pct(dash.cc.mean_pd.challenger)"></p></div></template>
-          <table><tbody><template x-for="m in dash.models"><tr><td x-text="m.model_id"></td><td x-text="m.role"></td><td x-text="'AUC ' + (m.metrics.auc || '—')"></td><td><button x-show="user.role === 'model_yoneticisi' && m.role === 'challenger'" @click="promote(m.model_id)">Terfi onayı</button></td></tr></template></tbody></table></div>
-        <div class="card"><h2>Erken uyarı izleme listesi</h2><table><tbody><template x-for="w in (dash.watchlist ? dash.watchlist.entries : [])"><tr><td x-text="w.application_id"></td><td x-text="'EWS ' + w.ews_score"></td><td x-text="w.triggers.join(', ') || '—'"></td></tr></template></tbody></table></div>
+        <div class="card"><h2>Champion / Challenger</h2>
+          <template x-if="dash.cc && dash.cc.decisions"><p x-text="'Karar uyumu ' + pct(dash.cc.decision_agreement) + ' · ortalama PD ' + pct(dash.cc.mean_pd.champion) + ' / ' + pct(dash.cc.mean_pd.challenger)"></p></template>
+          <template x-if="ccEvidence()"><div>
+            <h3>Gerçek veri kanıtı</h3>
+            <table><caption class="sr-only">Champion ve challenger için gerçek veri doğrulaması</caption>
+              <thead><tr><th scope="col">Rol</th><th scope="col">Model ailesi</th><th scope="col">AUC</th><th scope="col">%95 GA</th><th scope="col">Brier</th><th scope="col">ECE</th></tr></thead>
+              <tbody><template x-for="r in ccEvidence().rows" :key="r.role"><tr><th scope="row" x-text="r.role"></th><td x-text="r.family"></td><td class="num" x-text="r.auc"></td><td class="num" x-text="r.ci"></td><td class="num" x-text="r.brier"></td><td class="num" x-text="r.ece"></td></tr></template></tbody></table>
+            <p class="muted" x-text="ccEvidence().summary"></p>
+          </div></template>
+          <p class="muted" x-show="dash.cc && dash.cc.validation && !dash.cc.validation.available">Gerçek veri doğrulama sonuçları bulunamadı.</p>
+          <p class="error" role="alert" x-show="promoteError" x-text="promoteError"></p>
+          <table><thead><tr><th scope="col">Model</th><th scope="col">Rol</th><th scope="col">AUC (sentetik)</th><th scope="col"><span class="sr-only">İşlem</span></th></tr></thead><tbody><template x-for="m in dash.models" :key="m.model_id"><tr><td x-text="m.model_id"></td><td x-text="lbl('model_role', m.role)"></td><td class="num" x-text="m.metrics && m.metrics.auc ? m.metrics.auc : '—'"></td><td><button type="button" x-show="canPromote(m)" @click="promote(m.model_id)" :aria-label="'Terfi onayı: ' + m.model_id">Terfi onayı</button></td></tr></template></tbody></table></div>
+        <div class="card"><h2>Erken uyarı izleme listesi</h2><table><thead><tr><th scope="col">Başvuru</th><th scope="col">EWS skoru</th><th scope="col">Tetikleyiciler</th></tr></thead><tbody><template x-for="w in (dash.watchlist ? dash.watchlist.entries : [])"><tr><td x-text="w.application_id"></td><td class="num" x-text="w.ews_score"></td><td x-text="(w.triggers || []).join(', ') || '—'"></td></tr></template></tbody></table>
+          <p class="muted" x-show="!dash.watchlist || !dash.watchlist.entries.length">İzlenen kredi yok.</p></div>
       </div>
     </div></template>
+    </div>
+
+    <div x-show="dashTab === 'dogrulama'" role="tabpanel" aria-labelledby="dtab-dogrulama">
+      <p class="muted" x-show="!validation" x-text="validationError || 'Doğrulama sonuçları yükleniyor…'"></p>
+      <template x-if="validation && vs()"><div>
+        <div class="card">
+          <div class="row">
+            <div><label for="val-set">Veri seti</label>
+              <select id="val-set" x-model="valSet" @change="onValSetChange()"><template x-for="n in valSetNames()" :key="n"><option :value="n" x-text="lbl('dataset', n)"></option></template></select></div>
+            <span class="spacer"></span>
+            <p class="muted" x-text="valDesign()"></p>
+          </div>
+          <p class="letter" x-text="validation.note"></p>
+        </div>
+
+        <div class="card">
+          <h2 id="holdout-title">Hold-out performansı</h2>
+          <div class="table-scroll"><table aria-labelledby="holdout-title">
+            <thead><tr><th scope="col">Model</th><th scope="col">AUC</th><th scope="col">%95 GA (bootstrap)</th><th scope="col">%95 GA (DeLong)</th><th scope="col">Gini</th><th scope="col">KS</th><th scope="col">Brier</th><th scope="col">Log-loss</th><th scope="col">CV AUC (ort. ± ss)</th></tr></thead>
+            <tbody><template x-for="r in holdoutRows()" :key="r.key"><tr :class="{champion: r.champion}"><th scope="row"><span x-text="r.label"></span> <span class="badge ok" x-show="r.champion">Şampiyon</span></th><td class="num" x-text="r.auc"></td><td class="num" x-text="r.ci"></td><td class="num" x-text="r.ciDelong"></td><td class="num" x-text="r.gini"></td><td class="num" x-text="r.ks"></td><td class="num" x-text="r.brier"></td><td class="num" x-text="r.logloss"></td><td class="num" x-text="r.cv"></td></tr></template></tbody>
+          </table></div>
+        </div>
+
+        <div class="grid-2">
+          <div class="card">
+            <h2 id="delong-title">DeLong testi (AUC farkı)</h2>
+            <table aria-labelledby="delong-title">
+              <thead><tr><th scope="col">Karşılaştırma</th><th scope="col">ΔAUC</th><th scope="col">%95 GA</th><th scope="col">z</th><th scope="col">p</th></tr></thead>
+              <tbody><template x-for="r in delongRows()" :key="r.key"><tr><th scope="row" x-text="r.label"></th><td class="num" x-text="r.diff"></td><td class="num" x-text="r.ci"></td><td class="num" x-text="r.z"></td><td class="num" x-text="r.p"></td></tr></template></tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h2>Şampiyon kararı</h2>
+            <p><b x-text="vs().champion.label"></b></p>
+            <p class="muted" x-text="'Kural: basitlik sırası ' + championOrder() + '; anlamlılık düzeyi α=' + vs().champion.alpha + ', asgari AUC kazancı ' + vs().champion.min_auc_gain"></p>
+            <ol><template x-for="s in vs().champion.steps"><li x-text="s"></li></template></ol>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row"><h2 id="cal-title" class="flush">Kalibrasyon</h2><span class="spacer"></span>
+            <div><label for="cal-model">Model</label><select id="cal-model" x-model="valCalModel" @change="drawCalibration()"><template x-for="n in calModels()" :key="n"><option :value="n" x-text="modelLabel(n)"></option></template></select></div></div>
+          <p class="muted" x-text="calSummary()"></p>
+          <div class="grid-2">
+            <div class="chart-box"><canvas id="calChart" role="img" :aria-label="'Kalibrasyon grafiği, ' + modelLabel(valCalModel) + ': ondalık dilimlere göre tahmini ve gözlenen temerrüt oranı; aynı veriler yandaki tabloda'"></canvas></div>
+            <div class="table-scroll"><table aria-labelledby="cal-title">
+              <caption class="muted">Vurgulu satırlar düşük riskli dilimlerdir.</caption>
+              <thead><tr><th scope="col">Dilim</th><th scope="col">n</th><th scope="col">PD aralığı</th><th scope="col">Tahmini</th><th scope="col">Gözlenen</th><th scope="col">Gözlenen/Tahmini</th></tr></thead>
+              <tbody><template x-for="d in calRows()" :key="d.decile"><tr :class="{lowrisk: d.lowRisk}"><th scope="row"><span x-text="d.decile"></span><span class="sr-only" x-show="d.lowRisk"> (düşük risk)</span></th><td class="num" x-text="d.n"></td><td class="num" x-text="d.range"></td><td class="num" x-text="d.predicted"></td><td class="num" x-text="d.observed"></td><td class="num" x-text="d.ratio"></td></tr></template></tbody>
+            </table></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Adillik — aynı onay oranında karşılaştırma</h2>
+          <p class="muted" x-text="'Tüm modeller aynı onay oranında (' + pct(vs().fairness.approval_rate) + ') karşılaştırılır; AIR ≥ 0,80 dört-beşte-bir kuralını geçer.'"></p>
+          <template x-for="t in fairnessTables()" :key="t.attr">
+            <div class="table-scroll"><table>
+              <caption x-text="t.title"></caption>
+              <thead><tr><th scope="col">Model</th><template x-for="g in t.groups" :key="g"><th scope="col" x-text="'Onay oranı: ' + g"></th></template><th scope="col">min AIR</th><th scope="col">4/5 kuralı</th><th scope="col">TPR farkı</th><th scope="col">FPR farkı</th></tr></thead>
+              <tbody><template x-for="r in t.rows" :key="r.model"><tr><th scope="row" x-text="r.label"></th><template x-for="c in r.cells"><td class="num" x-text="c"></td></template><td class="num" x-text="r.minAir"></td><td><span class="badge" :class="r.pass ? 'ok' : 'bad'" x-text="r.pass ? 'Geçer' : 'Kalır'"></span></td><td class="num" x-text="r.tpr"></td><td class="num" x-text="r.fpr"></td></tr></template></tbody>
+            </table></div>
+          </template>
+        </div>
+
+        <div class="card">
+          <h2 x-text="'Daha az ayrımcı alternatif (LDA) — ' + lbl('fairness_attr', vs().lda.attribute)"></h2>
+          <div class="table-scroll"><table>
+            <caption class="sr-only">LDA ödünleşim tablosu</caption>
+            <thead><tr><th scope="col">Model</th><th scope="col">AUC</th><th scope="col">Onay oranı</th><th scope="col">Onaylananlarda kötü oranı</th><th scope="col">min AIR</th><th scope="col">TPR farkı</th><th scope="col">FPR farkı</th><th scope="col">4/5 kuralı</th></tr></thead>
+            <tbody><template x-for="r in ldaRows()" :key="r.key"><tr :class="{muted: r.reference}"><th scope="row"><span x-text="r.model"></span><span x-show="r.caveat" title="Hukuki uyarıya bakın"> †</span><span class="muted" x-show="r.reference"> (referans, karşılaştırılamaz)</span></th><td class="num" x-text="r.auc"></td><td class="num" x-text="r.approval"></td><td class="num" x-text="r.badRate"></td><td class="num" x-text="r.minAir"></td><td class="num" x-text="r.tpr"></td><td class="num" x-text="r.fpr"></td><td><span class="badge" :class="r.pass ? 'ok' : 'bad'" x-text="r.pass ? 'Geçer' : 'Kalır'"></span></td></tr></template></tbody>
+          </table></div>
+          <p><b>Öneri:</b> <span x-text="vs().lda.recommendation.reason"></span></p>
+          <p class="notice" role="note" x-show="ldaCaveat()"><b>† Hukuki uyarı:</b> <span x-text="ldaCaveat()"></span></p>
+          <p class="muted" x-text="'Vekil (proxy) gücü en yüksek değişkenler: ' + proxyList()"></p>
+        </div>
+
+        <div class="card">
+          <h2>Şerit B (çapalama)</h2>
+          <p class="muted" x-show="!validation.lane_b">Şerit B sonuçları henüz üretilmedi.</p>
+          <template x-if="validation.lane_b"><div>
+            <p class="muted" x-text="laneBIntro()"></p>
+            <div class="grid-2">
+              <div class="table-scroll"><table>
+                <caption>Gerçek veride gecikme bandına göre temerrüt (çapa)</caption>
+                <thead><tr><th scope="col">Gecikme bandı (ay)</th><th scope="col">Temerrüt oranı</th><th scope="col">Pay</th><th scope="col">n</th></tr></thead>
+                <tbody><template x-for="r in laneBAnchors()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.rate"></td><td class="num" x-text="r.share"></td><td class="num" x-text="r.n"></td></tr></template></tbody>
+              </table></div>
+              <div class="table-scroll"><table>
+                <caption x-text="laneBGeneratorCaption()"></caption>
+                <thead><tr><th scope="col">Bant</th><th scope="col">Gerçek</th><th scope="col">Sentetik</th><th scope="col">Fark</th><th scope="col">Tolerans</th></tr></thead>
+                <tbody><template x-for="r in laneBGenerator()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.real"></td><td class="num" x-text="r.synthetic"></td><td class="num" x-text="r.gap"></td><td><span class="badge" :class="r.ok ? 'ok' : 'bad'" x-text="r.ok ? 'İçinde' : 'Dışında'"></span></td></tr></template></tbody>
+              </table></div>
+            </div>
+            <h3>Üretim modelinin kalibrasyonu (çapalanmış sentetik test seti)</h3>
+            <p class="muted" x-text="laneBCalibrationSummary()"></p>
+            <div class="grid-2">
+              <div class="table-scroll"><table>
+                <caption class="muted">Vurgulu satırlar düşük riskli dilimlerdir.</caption>
+                <thead><tr><th scope="col">Dilim</th><th scope="col">n</th><th scope="col">Tahmini</th><th scope="col">Gözlenen</th><th scope="col">Gözlenen/Tahmini</th></tr></thead>
+                <tbody><template x-for="d in laneBDeciles()" :key="d.decile"><tr :class="{lowrisk: d.lowRisk}"><th scope="row"><span x-text="d.decile"></span><span class="sr-only" x-show="d.lowRisk"> (düşük risk)</span></th><td class="num" x-text="d.n"></td><td class="num" x-text="d.predicted"></td><td class="num" x-text="d.observed"></td><td class="num" x-text="d.ratio"></td></tr></template></tbody>
+              </table></div>
+              <div class="table-scroll"><table>
+                <caption>Bant düzeyinde ortalama PD ve gerçek çapa</caption>
+                <thead><tr><th scope="col">Bant</th><th scope="col">Gerçek temerrüt</th><th scope="col">Ortalama PD</th><th scope="col">n</th></tr></thead>
+                <tbody><template x-for="r in laneBBandLevel()" :key="r.band"><tr><th scope="row" x-text="r.band"></th><td class="num" x-text="r.real"></td><td class="num" x-text="r.predicted"></td><td class="num" x-text="r.n"></td></tr></template></tbody>
+              </table></div>
+            </div>
+            <p class="muted" x-text="laneBBehaviour()"></p>
+          </div></template>
+        </div>
+      </div></template>
+    </div>
   </section>
 </main>
-<div class="toast" x-show="toast" x-text="toast" role="status" aria-live="polite"></div>
+<div class="toast" x-text="toast" role="status" aria-live="polite"></div>
 </body>
 </html>
