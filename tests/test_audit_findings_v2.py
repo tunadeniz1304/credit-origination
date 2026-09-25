@@ -161,7 +161,6 @@ def test_f09_sqlite_uses_wal_and_normal_sync():
         assert conn.execute(text("PRAGMA synchronous")).scalar() == 1  # NORMAL
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f10_half_open_admits_a_single_probe():
     import fakeredis
 

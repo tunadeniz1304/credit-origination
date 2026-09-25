@@ -140,6 +140,7 @@ class Settings(BaseSettings):
     circuit_failure_threshold: int = 3
     circuit_reset_timeout_seconds: float = 30.0
     circuit_state_backend: Literal["auto", "memory", "redis"] = "auto"
+    circuit_half_open_max_calls: int = 1  # probes admitted while HALF_OPEN
     fault_injection_rate: float = 0.0  # chaos testing of the KKB mock (0..1)
 
     # ---- Notifications ----
