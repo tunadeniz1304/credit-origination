@@ -97,10 +97,14 @@ def main() -> int:
 
     lines += [
         "Tied PDs at the cut-off are approved in a seeded random order; the range is the minimum AIR over the "
-        "tie-break seeds. An attribute with only one group above the minimum group size is not testable (n/a).",
+        "tie-break seeds and covers **only** that tie-breaking. The 95% CI is a stratified bootstrap of the hold-out "
+        "(decisions fixed, 1,000 resamples) and covers the sampling error of small groups; when it contains 0.8 the "
+        "reading is *indicative, not statistically established*. An attribute with only one group above the minimum "
+        "group size is not testable (n/a).",
         "",
-        "| Dataset | Champion | Attribute | Min AIR | Range over tie-break seeds | Passes 0.8 | TPR gap |",
-        "|---|---|---|---|---|---|---|",
+        "| Dataset | Champion | Attribute | Min AIR | 95% CI (bootstrap) | Range over tie-break seeds "
+        "| Passes 0.8 | TPR gap |",
+        "|---|---|---|---|---|---|---|---|",
     ]
 
     def fmt(value: float | None) -> str:
@@ -111,20 +115,28 @@ def main() -> int:
         champion = metrics["champion"]["model"]
         for attr, stats in metrics["fairness"]["by_model"][champion].items():
             spread = stats.get("min_air_spread")
+            boot = stats.get("min_air_ci")
             passes = stats["passes_four_fifths"]
+            reading = "n/a" if passes is None else "yes" if passes else "**no**"
+            if boot and boot["verdict"] == "inconclusive":
+                reading += " (indicative, not statistically established)"
             lines.append(
                 f"| {name} | {champion} | {attr} | {fmt(stats['min_air'])} | "
+                + (f"[{boot['ci'][0]:.3f}, {boot['ci'][1]:.3f}]" if boot else "—")
+                + " | "
                 + (f"{spread['min']:.3f}–{spread['max']:.3f}" if spread else "—")
-                + f" | {'n/a' if passes is None else 'yes' if passes else '**no**'} | "
-                f"{fmt(stats['tpr_gap'])} |"
+                + f" | {reading} | {fmt(stats['tpr_gap'])} |"
             )
     lines += [
         "",
         "The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real "
-        "data: on German Credit the champion fails the four-fifths rule for age band. No less discriminatory "
-        "alternative stays within the allowed AUC loss on both out-of-fold and hold-out data (the LightGBM family "
-        "would raise the age-band AIR to 0.780, still below 0.8, but loses 0.020 AUC out-of-fold), so the finding "
-        "is open and goes to the model risk committee (see the LDA tables in `VALIDATION_REPORT.md`).",
+        "data: on German Credit the champion's age-band AIR (0.698) is below the four-fifths threshold, but the "
+        "200-row hold-out leaves the 50+ reference group with 22 rows and the 95% CI [0.545, 0.845] contains 0.8, so "
+        "the failure is **indicative, not statistically established**. No less discriminatory alternative stays "
+        "within the allowed AUC loss on both out-of-fold and hold-out data (the LightGBM family would raise the "
+        "age-band AIR to 0.780, still below 0.8, but loses 0.020 AUC out-of-fold, and its AIR gain CI "
+        "[−0.105, +0.187] contains 0), so the finding is open and goes to the model risk committee with the "
+        "recommendation to confirm it on more data (see the LDA tables in `VALIDATION_REPORT.md`).",
         "",
         "## Interpretation",
         "",

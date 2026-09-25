@@ -45,19 +45,19 @@ Overall approval rate: **54.8%**
 
 ## Real-data results (lane A, same approval rate for every model)
 
-Tied PDs at the cut-off are approved in a seeded random order; the range is the minimum AIR over the tie-break seeds. An attribute with only one group above the minimum group size is not testable (n/a).
+Tied PDs at the cut-off are approved in a seeded random order; the range is the minimum AIR over the tie-break seeds and covers **only** that tie-breaking. The 95% CI is a stratified bootstrap of the hold-out (decisions fixed, 1,000 resamples) and covers the sampling error of small groups; when it contains 0.8 the reading is *indicative, not statistically established*. An attribute with only one group above the minimum group size is not testable (n/a).
 
-| Dataset | Champion | Attribute | Min AIR | Range over tie-break seeds | Passes 0.8 | TPR gap |
-|---|---|---|---|---|---|---|
-| german_credit | scorecard | SEX | 0.879 | 0.879–0.879 | yes | 0.105 |
-| german_credit | scorecard | AGE_BAND | 0.698 | 0.698–0.698 | **no** | 0.160 |
-| german_credit | scorecard | FOREIGN_WORKER | n/a | — | n/a | n/a |
-| uci_taiwan | lightgbm | SEX | 0.932 | 0.930–0.937 | yes | 0.023 |
-| uci_taiwan | lightgbm | AGE_BAND | 0.882 | 0.871–0.884 | yes | 0.065 |
-| uci_taiwan | lightgbm | EDUCATION | 0.877 | 0.874–0.882 | yes | 0.074 |
-| uci_taiwan | lightgbm | MARRIAGE | 0.978 | 0.974–0.982 | yes | 0.016 |
+| Dataset | Champion | Attribute | Min AIR | 95% CI (bootstrap) | Range over tie-break seeds | Passes 0.8 | TPR gap |
+|---|---|---|---|---|---|---|---|
+| german_credit | scorecard | SEX | 0.879 | [0.683, 0.995] | 0.879–0.879 | yes (indicative, not statistically established) | 0.105 |
+| german_credit | scorecard | AGE_BAND | 0.698 | [0.545, 0.845] | 0.698–0.698 | **no** (indicative, not statistically established) | 0.160 |
+| german_credit | scorecard | FOREIGN_WORKER | n/a | — | — | n/a | n/a |
+| uci_taiwan | lightgbm | SEX | 0.932 | [0.903, 0.965] | 0.930–0.937 | yes | 0.023 |
+| uci_taiwan | lightgbm | AGE_BAND | 0.882 | [0.823, 0.913] | 0.871–0.884 | yes | 0.065 |
+| uci_taiwan | lightgbm | EDUCATION | 0.877 | [0.834, 0.922] | 0.874–0.882 | yes | 0.074 |
+| uci_taiwan | lightgbm | MARRIAGE | 0.978 | [0.948, 0.999] | 0.974–0.982 | yes | 0.016 |
 
-The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real data: on German Credit the champion fails the four-fifths rule for age band. No less discriminatory alternative stays within the allowed AUC loss on both out-of-fold and hold-out data (the LightGBM family would raise the age-band AIR to 0.780, still below 0.8, but loses 0.020 AUC out-of-fold), so the finding is open and goes to the model risk committee (see the LDA tables in `VALIDATION_REPORT.md`).
+The synthetic proxies are deliberately mild, so synthetic AIR stays high; the substantive finding is on real data: on German Credit the champion's age-band AIR (0.698) is below the four-fifths threshold, but the 200-row hold-out leaves the 50+ reference group with 22 rows and the 95% CI [0.545, 0.845] contains 0.8, so the failure is **indicative, not statistically established**. No less discriminatory alternative stays within the allowed AUC loss on both out-of-fold and hold-out data (the LightGBM family would raise the age-band AIR to 0.780, still below 0.8, but loses 0.020 AUC out-of-fold, and its AIR gain CI [−0.105, +0.187] contains 0), so the finding is open and goes to the model risk committee with the recommendation to confirm it on more data (see the LDA tables in `VALIDATION_REPORT.md`).
 
 ## Interpretation
 

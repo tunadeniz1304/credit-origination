@@ -65,6 +65,15 @@ def test_lane_a_on_fixture_produces_complete_metrics(fixture_run):
     spreads = [s["min_air_spread"] for s in m["fairness"]["by_model"]["lightgbm"].values()]
     assert all(s is None or s["min"] <= s["median"] <= s["max"] for s in spreads)
     assert m["fairness"]["tie_break"]["spread_seeds"] == load_validation().fairness.tie_break_seeds
+    # Sampling error of the minimum AIR: stratified bootstrap, decisions fixed.
+    assert m["fairness"]["bootstrap"]["iterations"] == 60
+    for stats in m["fairness"]["by_model"]["lightgbm"].values():
+        boot = stats["min_air_ci"]
+        assert (boot is None) == (stats["min_air"] is None)
+        if boot:
+            assert boot["ci"][0] <= boot["ci"][1]
+            assert boot["verdict"] in {"passes", "fails", "inconclusive"}
+    assert all(r["min_air_ci"] is not None for r in m["lda"]["rows"])
     assert "lightgbm_uncalibrated" in m["calibration"]
     assert m["fairness"]["approval_rate"] == 0.7
     assert set(m["fairness"]["by_model"]["logistic"]) == {
@@ -253,3 +262,50 @@ def test_committed_evidence_uses_out_of_fold_selection_and_reports_untestable_gr
     assert rejected["lightgbm"]["auc_loss"] <= limit < rejected["lightgbm"]["oof_auc_loss"]
     assert all(max(r["auc_loss"], r["oof_auc_loss"]) > limit for r in rec["rejected"])
     assert all("oof_auc" in r for r in german["lda"]["rows"])
+
+
+def test_german_age_band_verdict_is_indicative_not_established():
+    """The 200-row German hold-out cannot establish the AGE_BAND four-fifths failure."""
+    from app.validation import evidence
+
+    german = evidence.load_metrics("german_credit")
+    boot = german["fairness"]["bootstrap"]
+    assert boot["method"] == "stratified_bootstrap_fixed_decisions"
+    assert boot["iterations"] == load_validation().bootstrap_iterations
+    age = german["fairness"]["by_model"]["scorecard"]["AGE_BAND"]
+    assert age["group_size"]["50+"] == 22 and age["min_air"] < 0.8
+    lo, hi = age["min_air_ci"]["ci"]
+    assert lo < age["min_air"] < hi and lo < 0.8 < hi
+    assert age["min_air_ci"]["verdict"] == "inconclusive"
+    # The seed spread is degenerate here (no ties): it says nothing about sampling error.
+    assert age["min_air_spread"]["min"] == age["min_air_spread"]["max"]
+    # No LDA candidate's AIR gain over the champion is established either.
+    assert all(r["air_gain_ci"][0] <= 0 for r in german["lda"]["recommendation"]["rejected"])
+    text = "\n".join(dataset_section("german_credit", german, "img/validation"))
+    assert "indicative, not statistically established" in text
+    assert "covers **only** the tie-breaking" in text
+    taiwan = evidence.load_metrics("uci_taiwan")
+    champion = taiwan["champion"]["model"]
+    verdicts = {
+        a: s["min_air_ci"]["verdict"] for a, s in taiwan["fairness"]["by_model"][champion].items()
+    }
+    assert set(verdicts.values()) == {"passes"}
+
+
+def test_same_family_promotion_is_allowed_explicitly():
+    """A retrain of the champion's family: family-level evidence cannot tell them apart."""
+    from app.validation import evidence
+
+    for kind in evidence.KIND_TO_FAMILY:
+        decision = evidence.promotion_evidence(kind, kind)
+        assert decision["allowed"] is True and decision["same_family"] is True, kind
+        assert decision["reason"] == evidence.SAME_FAMILY_REASON
+        assert "dört göz" in decision["reason"] and "eksik" not in decision["reason"]
+        family = evidence.KIND_TO_FAMILY[kind]
+        assert decision["families"] == {"champion": family, "challenger": family}
+        assert decision["evidence_scope"] == evidence.EVIDENCE_SCOPE
+    # Cross-family decisions do not carry the flag; unknown kinds are still refused.
+    assert "same_family" not in evidence.promotion_evidence(
+        "lightgbm_monotone", "optbinning_woe_logistic"
+    )
+    assert evidence.promotion_evidence("ebm", "ebm")["allowed"] is False

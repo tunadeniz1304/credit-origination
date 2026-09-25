@@ -10,7 +10,10 @@ from app.core.rules import load_validation
 from app.governance.fairness import (
     adverse_impact,
     air_spread,
+    air_verdict,
     approve_at_rate,
+    bootstrap_air_gain,
+    bootstrap_min_air,
     group_fairness,
     group_thresholds_at_rate,
     less_discriminatory_search,
@@ -241,3 +244,87 @@ def test_air_spread_over_tie_break_seeds():
     assert 0 <= spread["share_passing"] <= 1
     single = pd.Series(["a"] * 400)
     assert air_spread(y, scores, single, approval_rate=0.5, seeds=[0, 1]) is None
+
+
+# ------------------------------------------------------------------ sampling error of the AIR
+def _age_like_holdout() -> tuple[np.ndarray, pd.Series]:
+    """German-like hold-out: groups 78/66/34/22, the 22-row reference approves 19/22."""
+    sizes = {"21-29": (78, 47), "30-39": (66, 48), "40-49": (34, 26), "50+": (22, 19)}
+    labels, approved = [], []
+    for group, (n, k) in sizes.items():
+        labels += [group] * n
+        approved += [1] * k + [0] * (n - k)
+    return np.array(approved), pd.Series(labels)
+
+
+def test_bootstrap_min_air_is_wide_for_small_groups_and_seeded():
+    approved, groups = _age_like_holdout()
+    point = adverse_impact(approved, groups, min_group_size=20)["min_air"]
+    assert point < 0.8  # the point estimate alone "fails" the four-fifths rule
+    boot = bootstrap_min_air(approved, groups, min_group_size=20, iterations=1000, seed=7)
+    lo, hi = boot["ci"]
+    assert lo < point < hi and lo < 0.8 < hi
+    assert boot["verdict"] == "inconclusive" and 0 < boot["share_passing"] < 0.5
+    assert boot["method"] == "stratified_bootstrap_fixed_decisions"
+    assert bootstrap_min_air(approved, groups, min_group_size=20, iterations=1000, seed=7) == boot
+    # Not testable: fewer than two groups above the size floor.
+    assert bootstrap_min_air(approved, groups, min_group_size=70, iterations=50) is None
+
+
+def test_bootstrap_min_air_establishes_clear_results_on_large_groups():
+    groups = pd.Series(["a"] * 4000 + ["b"] * 4000)
+    unequal = np.r_[np.ones(3200), np.zeros(800), np.ones(1600), np.zeros(2400)]
+    assert bootstrap_min_air(unequal, groups, iterations=300)["verdict"] == "fails"
+    rng = np.random.default_rng(1)
+    equal = (rng.random(8000) < 0.7).astype(int)
+    assert bootstrap_min_air(equal, groups, iterations=300)["verdict"] == "passes"
+    assert air_verdict([0.55, 0.89]) == "inconclusive"
+    assert air_verdict([0.81, 0.95]) == "passes" and air_verdict([0.5, 0.79]) == "fails"
+
+
+def test_bootstrap_air_gain_is_paired():
+    approved, groups = _age_like_holdout()
+    same = bootstrap_air_gain(approved, approved, groups, min_group_size=20, iterations=200)
+    assert same["ci"] == [0.0, 0.0] and same["established"] is False
+    # With a 22-row reference group even a large point gain is not established.
+    labels = groups.to_numpy()
+    fairer = approved.copy()
+    for group, k in {"21-29": 66, "30-39": 56, "40-49": 29}.items():  # all groups near 85%
+        idx = np.flatnonzero(labels == group)
+        fairer[idx] = 0
+        fairer[idx[:k]] = 1
+    small = bootstrap_air_gain(fairer, approved, groups, min_group_size=20, iterations=500)
+    assert small["ci"][0] <= 0 < small["ci"][1] and small["established"] is False
+    big = pd.Series(["a"] * 400 + ["b"] * 400)
+    anchor = np.r_[np.ones(320), np.zeros(80), np.ones(200), np.zeros(200)]  # AIR 0.625
+    even = np.r_[np.ones(320), np.zeros(80), np.ones(300), np.zeros(100)]  # AIR 0.9375
+    gain = bootstrap_air_gain(even, anchor, big, iterations=500)
+    assert gain["ci"][0] > 0 and gain["established"] is True
+
+
+def test_lda_rows_carry_bootstrap_intervals_and_recommendation_reports_the_gain():
+    rng = np.random.default_rng(3)
+    n = 1200
+    X = pd.DataFrame({"x1": rng.normal(size=n), "x2": rng.normal(size=n)})
+    group = pd.Series(np.where(X.x2 + rng.normal(scale=0.5, size=n) > 0, "a", "b"))
+    y = (rng.random(n) < 1 / (1 + np.exp(-(X.x1 + X.x2)))).astype(int)
+    table = less_discriminatory_search(
+        X.iloc[:800],
+        y[:800],
+        X.iloc[800:],
+        y[800:],
+        group.iloc[:800],
+        group.iloc[800:],
+        approval_rate=0.7,
+        epsilons=[0.05],
+        proxy_auc_threshold=0.6,
+        bootstrap_iterations=100,
+    )
+    rows = table["rows"]
+    assert all("_approved" not in r for r in rows + table["reference_rows"])
+    assert all(r["min_air_ci"][0] <= r["min_air_ci"][1] for r in rows)
+    assert "min_air_gain_ci" not in rows[0] and all("min_air_gain_ci" in r for r in rows[1:])
+    rec = recommend_lda(table, max_auc_loss=1.0)
+    assert rec["recommended"] is not None
+    assert rec["air_gain_established"] == (rec["air_gain_ci"][0] > 0)
+    assert "GA" in rec["reason"]

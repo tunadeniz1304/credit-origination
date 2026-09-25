@@ -9,7 +9,11 @@ Protected attributes are never model inputs; they are used here only to
   change and is meaningless.
 * Ties at the cut-off (an isotonic calibration maps many applicants to the
   same PD) are broken by a seeded random key, never by row order; lane A
-  reports the AIR spread over several tie-break seeds.
+  reports the AIR spread over several tie-break seeds. That spread covers only
+  the tie-breaking; the sampling error of small groups is shown separately by a
+  stratified bootstrap interval for the minimum AIR (:func:`bootstrap_min_air`),
+  and a conclusion whose interval contains the threshold is *indicative, not
+  statistically established*.
 * An attribute with fewer than two groups above the minimum size is **not
   testable**: its AIR and gaps are ``None`` (shown as n/a), not a perfect 1.0.
 * Per group: selection (approval) rate, adverse impact ratio (AIR, the
@@ -194,6 +198,131 @@ def air_spread(
     }
 
 
+BOOTSTRAP_METHOD = "stratified_bootstrap_fixed_decisions"
+BOOTSTRAP_NOTE = (
+    "Hold-out rows are resampled with replacement within each protected group (group sizes, "
+    "hence the minimum-size filter, stay fixed); the approve/decline decisions made at the "
+    "approval-rate cut-off on the full hold-out are kept fixed. The interval therefore covers "
+    "the sampling error of the per-group approval rates, not model refitting; the tie-break "
+    "seed spread covers only the order of tied PDs at the cut-off. The minimum over groups is "
+    "biased downward under resampling (noise can only lower a minimum), so the interval can "
+    "sit below the point estimate when group rates are nearly equal."
+)
+
+
+def _bootstrap_min_airs(
+    decisions: list[np.ndarray],
+    groups: pd.Series,
+    *,
+    min_group_size: int,
+    iterations: int,
+    seed: int,
+) -> list[np.ndarray] | None:
+    """Minimum AIR of every decision vector in each stratified resample (paired draws).
+
+    ``None`` when fewer than two groups meet ``min_group_size`` (not testable). Resamples
+    whose best group approves nobody yield ``nan``.
+    """
+    labels = np.asarray(groups).astype(str)
+    names, counts = np.unique(labels, return_counts=True)
+    kept = [g for g, c in zip(names, counts, strict=True) if c >= min_group_size]
+    if len(kept) < 2:
+        return None
+    rng = np.random.default_rng(seed)
+    rates = [np.empty((iterations, len(kept))) for _ in decisions]
+    for j, group in enumerate(kept):
+        members = np.flatnonzero(labels == group)
+        draw = members[rng.integers(0, len(members), size=(iterations, len(members)))]
+        for rate, approved in zip(rates, decisions, strict=True):
+            rate[:, j] = np.asarray(approved, dtype=float)[draw].mean(axis=1)
+    out = []
+    for rate in rates:
+        top = rate.max(axis=1)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            out.append(np.where(top > 0, rate.min(axis=1) / top, np.nan))
+    return out
+
+
+def _interval(values: np.ndarray, confidence: float) -> list[float]:
+    tail = (1 - confidence) / 2 * 100
+    lo, hi = np.nanpercentile(values, [tail, 100 - tail])
+    return [round(float(lo), 4), round(float(hi), 4)]
+
+
+def air_verdict(ci: list[float], air_threshold: float = AIR_THRESHOLD) -> str:
+    """``passes`` / ``fails`` when the whole interval is on one side of the threshold,
+    otherwise ``inconclusive`` (indicative, not statistically established)."""
+    if ci[0] >= air_threshold:
+        return "passes"
+    if ci[1] < air_threshold:
+        return "fails"
+    return "inconclusive"
+
+
+def bootstrap_min_air(
+    approved: np.ndarray,
+    groups: pd.Series,
+    *,
+    min_group_size: int = 0,
+    iterations: int = 1000,
+    confidence: float = 0.95,
+    seed: int = 0,
+    air_threshold: float = AIR_THRESHOLD,
+) -> dict[str, Any] | None:
+    """Percentile bootstrap interval for the minimum AIR (see :data:`BOOTSTRAP_NOTE`).
+
+    Decisions are held fixed and rows are resampled within each group, so the interval
+    reflects how precisely small groups pin down their approval rates. ``None`` when the
+    attribute is not testable.
+    """
+    samples = _bootstrap_min_airs(
+        [approved], groups, min_group_size=min_group_size, iterations=iterations, seed=seed
+    )
+    if samples is None:
+        return None
+    values = samples[0]
+    ci = _interval(values, confidence)
+    return {
+        "method": BOOTSTRAP_METHOD,
+        "iterations": iterations,
+        "confidence": confidence,
+        "seed": seed,
+        "ci": ci,
+        "share_passing": round(float(np.nanmean(values >= air_threshold)), 4),
+        "verdict": air_verdict(ci, air_threshold),
+    }
+
+
+def bootstrap_air_gain(
+    candidate: np.ndarray,
+    anchor: np.ndarray,
+    groups: pd.Series,
+    *,
+    min_group_size: int = 0,
+    iterations: int = 1000,
+    confidence: float = 0.95,
+    seed: int = 0,
+) -> dict[str, Any] | None:
+    """Paired bootstrap interval for ``min AIR(candidate) − min AIR(anchor)``.
+
+    Both decision vectors are evaluated on the same resampled rows, so the interval says
+    whether a fairness gain survives the sampling error of the hold-out.
+    """
+    samples = _bootstrap_min_airs(
+        [candidate, anchor], groups, min_group_size=min_group_size, iterations=iterations, seed=seed
+    )
+    if samples is None:
+        return None
+    ci = _interval(samples[0] - samples[1], confidence)
+    return {
+        "method": BOOTSTRAP_METHOD,
+        "iterations": iterations,
+        "confidence": confidence,
+        "ci": ci,
+        "established": ci[0] > 0,
+    }
+
+
 def fairness_report(
     df: pd.DataFrame, pd_scores: np.ndarray, approve_cutoff: float
 ) -> dict[str, Any]:
@@ -276,6 +405,7 @@ def _row(
         "tpr_gap": stats["tpr_gap"],
         "fpr_gap": stats["fpr_gap"],
         "passes_four_fifths": stats["passes_four_fifths"],
+        "_approved": approved,
         **extra,
     }
 
@@ -333,6 +463,8 @@ def less_discriminatory_search(
     baseline_oof: np.ndarray | None = None,
     alternatives_oof: dict[str, np.ndarray] | None = None,
     seed: int = 0,
+    bootstrap_iterations: int = 0,
+    confidence: float = 0.95,
 ) -> dict[str, Any]:
     """Performance–fairness trade-off table, every row at ``approval_rate``.
 
@@ -344,6 +476,10 @@ def less_discriminatory_search(
     on the training part (stratified folds, ``seed``). Rows fitted here are refitted per
     fold; the champion and the other families take their out-of-fold training scores
     from ``baseline_oof`` / ``alternatives_oof`` (the scores the champion was selected on).
+
+    With ``bootstrap_iterations`` > 0 every row also gets ``min_air_ci`` (stratified bootstrap,
+    decisions fixed) and every row after the first ``min_air_gain_ci``: the paired interval of
+    its minimum-AIR gain over the first row (the anchor of :func:`recommend_lda`).
     """
     from fairlearn.postprocessing import ThresholdOptimizer
     from sklearn.metrics import roc_auc_score
@@ -510,6 +646,21 @@ def less_discriminatory_search(
         **common,
     )
     to_row["comparable"] = False
+    to_row.pop("_approved")
+    decisions = [r.pop("_approved") for r in rows]
+    if bootstrap_iterations:
+        boot: dict[str, Any] = {
+            "min_group_size": min_group_size,
+            "iterations": bootstrap_iterations,
+            "confidence": confidence,
+            "seed": seed,
+        }
+        for i, (r, approved) in enumerate(zip(rows, decisions, strict=True)):
+            ci = bootstrap_min_air(approved, a_test, air_threshold=air_threshold, **boot)
+            r["min_air_ci"] = None if ci is None else ci["ci"]
+            if i:
+                gain = bootstrap_air_gain(approved, decisions[0], a_test, **boot)
+                r["min_air_gain_ci"] = None if gain is None else gain["ci"]
     return {
         "approval_rate": approval_rate,
         "proxy_strength": dict(list(proxies.items())[:8]),
@@ -566,7 +717,13 @@ def recommend_lda(table: dict[str, Any], max_auc_loss: float) -> dict[str, Any]:
     ]
     better = [r for r in fairer if within(r)]
     base["rejected"] = [
-        {"model": r["model"], "kind": r["kind"], "min_air": r["min_air"], **losses(r)}
+        {
+            "model": r["model"],
+            "kind": r["kind"],
+            "min_air": r["min_air"],
+            **losses(r),
+            **({"air_gain_ci": r["min_air_gain_ci"]} if r.get("min_air_gain_ci") else {}),
+        }
         for r in fairer
         if not within(r)
     ]
@@ -584,6 +741,15 @@ def recommend_lda(table: dict[str, Any], max_auc_loss: float) -> dict[str, Any]:
     best = max(better, key=lambda r: (r["min_air"], r["auc"]))
     loss = losses(best)
     oof_text = "" if loss["oof_auc_loss"] is None else f", katlama dışı {loss['oof_auc_loss']:.4f}"
+    gain: dict[str, Any] = {}
+    gain_text = ""
+    if best.get("min_air_gain_ci") is not None:
+        lo, hi = best["min_air_gain_ci"]
+        # A gain whose paired interval reaches zero is within the hold-out's sampling error.
+        gain = {"air_gain_ci": [lo, hi], "air_gain_established": lo > 0}
+        gain_text = f" AIR kazancı %95 GA [{lo:+.3f}, {hi:+.3f}]" + (
+            "." if lo > 0 else " sıfırı içeriyor: kazanç istatistiksel olarak belirgin değil."
+        )
     return {
         **base,
         "recommended": best["model"],
@@ -591,9 +757,10 @@ def recommend_lda(table: dict[str, Any], max_auc_loss: float) -> dict[str, Any]:
         "min_air_from": anchor["min_air"],
         "min_air_to": best["min_air"],
         **loss,
+        **gain,
         "reason": (
             f"AIR {anchor['min_air']:.3f} → {best['min_air']:.3f}, AUC kaybı hold-out "
-            f"{loss['auc_loss']:.4f}{oof_text} (sınır {max_auc_loss:.3f})."
+            f"{loss['auc_loss']:.4f}{oof_text} (sınır {max_auc_loss:.3f}).{gain_text}"
         ),
     }
 

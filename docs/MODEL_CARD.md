@@ -49,7 +49,10 @@ evidence is borrowed from another family). Four-eyes still applies. The logistic
 challenger is significantly weaker on Taiwan (hold-out ΔAUC −0.021, p = 4.4e-7), so its promotion is
 refused. A LightGBM challenger to a scorecard champion is refused too: on German Credit it is
 significantly weaker out-of-fold (ΔAUC −0.020, p = 0.026) even though the hold-out difference is not
-significant (−0.009, p = 0.63). **Limitation:** this is evidence
+significant (−0.009, p = 0.63). A challenger of the champion's **own family** (a retrain — the most
+common promotion) is allowed by this gate with `same_family: true`: family-level real-data evidence
+cannot tell two artifacts of one family apart, so the artifact-level comparison and the four-eyes
+approval decide. **Limitation:** this is evidence
 for the recipe/family, not for the artifact: the production artifact is trained on synthetic data,
 so real-data evidence tied to its hash is impossible; the API response states this
 (`evidence_scope`).
@@ -132,15 +135,21 @@ the RAG policy text was updated with them.
 ## Fairness
 Real-data fairness (UCI Taiwan, German Credit) at the same approval rate for every model is in
 `docs/VALIDATION_REPORT.md`. Tied PDs at the cut-off are approved in a seeded random order (never row
-order) and every minimum AIR is reported with its spread over 20 tie-break seeds. On Taiwan every
-attribute passes the four-fifths rule (worst: education 0.877, seeds 0.874–0.882). On German Credit
-the scorecard champion **fails for age band (0.698; no ties, so no spread)** — an open model-risk
-finding. The LDA search also considers the other trained families and requires the AUC loss to be
-within the 0.010 limit both out-of-fold and on the hold-out. No alternative qualifies: LightGBM
-would raise the age-band AIR to 0.780 (still below 0.80) for a hold-out loss of 0.009 but an
-out-of-fold loss of 0.020; the proxy-weakened logistic regression (AIR 0.732) costs 0.021 / 0.018.
-The finding goes to the model risk committee with no less discriminatory alternative within the
-limit.
+order) and every minimum AIR is reported with its spread over 20 tie-break seeds. That spread covers
+**only** the tie-breaking; the sampling error of the hold-out is shown by a 95 % stratified bootstrap
+interval for the minimum AIR (1,000 resamples within each protected group, decisions at the cut-off
+held fixed). On Taiwan every attribute passes the four-fifths rule and the whole interval is above
+0.80 (worst: education 0.877, 95 % CI [0.834, 0.922], seeds 0.874–0.882). On German Credit the
+scorecard champion's age-band AIR is **0.698, below 0.80, but indicative, not statistically
+established**: the 200-row hold-out has groups of 78/66/34/22 rows (the 50+ reference group, 19/22
+approved, has 22), and the 95 % CI [0.545, 0.845] contains 0.80. It remains an open model-risk
+finding to confirm on more data, not a proven failure. The LDA search also considers the other
+trained families and requires the AUC loss to be within the 0.010 limit both out-of-fold and on the
+hold-out; each row now carries the paired bootstrap CI of its AIR gain over the champion. No
+alternative qualifies: LightGBM would raise the age-band AIR to 0.780 (still below 0.80) for a
+hold-out loss of 0.009 but an out-of-fold loss of 0.020, and its AIR gain CI [−0.105, +0.187]
+contains 0; the proxy-weakened logistic regression (AIR 0.732) costs 0.021 / 0.018. The finding goes
+to the model risk committee with no less discriminatory alternative within the limit.
 German `FOREIGN_WORKER` is **not testable** (only one group meets the minimum group size) and is
 reported as n/a, not as a pass. Synthetic results: `docs/FAIRNESS_REPORT.md`.
 

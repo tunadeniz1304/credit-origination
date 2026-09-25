@@ -55,16 +55,30 @@ def _num(value: float | None, digits: int = 3) -> str:
     return "n/a" if value is None else f"{value:.{digits}f}"
 
 
+AIR_VERDICTS_EN = {
+    "passes": "passes",
+    "fails": "fails",
+    "inconclusive": "indicative, not statistically established",
+}
+
+
 def _air_with_spread(stats: dict[str, Any]) -> str:
     spread = stats.get("min_air_spread")
     if stats["min_air"] is None:
         return "n/a"
-    if not spread:
-        return _num(stats["min_air"])
-    return (
-        f"{stats['min_air']:.3f} ({spread['min']:.3f}–{spread['max']:.3f}, "
-        f"median {spread['median']:.3f})"
-    )
+    text = _num(stats["min_air"])
+    if spread:
+        text += f" (seeds {spread['min']:.3f}–{spread['max']:.3f}, median {spread['median']:.3f})"
+    boot = stats.get("min_air_ci")
+    if boot:
+        text += f"; 95% CI [{boot['ci'][0]:.3f}, {boot['ci'][1]:.3f}] {AIR_VERDICTS_EN[boot['verdict']]}"
+    return text
+
+
+def _opt_ci(ci: list[float] | None, signed: bool = False) -> str:
+    if not ci:
+        return "—"
+    return f"[{ci[0]:+.3f}, {ci[1]:+.3f}]" if signed else f"[{ci[0]:.3f}, {ci[1]:.3f}]"
 
 
 def _table(header: list[str], rows: list[list[Any]]) -> list[str]:
@@ -93,17 +107,30 @@ def _recommendation(rec: dict[str, Any], rows: list[dict[str, Any]], champion: s
         )
         rejected = [
             f"{_lda_name(next(r for r in rows if r['model'] == x['model']), champion)} "
-            f"(min AIR {x['min_air']:.3f}, AUC loss {_loss(x)})"
+            f"(min AIR {x['min_air']:.3f}"
+            + (
+                f", AIR gain 95% CI {_opt_ci(x['air_gain_ci'], signed=True)}"
+                if x.get("air_gain_ci")
+                else ""
+            )
+            + f", AUC loss {_loss(x)})"
             for x in rec.get("rejected", [])
         ]
         if rejected:
             text += " Fairer but outside the limit: " + "; ".join(rejected) + "."
         return text
     row = next(r for r in rows if r["model"] == rec["recommended"])
+    gain = ""
+    if rec.get("air_gain_ci"):
+        gain = f", AIR gain 95% CI {_opt_ci(rec['air_gain_ci'], signed=True)}" + (
+            ""
+            if rec.get("air_gain_established")
+            else " (contains 0: gain not statistically established)"
+        )
     return (
-        f"{_lda_name(row, champion)} — min AIR {rec['min_air_from']:.3f} → {rec['min_air_to']:.3f} "
-        f"for an AUC loss of {_loss(rec)} (limit {rec['max_auc_loss']:.3f} on {basis}); the model "
-        "risk committee decides whether to adopt it."
+        f"{_lda_name(row, champion)} — min AIR {rec['min_air_from']:.3f} → {rec['min_air_to']:.3f}"
+        f"{gain} for an AUC loss of {_loss(rec)} (limit {rec['max_auc_loss']:.3f} on {basis}); the "
+        "model risk committee decides whether to adopt it."
     )
 
 
@@ -296,9 +323,19 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
         "Applicants with the same PD at the cut-off (isotonic calibration yields few distinct PDs) are "
         f"approved in a seeded random order, never by row order. Min AIR is shown for seed "
         f"{tie.get('seed', '—')} followed by (min–max, median) over {tie.get('spread_seeds', '—')} "
-        "tie-break seeds; a conclusion that flips inside that range rests on an arbitrary choice.",
+        "tie-break seeds; a conclusion that flips inside that range rests on an arbitrary choice. "
+        "The seed spread covers **only** the tie-breaking, not the sampling error of the hold-out.",
         "",
     ]
+    boot = fairness.get("bootstrap")
+    if boot:
+        out += [
+            f"**Sampling error.** The {boot['confidence']:.0%} CI of the minimum AIR is a percentile "
+            f"bootstrap ({boot['iterations']} resamples, seed {boot['seed']}). {boot['note']} "
+            "When the interval contains the four-fifths threshold the pass/fail reading is "
+            "**indicative, not statistically established**.",
+            "",
+        ]
     by_model = fairness["by_model"]
     attrs = list(next(iter(by_model.values())))
     out += _table(
@@ -343,6 +380,8 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
             "Approval",
             "Bad rate of approved",
             "Min AIR",
+            "Min AIR 95% CI",
+            "AIR gain vs champion 95% CI",
             "TPR gap",
             "FPR gap",
         ],
@@ -354,6 +393,8 @@ def dataset_section(name: str, m: dict[str, Any], image_dir: str) -> list[str]:
                 _pct(r["approval_rate"]),
                 _pct(r["bad_rate_approved"]),
                 _num(r["min_air"]),
+                _opt_ci(r.get("min_air_ci")),
+                _opt_ci(r.get("min_air_gain_ci"), signed=True),
                 _num(r["tpr_gap"]),
                 _num(r["fpr_gap"]),
             ]

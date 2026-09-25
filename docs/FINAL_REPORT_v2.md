@@ -83,22 +83,30 @@ the hold-out only confirms the choice.
   family on every dataset: refused if it is significantly worse on any set on either basis
   (out-of-fold or hold-out DeLong), if evidence is missing, or if the family is unknown (no borrowed
   evidence). A LightGBM challenger to the scorecard is therefore refused (German out-of-fold ΔAUC
-  −0.020, p = 0.026). The evidence is family-level; the artifact is
+  −0.020, p = 0.026). A challenger of the champion's own family (a retrain, the most common
+  promotion) is allowed by the gate with `same_family: true` — family-level evidence cannot tell two
+  artifacts of one family apart, so the artifact-level comparison and four-eyes approval decide. The
+  evidence is family-level; the artifact is
   trained on synthetic data, so evidence tied to its hash is impossible. Four-eyes still applies.
 
 ## Fairness
 
 Compared at the **same approval rate** for every model (`approve_at_rate`; tied PDs at the cut-off
-are approved in a seeded random order and each minimum AIR is reported with its range over 20 seeds),
-on real data:
+are approved in a seeded random order and each minimum AIR is reported with its range over 20 seeds —
+a range that covers **only** the tie-breaking), with a 95 % stratified bootstrap interval for the
+minimum AIR (1,000 resamples within each protected group, decisions held fixed) for the sampling
+error of the hold-out, on real data:
 
-* **UCI Taiwan:** every attribute passes the four-fifths rule (worst: education, AIR 0.877, seeds
-  0.874–0.882).
-* **German Credit:** the champion **fails for age band (AIR 0.698)**. The less-discriminatory-alternative
-  search includes the other trained families and requires the AUC loss to stay within 0.010 both
-  out-of-fold and on the hold-out; none qualifies (LightGBM would reach AIR 0.780, still below 0.80,
-  but loses 0.020 AUC out-of-fold against 0.009 on the hold-out). This is an
-  **open model-risk finding** for the model risk committee, not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
+* **UCI Taiwan:** every attribute passes the four-fifths rule with the whole interval above 0.80
+  (worst: education, AIR 0.877, 95 % CI [0.834, 0.922], seeds 0.874–0.882).
+* **German Credit:** the champion's age-band AIR is **0.698 — below 0.80 but indicative, not
+  statistically established**: on the 200-row hold-out the groups have 78/66/34/22 rows (the 50+
+  reference group 22, 19 approved) and the 95 % CI [0.545, 0.845] contains 0.80. The
+  less-discriminatory-alternative search includes the other trained families and requires the AUC
+  loss to stay within 0.010 both out-of-fold and on the hold-out; none qualifies (LightGBM would reach
+  AIR 0.780, still below 0.80, but loses 0.020 AUC out-of-fold against 0.009 on the hold-out, and its
+  paired AIR gain CI [−0.105, +0.187] contains 0). This is an
+  **open model-risk finding** for the model risk committee to confirm on more data, not fixed and not hidden (`docs/FAIRNESS_REPORT.md`, `docs/MODEL_CARD.md`).
   `FOREIGN_WORKER` is not testable (one group only above the minimum size) and is reported as n/a.
 * The synthetic generator now contains proxy correlations (tenure ↔ age, income ↔ province/gender), so
   the synthetic fairness results are no longer good by construction.
@@ -128,7 +136,8 @@ Playwright).
   sub-score are validated on real (non-Turkish) data. The PD level is imposed from a real proxy curve
   (anchoring), not validated.
 * No reject inference and no real out-of-time test (the public sets have no usable time axis).
-* The German Credit age-band fairness finding is open (no less discriminatory alternative within the
+* The German Credit age-band fairness finding is open and only indicative (95 % CI of the minimum AIR
+  [0.545, 0.845] contains 0.80 on the 200-row hold-out; no less discriminatory alternative within the
   AUC-loss limit on both bases).
 * The v2 policy cut-offs loosen risk appetite and are pending credit committee sign-off.
 * Inline/SQLite is a single-writer mode; throughput needs the Docker topology.

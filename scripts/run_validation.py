@@ -92,7 +92,7 @@ def plots(name: str, y: np.ndarray, predictions: dict[str, np.ndarray]) -> None:
 def summary_lines(results: dict[str, dict]) -> list[str]:
     lines = [
         "| Dataset | Champion | Champion AUC [95% CI] | LightGBM vs LR (ΔAUC, DeLong p) "
-        "| Low-risk obs/pred | Worst AIR at 70% approval |",
+        "| Low-risk obs/pred | Worst AIR at 70% approval [95% CI] |",
         "|---|---|---|---|---|---|",
     ]
     alerts = []
@@ -108,11 +108,14 @@ def summary_lines(results: dict[str, dict]) -> list[str]:
             worst = min(testable, key=lambda a: attrs[a]["min_air"])
             air = attrs[worst]["min_air"]
             spread = attrs[worst].get("min_air_spread")
+            boot = attrs[worst].get("min_air_ci")
             air_text = f"{air:.3f} ({worst})"
+            if boot:
+                air_text += f" [{boot['ci'][0]:.3f}, {boot['ci'][1]:.3f}]"
             if spread:
-                air_text += f", seeds {spread['min']:.3f}–{spread['max']:.3f}"
+                air_text += f", tie-break seeds {spread['min']:.3f}–{spread['max']:.3f}"
         else:
-            worst, air, spread, air_text = "", None, None, "n/a"
+            worst, air, spread, boot, air_text = "", None, None, None, "n/a"
         if untestable:
             air_text += "; not testable: " + ", ".join(untestable)
         lines.append(
@@ -143,12 +146,21 @@ def summary_lines(results: dict[str, dict]) -> list[str]:
             if spread:
                 robust = (
                     f" It fails for {1 - spread['share_passing']:.0%} of the "
-                    f"{spread['seeds']} tie-break seeds."
+                    f"{spread['seeds']} tie-break seeds (the seed spread covers only tie-breaking)."
                 )
-            alerts.append(
-                f"- **Alert — {name}:** the champion fails the four-fifths rule for `{worst}` "
-                f"(min AIR {air:.3f}); {follow} (see the LDA table).{robust}"
-            )
+            if boot and boot["verdict"] == "inconclusive":
+                verdict = (
+                    f"the point estimate misses the four-fifths rule for `{worst}` (min AIR "
+                    f"{air:.3f}), but its {boot['confidence']:.0%} bootstrap CI "
+                    f"[{boot['ci'][0]:.3f}, {boot['ci'][1]:.3f}] contains the threshold: the "
+                    "finding is **indicative, not statistically established**"
+                )
+            else:
+                ci = f", 95% CI [{boot['ci'][0]:.3f}, {boot['ci'][1]:.3f}]" if boot else ""
+                verdict = (
+                    f"the champion fails the four-fifths rule for `{worst}` (min AIR {air:.3f}{ci})"
+                )
+            alerts.append(f"- **Alert — {name}:** {verdict}; {follow} (see the LDA table).{robust}")
         if low is not None and abs(low - 1) > 0.25:
             alerts.append(
                 f"- **Alert — {name}:** low-risk deciles observed/predicted = {low} "

@@ -1,6 +1,6 @@
 {
  "dataset": "german_credit",
- "generated_at": "2026-09-25T10:11:55+00:00",
+ "generated_at": "2026-09-25T10:46:28+00:00",
  "config_version": "validation_v1",
  "design": {
   "rows": 1000,
@@ -771,6 +771,13 @@
    "seed": 20260925,
    "spread_seeds": 20
   },
+  "bootstrap": {
+   "method": "stratified_bootstrap_fixed_decisions",
+   "iterations": 1000,
+   "confidence": 0.95,
+   "seed": 20260925,
+   "note": "Hold-out rows are resampled with replacement within each protected group (group sizes, hence the minimum-size filter, stay fixed); the approve/decline decisions made at the approval-rate cut-off on the full hold-out are kept fixed. The interval therefore covers the sampling error of the per-group approval rates, not model refitting; the tie-break seed spread covers only the order of tied PDs at the cut-off. The minimum over groups is biased downward under resampling (noise can only lower a minimum), so the interval can sit below the point estimate when group rates are nearly equal."
+  },
   "by_model": {
    "lightgbm": {
     "SEX": {
@@ -805,6 +812,18 @@
       "median": 0.8623,
       "max": 0.9126,
       "share_passing": 1.0
+     },
+     "min_air_ci": {
+      "method": "stratified_bootstrap_fixed_decisions",
+      "iterations": 1000,
+      "confidence": 0.95,
+      "seed": 20260925,
+      "ci": [
+       0.6591,
+       0.9919
+      ],
+      "share_passing": 0.677,
+      "verdict": "inconclusive"
      }
     },
     "AGE_BAND": {
@@ -849,6 +868,18 @@
       "median": 0.7882,
       "max": 0.8296,
       "share_passing": 0.25
+     },
+     "min_air_ci": {
+      "method": "stratified_bootstrap_fixed_decisions",
+      "iterations": 1000,
+      "confidence": 0.95,
+      "seed": 20260925,
+      "ci": [
+       0.5711,
+       0.8824
+      ],
+      "share_passing": 0.168,
+      "verdict": "inconclusive"
      }
     },
     "FOREIGN_WORKER": {
@@ -872,7 +903,8 @@
      },
      "tpr_gap": null,
      "fpr_gap": null,
-     "min_air_spread": null
+     "min_air_spread": null,
+     "min_air_ci": null
     }
    },
    "logistic": {
@@ -908,6 +940,18 @@
       "median": 0.9126,
       "max": 0.9126,
       "share_passing": 1.0
+     },
+     "min_air_ci": {
+      "method": "stratified_bootstrap_fixed_decisions",
+      "iterations": 1000,
+      "confidence": 0.95,
+      "seed": 20260925,
+      "ci": [
+       0.7236,
+       0.9949
+      ],
+      "share_passing": 0.884,
+      "verdict": "inconclusive"
      }
     },
     "AGE_BAND": {
@@ -952,6 +996,18 @@
       "median": 0.7161,
       "max": 0.7161,
       "share_passing": 0.0
+     },
+     "min_air_ci": {
+      "method": "stratified_bootstrap_fixed_decisions",
+      "iterations": 1000,
+      "confidence": 0.95,
+      "seed": 20260925,
+      "ci": [
+       0.541,
+       0.8395
+      ],
+      "share_passing": 0.063,
+      "verdict": "inconclusive"
      }
     },
     "FOREIGN_WORKER": {
@@ -975,7 +1031,8 @@
      },
      "tpr_gap": null,
      "fpr_gap": null,
-     "min_air_spread": null
+     "min_air_spread": null,
+     "min_air_ci": null
     }
    },
    "scorecard": {
@@ -1011,6 +1068,18 @@
       "median": 0.8789,
       "max": 0.8789,
       "share_passing": 1.0
+     },
+     "min_air_ci": {
+      "method": "stratified_bootstrap_fixed_decisions",
+      "iterations": 1000,
+      "confidence": 0.95,
+      "seed": 20260925,
+      "ci": [
+       0.6835,
+       0.9954
+      ],
+      "share_passing": 0.791,
+      "verdict": "inconclusive"
      }
     },
     "AGE_BAND": {
@@ -1055,6 +1124,18 @@
       "median": 0.6978,
       "max": 0.6978,
       "share_passing": 0.0
+     },
+     "min_air_ci": {
+      "method": "stratified_bootstrap_fixed_decisions",
+      "iterations": 1000,
+      "confidence": 0.95,
+      "seed": 20260925,
+      "ci": [
+       0.5447,
+       0.8449
+      ],
+      "share_passing": 0.065,
+      "verdict": "inconclusive"
      }
     },
     "FOREIGN_WORKER": {
@@ -1078,7 +1159,8 @@
      },
      "tpr_gap": null,
      "fpr_gap": null,
-     "min_air_spread": null
+     "min_air_spread": null,
+     "min_air_ci": null
     }
    }
   }
@@ -1112,7 +1194,11 @@
     "fpr_gap": 0.447,
     "passes_four_fifths": false,
     "kind": "champion",
-    "oof_auc": 0.7961
+    "oof_auc": 0.7961,
+    "min_air_ci": [
+     0.5447,
+     0.8449
+    ]
    },
    {
     "model": "Kısıtsız lojistik",
@@ -1130,7 +1216,15 @@
     "fpr_gap": 0.3864,
     "passes_four_fifths": false,
     "kind": "baseline",
-    "oof_auc": 0.7743
+    "oof_auc": 0.7743,
+    "min_air_ci": [
+     0.541,
+     0.8395
+    ],
+    "min_air_gain_ci": [
+     -0.1043,
+     0.1025
+    ]
    },
    {
     "model": "lightgbm",
@@ -1149,7 +1243,15 @@
     "passes_four_fifths": false,
     "kind": "model_family",
     "family": "lightgbm",
-    "oof_auc": 0.7758
+    "oof_auc": 0.7758,
+    "min_air_ci": [
+     0.5711,
+     0.8824
+    ],
+    "min_air_gain_ci": [
+     -0.1053,
+     0.1871
+    ]
    },
    {
     "model": "Proxy zayıflatılmış lojistik",
@@ -1176,7 +1278,15 @@
      "telephone_A191",
      "telephone_A192"
     ],
-    "oof_auc": 0.7785
+    "oof_auc": 0.7785,
+    "min_air_ci": [
+     0.5547,
+     0.8544
+    ],
+    "min_air_gain_ci": [
+     -0.0875,
+     0.1083
+    ]
    },
    {
     "model": "ExponentiatedGradient (demografik eşitlik, ε=0.05)",
@@ -1195,7 +1305,15 @@
     "passes_four_fifths": false,
     "kind": "exponentiated_gradient",
     "epsilon": 0.05,
-    "oof_auc": 0.7718
+    "oof_auc": 0.7718,
+    "min_air_ci": [
+     0.541,
+     0.8395
+    ],
+    "min_air_gain_ci": [
+     -0.1043,
+     0.1025
+    ]
    },
    {
     "model": "ExponentiatedGradient (demografik eşitlik, ε=0.02)",
@@ -1214,7 +1332,15 @@
     "passes_four_fifths": false,
     "kind": "exponentiated_gradient",
     "epsilon": 0.02,
-    "oof_auc": 0.771
+    "oof_auc": 0.771,
+    "min_air_ci": [
+     0.5641,
+     0.8718
+    ],
+    "min_air_gain_ci": [
+     -0.0743,
+     0.1324
+    ]
    },
    {
     "model": "Grup bazlı eşik (demografik eşitlik, ThresholdOptimizer yaklaşımı)",
@@ -1233,7 +1359,15 @@
     "passes_four_fifths": true,
     "kind": "group_threshold",
     "legal_caveat": "Grup bazlı eşik, korunan özelliğin karar anında kullanılması demektir; ayrımcılık yasağı (Anayasa m.10, 6701 sayılı Kanun, AB/ABD mevzuatı) altında doğrudan ayrımcılık sayılabilir. Yalnızca ödünleşimi göstermek için raporlanır, üretimde kullanılmaz.",
-    "oof_auc": 0.7961
+    "oof_auc": 0.7961,
+    "min_air_ci": [
+     0.6226,
+     0.9479
+    ],
+    "min_air_gain_ci": [
+     -0.1372,
+     0.3037
+    ]
    }
   ],
   "reference_rows": [
@@ -1268,35 +1402,55 @@
      "kind": "baseline",
      "min_air": 0.7161,
      "auc_loss": 0.0207,
-     "oof_auc_loss": 0.0218
+     "oof_auc_loss": 0.0218,
+     "air_gain_ci": [
+      -0.1043,
+      0.1025
+     ]
     },
     {
      "model": "lightgbm",
      "kind": "model_family",
      "min_air": 0.7799,
      "auc_loss": 0.0087,
-     "oof_auc_loss": 0.0203
+     "oof_auc_loss": 0.0203,
+     "air_gain_ci": [
+      -0.1053,
+      0.1871
+     ]
     },
     {
      "model": "Proxy zayıflatılmış lojistik",
      "kind": "proxy_removal",
      "min_air": 0.7318,
      "auc_loss": 0.0205,
-     "oof_auc_loss": 0.0176
+     "oof_auc_loss": 0.0176,
+     "air_gain_ci": [
+      -0.0875,
+      0.1083
+     ]
     },
     {
      "model": "ExponentiatedGradient (demografik eşitlik, ε=0.05)",
      "kind": "exponentiated_gradient",
      "min_air": 0.7161,
      "auc_loss": 0.0198,
-     "oof_auc_loss": 0.0243
+     "oof_auc_loss": 0.0243,
+     "air_gain_ci": [
+      -0.1043,
+      0.1025
+     ]
     },
     {
      "model": "ExponentiatedGradient (demografik eşitlik, ε=0.02)",
      "kind": "exponentiated_gradient",
      "min_air": 0.7274,
      "auc_loss": 0.0188,
-     "oof_auc_loss": 0.0251
+     "oof_auc_loss": 0.0251,
+     "air_gain_ci": [
+      -0.0743,
+      0.1324
+     ]
     }
    ],
    "recommended": null,

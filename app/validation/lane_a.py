@@ -19,7 +19,9 @@ Design (no time axis in the public sets):
   DeLong tests (confirmation), decile calibration (low-risk deciles
   separately), ECE and Hosmer–Lemeshow;
 * fairness at the same approval rate (ties broken in a seeded random order,
-  AIR spread over ``fairness.tie_break_seeds`` seeds) and the LDA trade-off
+  AIR spread over ``fairness.tie_break_seeds`` seeds — tie-breaking only) with a
+  stratified bootstrap interval for the minimum AIR (sampling error of the
+  hold-out groups, decisions fixed; ``bootstrap_iterations``) and the LDA trade-off
   table, which also lists the other trained model families as alternatives;
   its AUC-loss limit is checked on the out-of-fold *and* the hold-out AUC.
 """
@@ -37,8 +39,11 @@ import pandas as pd
 from app.core.rules import ValidationConfig
 from app.decisioning.training import fit_isotonic, fit_lightgbm, make_logistic, make_scorecard
 from app.governance.fairness import (
+    BOOTSTRAP_METHOD,
+    BOOTSTRAP_NOTE,
     air_spread,
     approve_at_rate,
+    bootstrap_min_air,
     group_fairness,
     less_discriminatory_search,
     recommend_lda,
@@ -309,6 +314,15 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
                 air_threshold=fair_cfg.air_threshold,
                 min_group_size=floor,
             )
+            stats["min_air_ci"] = bootstrap_min_air(
+                approved,
+                protected_hold[attr],
+                min_group_size=floor,
+                iterations=cfg.bootstrap_iterations,
+                confidence=cfg.confidence,
+                seed=seed,
+                air_threshold=fair_cfg.air_threshold,
+            )
             fairness[name][attr] = stats
 
     attribute = cfg.lda.attribute
@@ -343,6 +357,8 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
             name: oof[name] for name in builders if name not in (champion["model"], "logistic")
         },
         seed=seed,
+        bootstrap_iterations=cfg.bootstrap_iterations,
+        confidence=cfg.confidence,
     )
     lda["attribute"] = attribute
     lda["recommendation"] = recommend_lda(lda, cfg.lda.max_auc_loss)
@@ -374,6 +390,13 @@ def run_lane_a(data: PreparedData, cfg: ValidationConfig) -> LaneAResult:
             "approval_rate": fair_cfg.approval_rate,
             "min_group_size": floor,
             "tie_break": {"seed": seed, "spread_seeds": len(tie_seeds)},
+            "bootstrap": {
+                "method": BOOTSTRAP_METHOD,
+                "iterations": cfg.bootstrap_iterations,
+                "confidence": cfg.confidence,
+                "seed": seed,
+                "note": BOOTSTRAP_NOTE,
+            },
             "by_model": fairness,
         },
         "lda": lda,

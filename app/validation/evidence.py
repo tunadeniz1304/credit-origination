@@ -32,6 +32,10 @@ EVIDENCE_SCOPE = (
     "veride). Üretim artefaktı sentetik veriyle eğitildiğinden artefakt özetine bağlı gerçek "
     "veri kanıtı mümkün değildir."
 )
+SAME_FAMILY_REASON = (
+    "aynı model ailesi: aile düzeyinde gerçek veri kanıtı ayrım yapmaz; artefakt düzeyi "
+    "karşılaştırma ve dört göz onayı geçerlidir"
+)
 
 
 @lru_cache(maxsize=8)
@@ -126,6 +130,10 @@ def promotion_evidence(champion_kind: str, challenger_kind: str) -> dict[str, An
     """Promotion gate on the committed real-data evidence (rule: ``rules/validation.yaml``).
 
     * both kinds must map to a lane-A family — an unknown family is refused;
+    * a challenger of the champion's own family (a retrain, the most common promotion) is
+      allowed by this gate with ``same_family=True``: family-level evidence cannot tell two
+      artifacts of one family apart, so the artifact-level comparison and the four-eyes
+      approval decide;
     * at least one real dataset must be available, and (``require_every_dataset``)
       every available dataset must hold evidence for both families;
     * the challenger must not be significantly worse than the champion (paired DeLong,
@@ -150,6 +158,14 @@ def promotion_evidence(champion_kind: str, challenger_kind: str) -> dict[str, An
             "allowed": False,
             "reason": f"model ailesi için gerçek veri kanıtı yok ({', '.join(unknown)}); "
             "başka bir ailenin kanıtı kullanılmaz",
+        }
+    if champion == challenger:
+        return {
+            **base,
+            "allowed": True,
+            "same_family": True,
+            "families": {"champion": champion, "challenger": challenger},
+            "reason": SAME_FAMILY_REASON,
         }
     names = available_sets()
     if not names:
