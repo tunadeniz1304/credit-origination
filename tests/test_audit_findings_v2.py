@@ -161,7 +161,6 @@ def test_f09_sqlite_uses_wal_and_normal_sync():
         assert conn.execute(text("PRAGMA synchronous")).scalar() == 1  # NORMAL
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f10_half_open_admits_a_single_probe():
     import fakeredis
 
@@ -276,12 +275,18 @@ def test_f18_every_form_control_is_labelled():
 
 
 # ------------------------------------------------------------------ G. honesty
-@pytest.mark.xfail(strict=True, reason=V0)
-def test_f20_no_unverified_sr_26_2_citation():
-    assert _git_grep("SR 26-2") == []
+def test_f20_regulatory_citations_are_verified_with_sources():
+    """SR 26-2 turned out to be real (Fed/OCC/FDIC, 17 Apr 2026): verify, don't delete."""
+    text = (PROJECT_ROOT / "docs" / "COMPLIANCE.md").read_text(encoding="utf-8")
+    table = text.split("## Verification", 1)[1]
+    rows = [r for r in table.splitlines() if r.startswith("| ") and "---" not in r][1:]
+    assert len(rows) >= 10
+    assert all("<https://" in r for r in rows), "every citation needs a source URL"
+    assert "federalreserve.gov/supervisionreg/srletters/SR2602" in text
+    assert "withdrawn" in text.lower()  # CFPB Circular 2022-03 status stated
+    assert "successor to SR 11-7" not in text  # the unsourced v1 wording is gone
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f21_readme_has_limitations_instead_of_vendor_parity_table():
     readme = (PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
     assert "## Limitations" in readme
@@ -289,7 +294,6 @@ def test_f21_readme_has_limitations_instead_of_vendor_parity_table():
     assert "Ocrolus" not in readme.split("## Inspired-by patterns")[0]
 
 
-@pytest.mark.xfail(strict=True, reason=V0)
 def test_f22_internal_llm_host_not_in_tracked_files():
     assert _git_grep("llm-gateway.example.org") == []
 

@@ -3,7 +3,7 @@
 [![CI](https://github.com/tunadeniz1304/Anil2/actions/workflows/ci.yml/badge.svg)](https://github.com/tunadeniz1304/Anil2/actions/workflows/ci.yml)
 ![tests](https://img.shields.io/badge/tests-231%20passed-brightgreen) ![coverage](https://img.shields.io/badge/coverage-89%25-brightgreen) ![python](https://img.shields.io/badge/python-3.11-blue)
 
-> **Human-in-the-loop, explainable hybrid credit decisioning aligned with the BDDK credit allocation guidance and KVKK art. 11. Because the LLM layer is OpenAI-compatible, it can be moved to an on-premise model (vLLM/Ollama) with a one-line setting to meet BDDK data-localisation requirements; aligned with the EU AI Act high-risk requirements.**
+> **Human-in-the-loop, explainable hybrid credit decisioning designed with the BDDK credit allocation guidance and KVKK art. 11 in mind. Because the LLM layer is OpenAI-compatible, it can be moved to an on-premise model (vLLM/Ollama) with a one-line setting to support BDDK data-localisation requirements; designed with the EU AI Act high-risk requirements in mind. The methodology is validated on real public credit data; Turkish data is synthetic (see Limitations).**
 
 Anil2 takes a retail loan application end to end — application → KYC → document processing → data enrichment → decision engine → pricing → authority matrix → offer/contract → disbursal — and explains every step. The binding decision always comes from a deterministic, replayable engine and authorised people. The LLM only explains, summarises and recommends.
 
@@ -29,7 +29,7 @@ python -m pytest -q --cov=app       # 231 tests, 89% coverage
 
 | Situation | Mode | Behaviour |
 |---|---|---|
-| `LLM_API_KEY` (or `DEEPSEEK_API_KEY` / `GATEWAY_API_KEY` / `OPENAI_API_KEY`) present in `.env` or `../.env` | **live** | DeepSeek V4 Flash via a gateway (`LLM_BASE_URL`, `LLM_MODEL`), startup log `LLM: CANLI (deepseek-v4-flash @ llm-gateway.example.org)` |
+| `LLM_API_KEY` (or `DEEPSEEK_API_KEY` / `GATEWAY_API_KEY` / `OPENAI_API_KEY`) present in `.env` or `../.env` | **live** | any OpenAI-compatible endpoint (`LLM_BASE_URL`, default `https://api.deepseek.com`; `LLM_MODEL`), startup log `LLM: CANLI (<model> @ <host>)` |
 | No key | **demo** | Deterministic, professional Turkish memos, committee summaries and letters generated from the same decision context |
 | A live call fails (timeout, 429, 5xx, invalid JSON, citation violation) | **fallback** | One repair attempt, then the demo output for *that call only*; flagged `llm_mode=fallback` + `llm_error_kind`; an application never fails because of the LLM |
 
@@ -94,22 +94,40 @@ stateDiagram-v2
 
 See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) and the [ADRs](docs/adr/).
 
-## Comparison with industry reference points
+## Inspired-by patterns
 
-| Capability | nCino / Zest / Upstart / FICO / Ocrolus / Plaid | Anil2 |
-|---|---|---|
-| Flow | End-to-end LOS, state machine | Explicit state machine, document gate, authority matrix, offer acceptance, contract, disbursal |
-| Decision engine | Rules + ML + optimisation | Versioned YAML policy DSL (safe evaluator) + monotone LightGBM PD (isotonic) + WoE scorecard, shadow challenger |
-| Explainability | Applicant-specific reason codes | SHAP → Turkish reason codes with the applicant's own values + "what would get me approved" counterfactuals |
-| Fairness | Zest LDA search, AIR | fairlearn MetricFrame, AIR ≥ 0.8 monitoring, less-discriminatory-alternative table |
-| Documents | Ocrolus IDP + fraud | Field extraction with confidence + bbox, pikepdf/font/arithmetic/barcode tamper signals, declared-vs-document reconciliation |
-| Cash flow | Plaid LendScore | 24 open-banking features (income volatility, NSF, gambling share, savings rate …) |
-| Pricing | FICO pricing optimisation | PD×LGD×EAD, Basel IRB capital, RAROC-solved rate, BSMV/KKDF, TCMB cap, APR |
-| Human in the loop | Underwriter workbench | SLA queue, 360° view, justified overrides, four-eyes, KVKK art. 11 objections |
-| Agent | nCino Banking Advisor | Supervised LangGraph analyst: tools + cited credit memorandum + human approval |
-| Model governance | MRM, SR 26-2 | Inventory, model cards (MD/PDF), PSI drift, champion/challenger promotion with two approvals, rule-set backtests |
-| Fraud | Synthetic identity, rings | TCKN checksum, sanctions/PEP fuzzy screening, velocity, networkx shared phone/IBAN/address ring |
-| Audit | Immutable decision log | Hash-chained, actor-attributed audit log + replayable decisions (`POST /decisions/{id}/replay`) |
+These are the industry patterns the design borrows; Anil2 is a portfolio-scale implementation of the
+ideas, **not** a peer of these products.
+
+| Pattern (where it comes from) | How Anil2 implements a small version of it |
+|---|---|
+| Loan-origination state machine (LOS vendors) | Explicit state machine, document gate, authority matrix, offer, contract, disbursal |
+| Rules + ML hybrid decisioning | Versioned YAML policy DSL (safe evaluator) + monotone LightGBM PD (isotonic) + WoE scorecard + shadow challenger |
+| Applicant-specific adverse-action reasons (ECOA/Reg B practice) | SHAP → material, value-conditioned Turkish reason codes + counterfactuals |
+| Less-discriminatory-alternative search (fair-lending practice) | fairlearn metrics, AIR, equalised odds, LDA table at one approval rate |
+| Document tamper checks (IDP products) | Producer-independent metadata, font, white-out, arithmetic and e-Devlet barcode signals; OCR via Tesseract |
+| Cash-flow underwriting (open banking) | 24 transaction features (income volatility, NSF, gambling share, savings rate …) |
+| Risk-based pricing | PD×LGD×EAD, Basel IRB other-retail capital, RAROC-solved rate, BSMV/KKDF, legal cap, APR, DSR re-check after pricing |
+| Model risk management (SR 26-2) | Inventory, model cards, real-data validation, PSI drift, evidence-gated champion/challenger with four-eyes |
+
+## Limitations
+
+* **No real integrations.** KKB/Findeks, e-Devlet, SGK, GİB and open banking (GEÇİT) are mocks.
+* **Turkish data is synthetic.** The production model runs on Turkey-specific synthetic features. Its
+  methodology, the bureau behaviour sub-score and the calibration level are validated on **real public
+  data** (UCI Taiwan, German Credit — `docs/VALIDATION_REPORT.md`), which is neither Turkish nor the same
+  target (card default vs. 90+ DPD). A real bank portfolio is required for re-training and independent
+  validation.
+* **Fairness is not solved.** On German Credit the champion fails the four-fifths rule for age band and
+  no alternative within the allowed AUC loss fixes it (open finding).
+* **Single-process limits.** Local/inline mode uses SQLite with one writer at a time; scale-out needs
+  the Docker topology (PostgreSQL + Celery). The 20-application concurrency test is a functional check,
+  not a capacity figure.
+* **Performance figures** are from one Windows laptop (`docs/PERFORMANCE.md`).
+* **Regulation.** Designed with BDDK, KVKK, EU AI Act and SR 26-2 requirements in mind — not certified
+  or audited as compliant (`docs/COMPLIANCE.md`, sources verified 2026-09-25).
+* **OCR** needs Tesseract with the Turkish model (in the Docker image); without it scans go to a
+  specialist.
 
 ## Demo scenarios (six personas)
 
@@ -126,17 +144,25 @@ Log in as `admin` → dashboard → **"Demo senaryosu yükle"** (or `python scri
 
 Walkthrough script: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
 
-## Model metrics (synthetic data, time-based test set, 8,208 applications)
+## Model evidence
 
-| Model | AUC | Gini | KS | Brier |
-|---|---|---|---|---|
-| **pd_lgbm_v1** (champion, monotone LightGBM + isotonic) | 0.895 | 0.790 | 0.625 | 0.0628 |
-| scorecard_woe_v1 (WoE logistic, 300–900 points) | 0.892 | 0.783 | 0.619 | 0.0639 |
-| challenger_lr_v1 (shadow) | 0.896 | 0.791 | 0.618 | 0.0625 |
+**Real public data (lane A, UCI Taiwan, stratified 20 % hold-out, n = 6,000):**
 
-Minimum AIR (four-fifths rule): gender 0.99 · age band 0.97 · province 0.93. See [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md), [`docs/FAIRNESS_REPORT.md`](docs/FAIRNESS_REPORT.md) and ![calibration](docs/img/calibration.png).
+| Model | AUC [95 % bootstrap CI] | Brier | Low-risk deciles obs/pred |
+|---|---|---|---|
+| **Monotone LightGBM + isotonic** (champion by evidence) | 0.779 [0.765, 0.792] | 0.1351 | 1.036 |
+| WoE scorecard | 0.767 [0.752, 0.781] | 0.1370 | 0.96 |
+| Logistic regression | 0.758 [0.743, 0.773] | 0.1402 | 0.987 |
 
-> Synthetic populations are more separable than real portfolios; these numbers demonstrate the pipeline, not a production model.
+LightGBM beats the scorecard by ΔAUC +0.0121 (DeLong p = 5.1e-05) and
+logistic regression by +0.0209 (p = 4.4e-07); on the 1,000-row German set the
+simpler scorecard wins. Full report: [`docs/VALIDATION_REPORT.md`](docs/VALIDATION_REPORT.md).
+
+**Production model on the anchored synthetic population** (time-based test set, n = 16,803):
+pd_lgbm_v2 AUC 0.827, scorecard_woe_v2 0.823, challenger_lr_v2 0.825 — these
+synthetic numbers are not evidence of real-world performance. See [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md),
+[`docs/FAIRNESS_REPORT.md`](docs/FAIRNESS_REPORT.md) and [`docs/DATA.md`](docs/DATA.md).
+
 
 ## Main API
 

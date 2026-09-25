@@ -9,7 +9,7 @@ Evidence for the Definition of Done of the transformation brief.
 
 ## 2. LLM contract
 * Without a key: demo mode produces professional Turkish memoranda, committee summaries and letters; `[mock-llm]` no longer exists anywhere (asserted in tests).
-* With the key in `.env`: start-up log `LLM: CANLI (deepseek-v4-flash @ llm-gateway.example.org)`; `python scripts/llm_smoke.py` → `OK model=deepseek/deepseek-v4-flash latency=2183ms`.
+* With the key in `.env`: start-up log `LLM: CANLI (deepseek-v4-flash @ <LLM_BASE_URL host>)`; `python scripts/llm_smoke.py` → `OK model=deepseek/deepseek-v4-flash latency=2183ms`.
 * All three chain steps run live and pass the citation/number guard (verified against the real endpoint after adding the empty-content budget retry).
 * Redaction: tests assert that no TCKN, name or phone appears in outbound LLM requests and that logs mask TCKN/IBAN (`tests/test_llm.py`). The key is never logged or returned (`/api/v1/llm/status` exposes only `key_present`).
 
