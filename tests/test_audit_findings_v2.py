@@ -277,9 +277,16 @@ def test_f18_every_form_control_is_labelled():
 
 
 # ------------------------------------------------------------------ G. honesty
-@pytest.mark.xfail(strict=True, reason=V0)
-def test_f20_no_unverified_sr_26_2_citation():
-    assert _git_grep("SR 26-2") == []
+def test_f20_regulatory_citations_are_verified_with_sources():
+    """SR 26-2 turned out to be real (Fed/OCC/FDIC, 17 Apr 2026): verify, don't delete."""
+    text = (PROJECT_ROOT / "docs" / "COMPLIANCE.md").read_text(encoding="utf-8")
+    table = text.split("## Verification", 1)[1]
+    rows = [r for r in table.splitlines() if r.startswith("| ") and "---" not in r][1:]
+    assert len(rows) >= 10
+    assert all("<https://" in r for r in rows), "every citation needs a source URL"
+    assert "federalreserve.gov/supervisionreg/srletters/SR2602" in text
+    assert "withdrawn" in text.lower()  # CFPB Circular 2022-03 status stated
+    assert "successor to SR 11-7" not in text  # the unsourced v1 wording is gone
 
 
 @pytest.mark.xfail(strict=True, reason=V0)

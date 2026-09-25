@@ -105,7 +105,7 @@ def model_card(row: ModelRecord) -> dict[str, Any]:
             "BDDK Kredi İşlemleri Yönetmeliği",
             "KVKK m.11",
             "EU AI Act Annex III 5(b) (yüksek risk)",
-            "SR 26-2 model risk yönetimi beklentisi",
+            "SR 26-2 / OCC Bülteni 2026-13 model risk yönetimi rehberi",
         ],
     }
 
