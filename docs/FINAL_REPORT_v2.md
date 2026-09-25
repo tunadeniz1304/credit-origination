@@ -126,3 +126,27 @@ Playwright).
 * Inline/SQLite is a single-writer mode; throughput needs the Docker topology.
 
 ## Audit rounds
+
+An independent sceptical reviewer (senior engineer + credit-risk expert, separate agent, read-only)
+audited the repository; findings were fixed and the next round re-audited the result.
+
+### Round 1 — score 7.5 / 10, 13 findings
+
+| # | Severity | Finding | Resolution |
+|---|---|---|---|
+| 1 | high | A cancelled half-open probe never freed its slot; the breaker could stay HALF_OPEN forever | Slot released on `BaseException`, probe slots are leases (`6adecf4`) |
+| 2 | high | Prod started with the public development JWT secret | Prod refuses to start with a weak JWT secret, empty PII/blind-index keys or registration without CAPTCHA (`e544286`) |
+| 3 | high | Lane B "calibration validated on real data" is circular | Reworded everywhere as anchoring, not validation (`d93ab8e`) |
+| 4 | high | Policy recalibration numbers not reproducible | `run_lane_b.py --policy-only` writes `policy_cutoffs` to `lane_b.json`; test ties docs to it (`c739fb0`) |
+| 5 | medium | Promotion gate judged by family on one dataset; `ebm` borrowed logistic evidence | Unknown families refused; challenger must not be significantly worse on any dataset; scope stated (`af15e67`) |
+| 6 | medium | Isotonic ties made AIR depend on row order | Seeded tie-breaking, AIR range over 20 seeds, tie-aware deciles (`af15e67`) |
+| 7 | medium | Champion chosen and reported on the same hold-out | Selection on out-of-fold CV, hold-out confirms (`af15e67`) |
+| 8 | medium | Order-dependent flaky tests | Tests create their own data (`9f6627e`, `ae477b4`) |
+| 9 | medium | Coverage gate overstated | CI `--cov-fail-under=90` + `scripts/check_coverage.py` floors (`1d19ca9`) |
+| 10 | low | F05 test could never fail; F01 one persona | F05 checks current signal names and a positive case; F01 three personas (`1d19ca9`) |
+| 11 | low | LDA search ignored other trained families | Included (`af15e67`) |
+| 12 | low | Untestable attribute shown as passing | Reported as n/a (`af15e67`) |
+| 13 | low | Registration on in prod; logout left JWT valid | Registration off by default in prod; logout revokes the token id (`e544286`) |
+
+New open finding surfaced by the fixes: with tie-aware deciles the lowest PD decile of the anchored
+synthetic population is under-predicted (observed/predicted 1.99, 12 defaults in 752).
