@@ -63,6 +63,11 @@ def celery_mode(monkeypatch):
     )
     fake = FakeCeleryTask()
     monkeypatch.setattr(tasks, "process_application", fake)
+    # The dispatcher looks tasks up in the Celery registry: route it to the fake as well, so an
+    # application submitted through the API never reaches a real broker or result backend.
+    monkeypatch.setattr(
+        td, "_celery", SimpleNamespace(tasks={"app.tasks.process_application": fake})
+    )
     return SimpleNamespace(server=server, task=fake)
 
 

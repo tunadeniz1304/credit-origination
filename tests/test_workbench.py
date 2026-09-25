@@ -65,8 +65,9 @@ def users(client):
     }
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def grey_id(client, users):
+    """A fresh grey-zone application per test, so no test depends on another's outcome."""
     application_id = submit_complete(
         client, users["basvuran"], "gri", monthly_income=42_000, requested_amount=220_000
     )
